@@ -73,17 +73,19 @@ def test_hypsometry_metrics_synthetic() -> None:
 
 
 def test_fixture_probes_run() -> None:
+    """Harness probes after PR-4+ corrections (direction, budget, spin-up)."""
     impulse = northward_impulse_result()
     assert impulse["total_mass"] == pytest.approx(1.0, rel=0, abs=1e-6)
-    # Document current (wrong) direction for the report — harness records it.
-    assert impulse["mass_south_of_seed"] > impulse["mass_north_of_seed"]
+    # Annex §10.2: wind_v>0 moves moisture toward smaller j (north).
+    assert impulse["mass_north_of_seed"] > impulse["mass_south_of_seed"]
 
     overshoot = precip_vs_available_q_overshoot()
-    assert overshoot["max_overshoot"] > 0.0
+    assert overshoot["max_overshoot"] <= 1e-9
 
     ramp = january_dry_start_ramp()
-    assert len(ramp["monthly_land_mean_precip"]) == 12
-    assert ramp["max_minus_min"] > 0.0
+    monthly = ramp["monthly_land_mean_precip"]
+    assert len(monthly) == 12
+    assert ramp["max_minus_min"] / max(float(np.mean(monthly)), 1e-12) < 0.08
 
     hit = land_max_hits_scale(9000.0)
     assert hit["max_a"] == pytest.approx(9000.0)
