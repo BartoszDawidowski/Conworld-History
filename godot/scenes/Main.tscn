@@ -1,0 +1,631 @@
+[gd_scene load_steps=3 format=3 uid="uid://conworld_main_atlas"]
+
+[ext_resource type="Script" path="res://scenes/Main.gd" id="1_main"]
+[ext_resource type="Script" path="res://atlas/InspectorPanel.gd" id="2_insp"]
+
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="Bg" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.08, 0.1, 0.12, 1)
+
+[node name="Root" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 4
+
+[node name="TopBar" type="HBoxContainer" parent="Root"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="SeedSpin" type="SpinBox" parent="Root/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 2
+min_value = 1.0
+max_value = 1e+09
+value = 183716.0
+prefix = "seed "
+
+[node name="SeedInfo" type="Button" parent="Root/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+flat = true
+text = "i"
+tooltip_text = "Master seed for world generation. Same seed + profile + knobs yields the same geography."
+
+[node name="ProfileOption" type="OptionButton" parent="Root/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(160, 0)
+layout_mode = 2
+
+[node name="ProfileInfo" type="Button" parent="Root/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+flat = true
+text = "i"
+tooltip_text = "Quick: smoke grids. Atlas: daily mid quality. Full: production defaults (slow, more RAM)."
+
+[node name="AdvancedBtn" type="Button" parent="Root/TopBar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Advanced..."
+
+[node name="GenerateBtn" type="Button" parent="Root/TopBar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Generate world"
+
+[node name="WorldPathEdit" type="LineEdit" parent="Root/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "path to world/"
+
+[node name="LoadBtn" type="Button" parent="Root/TopBar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Load world"
+
+[node name="StatusLabel" type="Label" parent="Root/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(160, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Ready"
+clip_text = true
+
+[node name="ProgressBar" type="ProgressBar" parent="Root/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 2
+show_percentage = true
+
+[node name="Body" type="HBoxContainer" parent="Root"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="InspectorPanel" type="PanelContainer" parent="Root/Body"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(280, 0)
+layout_mode = 2
+size_flags_vertical = 3
+script = ExtResource("2_insp")
+
+[node name="Margin" type="MarginContainer" parent="Root/Body/InspectorPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="InspectorText" type="RichTextLabel" parent="Root/Body/InspectorPanel/Margin"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+fit_content = false
+scroll_active = true
+text = "Inspector"
+
+[node name="MapPane" type="PanelContainer" parent="Root/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="SubViewportContainer" type="SubViewportContainer" parent="Root/Body/MapPane"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+stretch = true
+
+[node name="SubViewport" type="SubViewport" parent="Root/Body/MapPane/SubViewportContainer"]
+unique_name_in_owner = true
+handle_input_locally = true
+size = Vector2i(900, 700)
+render_target_update_mode = 4
+
+[node name="AtlasHost" type="Node2D" parent="Root/Body/MapPane/SubViewportContainer/SubViewport"]
+unique_name_in_owner = true
+
+[node name="LegendPanel" type="PanelContainer" parent="Root/Body/MapPane"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -220.0
+offset_top = -200.0
+offset_right = -8.0
+offset_bottom = -8.0
+grow_horizontal = 0
+grow_vertical = 0
+
+[node name="LegendMargin" type="MarginContainer" parent="Root/Body/MapPane/LegendPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="LegendScroll" type="ScrollContainer" parent="Root/Body/MapPane/LegendPanel/LegendMargin"]
+custom_minimum_size = Vector2(200, 180)
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="LegendText" type="RichTextLabel" parent="Root/Body/MapPane/LegendPanel/LegendMargin/LegendScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+text = "Legend"
+
+[node name="BottomBar" type="HBoxContainer" parent="Root"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ModeBox" type="HBoxContainer" parent="Root/BottomBar"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="LayerSep" type="VSeparator" parent="Root/BottomBar"]
+layout_mode = 2
+
+[node name="HexCheck" type="CheckBox" parent="Root/BottomBar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Hex"
+tooltip_text = "Analytical hex overlay"
+
+[node name="CoastCheck" type="CheckBox" parent="Root/BottomBar"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "Coast"
+
+[node name="RiversCheck" type="CheckBox" parent="Root/BottomBar"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "Rivers"
+
+[node name="LakesCheck" type="CheckBox" parent="Root/BottomBar"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "Lakes"
+
+[node name="FlowCheck" type="CheckBox" parent="Root/BottomBar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Flow"
+tooltip_text = "D8 flow-direction ticks (diagnostic layer)"
+
+[node name="MonthSep" type="VSeparator" parent="Root/BottomBar"]
+layout_mode = 2
+
+[node name="MonthSpin" type="SpinBox" parent="Root/BottomBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+min_value = 1.0
+max_value = 12.0
+value = 1.0
+prefix = "m "
+tooltip_text = "Month for temperature / precipitation modes"
+
+[node name="ZoomSep" type="VSeparator" parent="Root/BottomBar"]
+layout_mode = 2
+
+[node name="ZoomLabel" type="Label" parent="Root/BottomBar"]
+layout_mode = 2
+text = "Zoom"
+
+[node name="ZoomSlider" type="HSlider" parent="Root/BottomBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(160, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 1.0
+max_value = 16.0
+step = 0.05
+value = 1.0
+tooltip_text = "Min = Fit, max = 16x Fit"
+
+[node name="ZoomFitBtn" type="Button" parent="Root/BottomBar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Fit"
+
+[node name="AdvancedPopup" type="PopupPanel" parent="."]
+unique_name_in_owner = true
+title = "Advanced generation"
+initial_position = 2
+size = Vector2i(420, 640)
+
+[node name="AdvMargin" type="MarginContainer" parent="AdvancedPopup"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = -8.0
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="AdvOuter" type="VBoxContainer" parent="AdvancedPopup/AdvMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="AdvHeader" type="HBoxContainer" parent="AdvancedPopup/AdvMargin/AdvOuter"]
+layout_mode = 2
+
+[node name="AdvTitle" type="Label" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 16
+text = "Advanced generation"
+
+[node name="AdvCloseBtn" type="Button" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "X"
+
+[node name="AdvHint" type="Label" parent="AdvancedPopup/AdvMargin/AdvOuter"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+text = "A6 geography + B5 hypsometry/coupling/moisture. Fewer islands: ocean↑, plates↓, detail↓, folding↓. Defaults = engine."
+
+[node name="AdvScroll" type="ScrollContainer" parent="AdvancedPopup/AdvMargin/AdvOuter"]
+layout_mode = 2
+size_flags_vertical = 3
+custom_minimum_size = Vector2(0, 520)
+
+[node name="AdvVBox" type="VBoxContainer" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="GeoLabel" type="Label" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+layout_mode = 2
+text = "Geography (A6)"
+
+[node name="OceanFractionSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.4
+max_value = 0.9
+step = 0.01
+value = 0.71
+prefix = "ocean "
+suffix = " frac"
+tooltip_text = "Target ocean fraction of the map."
+
+[node name="NumPlatesSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1.0
+max_value = 30.0
+value = 7.0
+prefix = "plates "
+tooltip_text = "Tectonic plate count."
+
+[node name="CycleCountSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1.0
+max_value = 8.0
+value = 3.0
+prefix = "cycles "
+tooltip_text = "Tectonic cycle count."
+
+[node name="DetailAmplitudeSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 0.3
+step = 0.01
+value = 0.02
+prefix = "detail "
+tooltip_text = "Terrain detail noise amplitude."
+
+[node name="ErosionIterSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1.0
+max_value = 20.0
+value = 5.0
+prefix = "erosion "
+tooltip_text = "Erosion pass iterations."
+
+[node name="FluvialKSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 20.0
+step = 0.5
+value = 8.0
+prefix = "fluvial k "
+tooltip_text = "Fluvial erosion strength."
+
+[node name="FoldingRatioSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 0.2
+step = 0.005
+value = 0.01
+prefix = "folding "
+tooltip_text = "PyPlatec folding_ratio — orogeny intensity. Lower often = less shredded highlands."
+
+[node name="TectSeaLevelSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.2
+max_value = 0.9
+step = 0.01
+value = 0.65
+prefix = "tect sea "
+tooltip_text = "PyPlatec internal sea_level (raw heightmap). Affects continent shapes before ocean.fraction calibration."
+
+[node name="TectErosionPeriodSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 10.0
+max_value = 200.0
+value = 100.0
+prefix = "tect erosion "
+tooltip_text = "PyPlatec erosion_period."
+
+[node name="LandScaleSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1000.0
+max_value = 12000.0
+step = 250.0
+value = 9000.0
+prefix = "land scale "
+suffix = " m"
+tooltip_text = "Max land elevation scale (hypsometry). Higher → taller peaks."
+
+[node name="OceanScaleSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1000.0
+max_value = 12000.0
+step = 250.0
+value = 10000.0
+prefix = "ocean scale "
+suffix = " m"
+tooltip_text = "Ocean depth scale before bathymetry shaping."
+
+[node name="OrogenyBoostSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 0.3
+step = 0.01
+value = 0.05
+prefix = "orogeny boost "
+tooltip_text = "Extra elevation from orogenic_potential (mountain belts)."
+
+[node name="ActivityReliefSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 1.0
+step = 0.05
+value = 0.25
+prefix = "activity relief "
+tooltip_text = "How much tectonic activity amplifies local detail."
+
+[node name="BoundaryReliefSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 1.0
+step = 0.05
+value = 0.35
+prefix = "boundary relief "
+tooltip_text = "Extra detail near plate boundaries."
+
+[node name="CoupleLabel" type="Label" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+layout_mode = 2
+text = "Currents / coupling + base temp (B5)"
+
+[node name="BaseTempSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 5.0
+max_value = 30.0
+step = 0.5
+value = 25.0
+prefix = "base temp "
+suffix = " °C"
+tooltip_text = "Global temperature offset. Higher → warmer world / more tropical Holdridge belts."
+
+[node name="SstMixSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 1.0
+step = 0.05
+value = 0.4
+prefix = "sst mix "
+tooltip_text = "How strongly nearest SST blends into land temperature (coast weight)."
+
+[node name="InlandDecaySpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1.0
+max_value = 96.0
+step = 1.0
+value = 60.0
+prefix = "inland decay "
+suffix = " cells"
+tooltip_text = "SST→T inland decay length scale in climate cells."
+
+[node name="WesternWarmSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 6.0
+step = 0.1
+value = 2.2
+prefix = "west SST +"
+suffix = " C"
+tooltip_text = "Western-boundary subtropical SST warm anomaly (°C)."
+
+[node name="EasternCoolSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 6.0
+step = 0.1
+value = 1.8
+prefix = "east SST -"
+suffix = " C"
+tooltip_text = "Eastern-boundary subtropical SST cool anomaly (°C)."
+
+[node name="MoistLabel" type="Label" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+layout_mode = 2
+text = "Moisture / precip inland (B5)"
+
+[node name="MoistAdvectStepsSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1.0
+max_value = 48.0
+value = 32.0
+prefix = "advect steps "
+tooltip_text = "More steps → moisture travels farther inland each month."
+
+[node name="MoistAdvectWindSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 0.35
+step = 0.005
+value = 0.2
+prefix = "advect wind "
+tooltip_text = "Wind→cell transport scale per advection substep."
+
+[node name="MoistLargeScaleSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 1.0
+step = 0.05
+value = 0.15
+prefix = "rainout "
+tooltip_text = "Large-scale rainout of excess moisture. Lower → wetter interiors."
+
+[node name="MoistOroSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 2.0
+step = 0.05
+value = 0.85
+prefix = "orographic "
+tooltip_text = "Windward orographic precip / rain-shadow strength."
+
+[node name="MoistConvSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 4.0
+step = 0.1
+value = 2.0
+prefix = "convective "
+tooltip_text = "Tropical/ITCZ convective precip scale."
+
+[node name="MoistOceanEvapSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 3.0
+step = 0.05
+value = 1.4
+prefix = "ocean evap "
+tooltip_text = "Ocean evaporation / moisture source strength."
+
+[node name="MoistLandEtSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 2.0
+step = 0.02
+value = 0.4
+prefix = "land ET "
+tooltip_text = "Land evapotranspiration / recycling."
+
+[node name="MoistContDrySpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 1.0
+step = 0.05
+value = 0.4
+prefix = "cont. dry "
+tooltip_text = "How strongly continentality reduces inland moisture capacity."
+
+[node name="MoistLeeDrySpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 1.0
+step = 0.02
+value = 0.12
+prefix = "lee dry "
+tooltip_text = "Extra drying on leeward descent."
+
+[node name="EcologyLabel" type="Label" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+layout_mode = 2
+text = "Ecology / Holdridge (B5)"
+
+[node name="PrecipScaleSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 50.0
+max_value = 2000.0
+step = 25.0
+value = 200.0
+prefix = "precip scale "
+suffix = " mm"
+tooltip_text = "Scales moisture proxy → mm for Holdridge PET/P. Higher → wetter life zones (does not change precip map)."

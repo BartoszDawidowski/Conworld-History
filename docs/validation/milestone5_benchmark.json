@@ -1,0 +1,52 @@
+{
+  "memory_budget_bytes": 2000000000,
+  "candidates": [
+    {
+      "width": 4096,
+      "height": 2048,
+      "estimated_bytes": 671088640,
+      "within_memory_budget": true,
+      "seconds": 19.99537620800038,
+      "diagnostics": {
+        "width": 4096,
+        "height": 2048,
+        "sea_level_raw": 1.7472331647502075,
+        "ocean_fraction_target": 0.71,
+        "ocean_fraction_measured": 0.7099999189376831,
+        "water_body_count": 68,
+        "coastline_feature_count": 20000,
+        "seam_gap_m": 48.979253071054956,
+        "seam_gap_relative": 0.003923250820535613,
+        "elevation_min_m": -6484.3542540489825,
+        "elevation_max_m": 6000.0,
+        "shelf_fraction": 0.13473057746887207
+      }
+    },
+    {
+      "width": 2048,
+      "height": 1024,
+      "estimated_bytes": 167772160,
+      "within_memory_budget": true,
+      "seconds": 5.228536167000129,
+      "diagnostics": {
+        "width": 2048,
+        "height": 1024,
+        "sea_level_raw": 1.707524993221138,
+        "ocean_fraction_target": 0.71,
+        "ocean_fraction_measured": 0.7100000381469727,
+        "water_body_count": 72,
+        "coastline_feature_count": 20000,
+        "seam_gap_m": 85.67026087450333,
+        "seam_gap_relative": 0.00716366212286455,
+        "elevation_min_m": -5959.003566215955,
+        "elevation_max_m": 6000.0,
+        "shelf_fraction": 0.25952625274658203
+      }
+    }
+  ],
+  "production_resolution": [
+    4096,
+    2048
+  ],
+  "rationale": "Selected highest full-pipeline resolution within memory budget (2000000000 bytes estimated working set)."
+}

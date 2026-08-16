@@ -1,0 +1,97 @@
+schema_version: 2
+
+planet:
+  earth_like: true
+  axial_tilt_deg: 23.44
+  orbital_eccentricity: 0.0167
+  solar_constant_relative: 1.0
+  rotation_period_hours: 24.0
+  year_days: 365.2422
+
+map:
+  topology: cylindrical
+  wrap_x: true
+  wrap_y: false
+  projection: cylindrical_equal_area
+
+analysis_grid:
+  width: 256
+  height: 128
+  orientation: flat_top
+
+resolution:
+  tectonics: [1024, 512]
+  climate: [1024, 512]
+  terrain_target: [4096, 2048]
+  # Locked by Milestone 5 benchmark (docs/validation/milestone5_benchmark.json).
+  terrain_production: [4096, 2048]
+  hydrology_target: [4096, 2048]
+
+ocean:
+  fraction_target: 0.71
+  # Atlas-tuned climate coupling (2026-08-15)
+  sst_mix: 0.4
+  inland_decay_cells: 60.0
+  western_warm_c: 2.2
+  eastern_cool_c: 1.8
+
+# Atlas UX — geography defaults (user-tuned Atlas 2026-08-15)
+tectonics:
+  num_plates: 7
+  cycle_count: 3
+  folding_ratio: 0.01
+  sea_level: 0.65
+  erosion_period: 100
+
+terrain:
+  detail_amplitude: 0.02
+  land_scale_m: 9000.0
+  ocean_scale_m: 10000.0
+  orogeny_boost: 0.05
+  activity_relief: 0.25
+  boundary_relief: 0.35
+
+erosion:
+  iterations: 5
+  fluvial_k: 8.0
+
+climate:
+  months: 12
+  # Global temperature offset (°C). Tuned so tropical Holdridge belts appear.
+  base_temp_c: 25.0
+
+# Holdridge PET/P scaling: precip_proxy × precip_scale_mm → mm-like annual precip
+ecology:
+  precip_scale_mm: 200.0
+
+# Atlas-tuned moisture inland (2026-08-15)
+moisture:
+  advect_steps: 32
+  advect_wind_scale: 0.2
+  large_scale_frac: 0.15
+  orographic_frac: 0.85
+  convective_scale: 2.0
+  ocean_evap_rate: 1.4
+  lake_evap_rate: 0.75
+  river_evap_rate: 0.40
+  land_et_rate: 0.4
+  continentality_dry: 0.4
+  lee_dry: 0.12
+
+# Plan B7 — precip-aware river/lake visibility (DEM topology unchanged)
+hydrology:
+  river_acc_fraction: 0.02
+  lake_min_depth_m: 2.0
+  # Quantile of discharge on accumulation candidates (0.5 ≈ drop driest half of network).
+  river_discharge_candidate_quantile: 0.50
+  # Rain-fed lakes need local precip ≥ land p70; river-fed need river touch + not arid (p45).
+  lake_precip_land_quantile: 0.70
+  lake_arid_precip_land_quantile: 0.45
+  # Drop ice-sheet / polar fill depressions (mean annual °C).
+  lake_min_mean_temp_c: 1.0
+  lake_inflow_land_quantile: 0.75
+  # Channel transmission losses (Nil OK / wadi dies); 0 = gross accuflux only.
+  transmission_rate: 0.45
+
+generation:
+  quality: final
