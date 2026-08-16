@@ -76,6 +76,9 @@ def test_sst_ocean_only_and_coupling(tmp_path: Path) -> None:
     assert np.allclose(applied.temperature_c, ocean.temperature_coupled_c)
     assert applied.diagnostics.get("ocean_temperature_applied") is True
     assert ocean.diagnostics.get("inland_decay_cells") == 60.0
+    assert ocean.diagnostics.get("inland_decay_km") is not None
+    assert float(ocean.diagnostics["inland_decay_km"]) > 0.0
+    assert ocean.diagnostics.get("sst_gradients") == "metric_v1"
     coast_d = float(ocean.diagnostics.get("coast_temp_delta_mean_abs", 0.0))
     deep_d = float(ocean.diagnostics.get("deep_inland_temp_delta_mean_abs", 0.0))
     if coast_d > 0.0 and deep_d >= 0.0:

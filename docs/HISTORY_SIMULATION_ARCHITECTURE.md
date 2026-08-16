@@ -1919,6 +1919,15 @@ H5–H7 final world tests
 
 dynamic environment response
     depends on Physical Milestone 19 and a later history version
+
+hex latitude / area calibration against real worlds
+    requires Physical Realism PR-1 (balanced analytical hex geometry)
+    see docs/WORLDGEN_PHYSICAL_REALISM_ANNEX.md §7.4
+    and docs/PHYSICAL_REALISM_PLAN.md §6
+
+terrain barrier / mountain mobility costs from landforms
+    requires Physical Realism PR-9 (LandformAnalysis) + EnvironmentAdapter
+    do not treat “mountain” as automatically impassable
 ~~~
 
 This permits early validation of turns and history without coupling them to unfinished physical generation.

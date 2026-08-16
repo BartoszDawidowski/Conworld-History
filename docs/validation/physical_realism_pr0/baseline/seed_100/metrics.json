@@ -1,0 +1,78 @@
+{
+  "master_seed": 100,
+  "profile": "quick",
+  "elapsed_s": 2.408,
+  "peak_rss_mb_before": 198.03125,
+  "peak_rss_mb_after": 201.53125,
+  "hypsometry": {
+    "land_cells": 9503,
+    "mean_m": 2864.823394904047,
+    "max_m": 8939.354110853346,
+    "min_m": 0.0038637995009115815,
+    "p10": 186.00355453576924,
+    "p25": 1584.5481612525132,
+    "p50": 2637.5949716009773,
+    "p75": 4035.282585619001,
+    "p90": 5722.186347938971,
+    "p95": 6548.899238913605,
+    "p99": 7785.956040723284,
+    "frac_above_1km": 0.8134273387351363,
+    "frac_above_2km": 0.6678943491528991,
+    "frac_above_3km": 0.4149216037040934,
+    "frac_above_5km": 0.1512154056613701,
+    "frac_above_7km": 0.03156897821740503,
+    "frac_below_200m": 0.1035462485530885,
+    "frac_below_500m": 0.14795327791223825,
+    "hits_land_scale_max": false
+  },
+  "moisture": {
+    "land_mean": 5.547608712551764,
+    "land_p50": 0.4230164988570686,
+    "land_p90": 14.718873036547446,
+    "land_max": 142.89255568537035,
+    "coast_mean": 17.39765654804239,
+    "interior_mean": 2.777553110807424,
+    "interior_coast_ratio": 0.15965099110546346
+  },
+  "hydrology": {
+    "land_cells": 9503,
+    "river_cells": 96,
+    "river_land_fraction": 0.0029296875,
+    "lake_cells": 719,
+    "acc_land_max": 1522.0,
+    "acc_land_p90": 13.0
+  },
+  "checksums": {
+    "elevation_v2_m": "c4964b22da840d189f722081520224079d6300a2ff5686aa1cec03479f718798",
+    "ocean_mask": "6018c5855d2a24301097485b699c9d4e5e1d29152a1f8d75970029e3b53dea4c",
+    "annual_precipitation": "300e48dc91aa46df552ef150342139693236f175ed46da9caa4dbdca7af1dbdc",
+    "flow_direction": "df15a27f84a9fc35c196067cb3ae386b7696b413f2b4a288ca84062d52703218",
+    "basin_id": "432bc0ce25ffc6ebb080c46d8113a713d2a17544fb0d9d8f4f9ccb4f38187bff"
+  },
+  "absolute_maps": [
+    {
+      "path": "elevation_m.png",
+      "lo": -6000.0,
+      "hi": 9000.0,
+      "unit": "m",
+      "shape": [
+        128,
+        256
+      ],
+      "stretch": "absolute"
+    },
+    {
+      "path": "annual_precip.png",
+      "lo": 0.0,
+      "hi": 40.0,
+      "unit": "moisture_proxy_annual",
+      "shape": [
+        64,
+        128
+      ],
+      "stretch": "absolute",
+      "note": "Fixed absolute legend [0, 40] proxy units across seeds"
+    }
+  ],
+  "effective_config_checksum": "f24f69135d078b82d0e3e9bd824359c4c93562cd20f266d478bbdfe150df985d"
+}

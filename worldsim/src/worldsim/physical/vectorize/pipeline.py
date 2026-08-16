@@ -88,6 +88,11 @@ class VectorGeographyResult:
                     "basin_id": lake.basin_id,
                     "closed_basin": lake.closed_basin,
                     "area_cells": lake.area_cells,
+                    "water_state": lake.water_state,
+                    "spill_elevation": lake.spill_elevation,
+                    "mean_effective_inflow": lake.mean_effective_inflow,
+                    "inlet_river_ids": list(lake.inlet_river_ids),
+                    "outlet_river_id": lake.outlet_river_id,
                 },
                 "geometry": {
                     "type": "Polygon",
@@ -160,6 +165,8 @@ def build_vector_geography(
         elevation_m=hydrology.dem_conditioned_m,
         basin_id=hydrology.basin_id,
         extent=extent,
+        lake_records=getattr(hydrology, "lake_records", None),
+        river_network=rivers,
     )
     basins = build_basin_metadata(
         basin_id=hydrology.basin_id,

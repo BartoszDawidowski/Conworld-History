@@ -1,0 +1,267 @@
+{
+  "milestone": "PR-2",
+  "folding_ratio_frozen": 0.01,
+  "seeds": [
+    1,
+    42,
+    100
+  ],
+  "terrain_resolution": [
+    256,
+    128
+  ],
+  "power_tail_maxima_m": [
+    5489.466740446394,
+    4527.952794793006,
+    4282.461002624687
+  ],
+  "maxima_mechanically_identical": false,
+  "records": [
+    {
+      "legacy_max": {
+        "master_seed": 1,
+        "mode": "legacy_max",
+        "elapsed_s": 0.19,
+        "folding_ratio": 0.01,
+        "land_hypsometry": {
+          "land_cells": 9503,
+          "mean_m": 1389.57595937492,
+          "max_m": 9000.0,
+          "min_m": 0.06867189376698829,
+          "p10": 97.1122846834637,
+          "p25": 609.3298958709465,
+          "p50": 1174.854113642077,
+          "p75": 1879.21073142479,
+          "p90": 2656.1838258066914,
+          "p95": 3555.3387789987337,
+          "p99": 5883.286831352347,
+          "frac_above_1km": 0.5841313269493844,
+          "frac_above_2km": 0.21309060296748394,
+          "frac_above_3km": 0.07513416815742398,
+          "frac_above_5km": 0.02167736504261812,
+          "frac_above_7km": 0.0037882773860886034,
+          "frac_below_200m": 0.13827212459223404,
+          "frac_below_500m": 0.2184573292644428
+        },
+        "hypsometry": {
+          "hypsometry_mode": "legacy_max",
+          "hypsometry_algorithm_version": 1,
+          "land_scale_m": 9000.0,
+          "land_max_m": 9000.0,
+          "anchor_raw": 15.389529884775635,
+          "ocean_scale_m": 10000.0
+        },
+        "rank_order_ok": true,
+        "land_components_unchanged": true
+      },
+      "power_tail_v2": {
+        "master_seed": 1,
+        "mode": "power_tail_v2",
+        "elapsed_s": 0.185,
+        "folding_ratio": 0.01,
+        "land_hypsometry": {
+          "land_cells": 9503,
+          "mean_m": 1437.220619073652,
+          "max_m": 5489.466740446394,
+          "min_m": 1.5040070732383573,
+          "p10": 241.32175091091952,
+          "p25": 872.7729999894366,
+          "p50": 1381.9531531825246,
+          "p75": 1919.9388668417446,
+          "p90": 2446.162191103632,
+          "p95": 2999.9999907682445,
+          "p99": 4228.846432107606,
+          "frac_above_1km": 0.7021993054824792,
+          "frac_above_2km": 0.21582658107965905,
+          "frac_above_3km": 0.05008944543828265,
+          "frac_above_5km": 0.0026307481847837526,
+          "frac_above_7km": 0.0,
+          "frac_below_200m": 0.08849836893612543,
+          "frac_below_500m": 0.15742397137745975
+        },
+        "hypsometry": {
+          "hypsometry_mode": "power_tail_v2",
+          "hypsometry_algorithm_version": 2,
+          "anchor_quantile": 0.95,
+          "anchor_elevation_m": 3000.0,
+          "body_exponent": 0.7,
+          "max_elevation_m": 9000.0,
+          "land_cells": 9503,
+          "anchor_raw": 6.079443598878082,
+          "asymptote_ratio": 3.0,
+          "land_max_m": 5489.466740446394,
+          "land_mean_m": 1437.220619073652,
+          "x_max": 2.5314043356888227,
+          "exceeds_max_guardrail": false,
+          "ocean_scale_m": 10000.0
+        },
+        "rank_order_ok": true,
+        "land_components_unchanged": true
+      }
+    },
+    {
+      "legacy_max": {
+        "master_seed": 42,
+        "mode": "legacy_max",
+        "elapsed_s": 0.207,
+        "folding_ratio": 0.01,
+        "land_hypsometry": {
+          "land_cells": 9503,
+          "mean_m": 1859.841233752376,
+          "max_m": 9000.0,
+          "min_m": 0.38004489688477133,
+          "p10": 399.185655053151,
+          "p25": 849.5070021312001,
+          "p50": 1550.5961905829743,
+          "p75": 2456.7535317378624,
+          "p90": 3621.616889526777,
+          "p95": 4891.963868836423,
+          "p99": 7016.16164194732,
+          "frac_above_1km": 0.6923076923076923,
+          "frac_above_2km": 0.35651899400189413,
+          "frac_above_3km": 0.16037040934441754,
+          "frac_above_5km": 0.046301168052194044,
+          "frac_above_7km": 0.01031253288435231,
+          "frac_below_200m": 0.045880248342628646,
+          "frac_below_500m": 0.12585499316005472
+        },
+        "hypsometry": {
+          "hypsometry_mode": "legacy_max",
+          "hypsometry_algorithm_version": 1,
+          "land_scale_m": 9000.0,
+          "land_max_m": 9000.0,
+          "anchor_raw": 8.500641400736406,
+          "ocean_scale_m": 10000.0
+        },
+        "rank_order_ok": true,
+        "land_components_unchanged": true
+      },
+      "power_tail_v2": {
+        "master_seed": 42,
+        "mode": "power_tail_v2",
+        "elapsed_s": 0.207,
+        "folding_ratio": 0.01,
+        "land_hypsometry": {
+          "land_cells": 9503,
+          "mean_m": 1435.5019988753863,
+          "max_m": 4527.952794793006,
+          "min_m": 3.984441179665534,
+          "p10": 519.16502193972,
+          "p25": 880.8457387238997,
+          "p50": 1342.2458969741772,
+          "p75": 1852.4056566782751,
+          "p90": 2430.606947256607,
+          "p95": 2999.999993163906,
+          "p99": 3845.9551742087824,
+          "frac_above_1km": 0.6852572871724718,
+          "frac_above_2km": 0.20067347153530465,
+          "frac_above_3km": 0.05008944543828265,
+          "frac_above_5km": 0.0,
+          "frac_above_7km": 0.0,
+          "frac_below_200m": 0.02272966431653162,
+          "frac_below_500m": 0.09323371566873619
+        },
+        "hypsometry": {
+          "hypsometry_mode": "power_tail_v2",
+          "hypsometry_algorithm_version": 2,
+          "anchor_quantile": 0.95,
+          "anchor_elevation_m": 3000.0,
+          "body_exponent": 0.7,
+          "max_elevation_m": 9000.0,
+          "land_cells": 9503,
+          "anchor_raw": 4.620536732704171,
+          "asymptote_ratio": 3.0,
+          "land_max_m": 4527.952794793006,
+          "land_mean_m": 1435.5019988753863,
+          "x_max": 1.839751936299704,
+          "exceeds_max_guardrail": false,
+          "ocean_scale_m": 10000.0
+        },
+        "rank_order_ok": true,
+        "land_components_unchanged": true
+      }
+    },
+    {
+      "legacy_max": {
+        "master_seed": 100,
+        "mode": "legacy_max",
+        "elapsed_s": 0.224,
+        "folding_ratio": 0.01,
+        "land_hypsometry": {
+          "land_cells": 9503,
+          "mean_m": 2232.3101846182676,
+          "max_m": 9000.0,
+          "min_m": 0.043306344261175155,
+          "p10": 131.94280767885124,
+          "p25": 922.653706463236,
+          "p50": 2030.2920372897356,
+          "p75": 3293.0143546663603,
+          "p90": 4408.8557263554485,
+          "p95": 5334.713431331168,
+          "p99": 7027.1600951625,
+          "frac_above_1km": 0.7360833421024939,
+          "frac_above_2km": 0.5109965274123961,
+          "frac_above_3km": 0.29895822371882563,
+          "frac_above_5km": 0.06271703672524466,
+          "frac_above_7km": 0.01031253288435231,
+          "frac_below_200m": 0.12585499316005472,
+          "frac_below_500m": 0.18773019046616857
+        },
+        "hypsometry": {
+          "hypsometry_mode": "legacy_max",
+          "hypsometry_algorithm_version": 1,
+          "land_scale_m": 9000.0,
+          "land_max_m": 9000.0,
+          "anchor_raw": 10.408874799010144,
+          "ocean_scale_m": 10000.0
+        },
+        "rank_order_ok": true,
+        "land_components_unchanged": true
+      },
+      "power_tail_v2": {
+        "master_seed": 100,
+        "mode": "power_tail_v2",
+        "elapsed_s": 0.208,
+        "folding_ratio": 0.01,
+        "land_hypsometry": {
+          "land_cells": 9503,
+          "mean_m": 1515.4887519980139,
+          "max_m": 4282.461002624687,
+          "min_m": 0.8198408517860383,
+          "p10": 225.11966240019268,
+          "p25": 878.3560536688533,
+          "p50": 1525.5781014543325,
+          "p75": 2140.2229895711034,
+          "p90": 2625.255685863347,
+          "p95": 2999.999911663672,
+          "p99": 3630.571891645986,
+          "frac_above_1km": 0.717773334736399,
+          "frac_above_2km": 0.30106282226665265,
+          "frac_above_3km": 0.05008944543828265,
+          "frac_above_5km": 0.0,
+          "frac_above_7km": 0.0,
+          "frac_below_200m": 0.08955066821003893,
+          "frac_below_500m": 0.17362938019572766
+        },
+        "hypsometry": {
+          "hypsometry_mode": "power_tail_v2",
+          "hypsometry_algorithm_version": 2,
+          "anchor_quantile": 0.95,
+          "anchor_elevation_m": 3000.0,
+          "body_exponent": 0.7,
+          "max_elevation_m": 9000.0,
+          "land_cells": 9503,
+          "anchor_raw": 6.169818243924881,
+          "asymptote_ratio": 3.0,
+          "land_max_m": 4282.461002624687,
+          "land_mean_m": 1515.4887519980139,
+          "x_max": 1.6870634413354486,
+          "exceeds_max_guardrail": false,
+          "ocean_scale_m": 10000.0
+        },
+        "rank_order_ok": true,
+        "land_components_unchanged": true
+      }
+    }
+  ]
+}

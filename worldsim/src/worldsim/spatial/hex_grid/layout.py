@@ -1,7 +1,10 @@
-"""Flat-top hex layout on cylindrical equal-area plane (Milestone 15).
+"""Flat-top hex layout on cylindrical equal-area plane (Milestone 15 / PR-1).
 
 Grid is 256×128 = 32 768 cells. Placement is uniform in normalised ``(x, y)``
 (equal-area cylindrical), so hexes cover approximately equal surface area.
+
+PR-1 layout algorithm v2: odd-q columns occupy interleaved half-rows so centres
+never clip to ``y = ±1`` and the latitude field is N–S symmetric.
 """
 
 from __future__ import annotations
@@ -12,6 +15,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from worldsim.spatial.coordinates import wrap_x, y_to_lat
+
+# Bump when centre geometry changes — invalidates hex caches / aggregates.
+HEX_LAYOUT_ALGORITHM_VERSION = 2
 
 # Flat-top odd-q offset neighbour deltas (dq, dr) for even / odd columns.
 _NEIGH_EVEN_Q: tuple[tuple[int, int], ...] = (
@@ -60,20 +66,22 @@ def hex_qr(hex_index: int, *, width: int) -> tuple[int, int]:
     return int(hex_index) % int(width), int(hex_index) // int(width)
 
 
+def _half_row_index(q: int, r: int) -> int:
+    """Interleaved half-row in ``[0, 2*height)`` for balanced odd-q stagger."""
+    return 2 * int(r) + (int(q) & 1)
+
+
 def hex_center_xy(q: int, r: int, *, width: int, height: int) -> tuple[float, float]:
     """Centre of hex ``(q,r)`` in normalised cylindrical ``(x, y)``.
 
-    ``r = 0`` is north (``y → +1``). Flat-top odd-q stagger in x/y.
+    ``r = 0`` is north (``y → +1``). Flat-top odd-q stagger uses interleaved
+    half-rows so no centre reaches the poles ``y = ±1``.
     """
-    # Base rectangular equal-area lattice
     x = (float(q) + 0.5) / float(width)
-    y = 1.0 - (float(r) + 0.5) * 2.0 / float(height)
-    # Flat-top stagger: odd columns shift south by half a row spacing in y
-    if q & 1:
-        y -= (2.0 / float(height)) * 0.5
-    # Keep y in bounds without N–S wrap
-    y = float(np.clip(y, -1.0, 1.0))
-    return wrap_x(x), y
+    half = _half_row_index(q, r)
+    # half ∈ [0, 2H-1] → y ∈ (1 - 0.5/H, -1 + 0.5/H)
+    y = 1.0 - (float(half) + 0.5) / float(height)
+    return wrap_x(x), float(y)
 
 
 def all_hex_centers(spec: HexGridSpec) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
@@ -90,18 +98,18 @@ def all_hex_centers(spec: HexGridSpec) -> tuple[NDArray[np.float64], NDArray[np.
 
 def xy_to_hex(x: float, y: float, *, width: int, height: int) -> tuple[int, int]:
     """Approximate inverse: nearest hex by odd-q flat-top lattice."""
-    # Undo stagger estimate: try both parities
     y_c = float(np.clip(y, -1.0, 1.0))
     x_c = wrap_x(x)
     q0 = int(np.clip(np.floor(x_c * width), 0, width - 1))
     best_q, best_r = q0, 0
     best_d = 1e9
+    half_est = (1.0 - y_c) * float(height) - 0.5
     for dq in (-1, 0, 1):
         q = (q0 + dq) % width
-        # candidate rows around expected
-        r_est = (1.0 - y_c) * 0.5 * height - 0.5
         if q & 1:
-            r_est += 0.5
+            r_est = (half_est - 1.0) * 0.5
+        else:
+            r_est = half_est * 0.5
         for dr in (-1, 0, 1):
             r = int(np.clip(round(r_est) + dr, 0, height - 1))
             cx, cy = hex_center_xy(q, r, width=width, height=height)
@@ -118,11 +126,10 @@ def xy_to_hex(x: float, y: float, *, width: int, height: int) -> tuple[int, int]
 
 
 def _center_xy_unclipped(q: int, r: int, *, width: int, height: int) -> tuple[float, float]:
-    """Centre without N/S clip — used for Voronoi corners (phantom neighbours OK)."""
+    """Centre for Voronoi corners (phantom N/S neighbours may leave domain)."""
     x = (float(q) + 0.5) / float(width)
-    y = 1.0 - (float(r) + 0.5) * 2.0 / float(height)
-    if int(q) & 1:
-        y -= (2.0 / float(height)) * 0.5
+    half = _half_row_index(q, r)
+    y = 1.0 - (float(half) + 0.5) / float(height)
     return wrap_x(x), float(y)
 
 
@@ -137,9 +144,9 @@ def _unwrap_x_near(x: float, ref: float) -> float:
 
 
 def hex_corner_offsets(*, width: int, height: int) -> tuple[tuple[float, float], ...]:
-    """Deprecated approximate offsets (leave gaps on odd-q stagger). Prefer ``hex_vertices_xy``."""
+    """Deprecated approximate offsets. Prefer ``hex_vertices_xy``."""
     dx = 1.0 / float(width)
-    dy = 2.0 / float(height)
+    dy = 1.0 / float(height)  # half-row spacing in y for layout v2
     return (
         (0.5 * dx, 0.0),
         (0.25 * dx, -0.5 * dy),
@@ -161,7 +168,6 @@ def hex_vertices_xy(
 
     Each corner is the mean of this centre and two consecutive neighbour centres
     (E–W wrap; phantom centres past N/S edges). Adjacent hexes share edges — no gaps.
-    Order follows neighbour winding: NE, E, SE, SW, W, NW triples.
     """
     cx, cy = _center_xy_unclipped(q, r, width=width, height=height)
     deltas = _NEIGH_ODD_Q if (int(q) & 1) else _NEIGH_EVEN_Q

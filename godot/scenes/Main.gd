@@ -58,6 +58,12 @@ const _MODE_UI := {
 @onready var moist_land_et_spin: SpinBox = %MoistLandEtSpin
 @onready var moist_cont_dry_spin: SpinBox = %MoistContDrySpin
 @onready var moist_lee_dry_spin: SpinBox = %MoistLeeDrySpin
+@onready var moist_plume_spin: SpinBox = %MoistPlumeSpin
+@onready var moist_land_store_spin: SpinBox = %MoistLandStoreSpin
+@onready var moist_itcz_scale_spin: SpinBox = %MoistItczScaleSpin
+@onready var moist_itcz_width_spin: SpinBox = %MoistItczWidthSpin
+@onready var moist_monsoon_spin: SpinBox = %MoistMonsoonSpin
+@onready var moist_monsoon_band_max_spin: SpinBox = %MoistMonsoonBandMaxSpin
 @onready var precip_scale_spin: SpinBox = %PrecipScaleSpin
 @onready var generate_btn: Button = %GenerateBtn
 @onready var load_btn: Button = %LoadBtn
@@ -240,6 +246,12 @@ func _generation_knobs() -> Dictionary:
 		"moisture_land_et_rate": float(moist_land_et_spin.value),
 		"moisture_continentality_dry": float(moist_cont_dry_spin.value),
 		"moisture_lee_dry": float(moist_lee_dry_spin.value),
+		"moisture_plume_strength": float(moist_plume_spin.value),
+		"moisture_land_store_capacity": float(moist_land_store_spin.value),
+		"moisture_itcz_convective_scale": float(moist_itcz_scale_spin.value),
+		"moisture_itcz_width_deg": float(moist_itcz_width_spin.value),
+		"moisture_monsoon_strength": float(moist_monsoon_spin.value),
+		"moisture_monsoon_lat_band_max_abs_deg": float(moist_monsoon_band_max_spin.value),
 		"precip_scale_mm": float(precip_scale_spin.value),
 	}
 
@@ -329,6 +341,12 @@ moisture:
   land_et_rate: %.4f
   continentality_dry: %.4f
   lee_dry: %.4f
+  plume_strength: %.4f
+  land_store_capacity: %.4f
+  itcz_convective_scale: %.4f
+  itcz_width_deg: %.4f
+  monsoon_strength: %.4f
+  monsoon_lat_band_max_abs_deg: %.4f
 
 generation:
   quality: final
@@ -364,6 +382,12 @@ generation:
 		float(knobs["moisture_land_et_rate"]),
 		float(knobs["moisture_continentality_dry"]),
 		float(knobs["moisture_lee_dry"]),
+		float(knobs["moisture_plume_strength"]),
+		float(knobs["moisture_land_store_capacity"]),
+		float(knobs["moisture_itcz_convective_scale"]),
+		float(knobs["moisture_itcz_width_deg"]),
+		float(knobs["moisture_monsoon_strength"]),
+		float(knobs["moisture_monsoon_lat_band_max_abs_deg"]),
 	]
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:

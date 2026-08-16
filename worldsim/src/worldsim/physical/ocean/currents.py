@@ -10,6 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from worldsim.physical.terrain.waterbodies import label_water_bodies, ocean_basin_ids
+from worldsim.spatial.metrics import EARTH_RADIUS_KM, GridMetrics, grid_metrics
 
 
 def basin_ids_on_mask(ocean_mask: NDArray[np.bool_]) -> NDArray[np.int32]:
@@ -21,17 +22,32 @@ def basin_ids_on_mask(ocean_mask: NDArray[np.bool_]) -> NDArray[np.int32]:
 def western_eastern_boundary_masks(
     ocean_mask: NDArray[np.bool_],
     *,
-    width_cells: int = 3,
+    width_cells: int | None = None,
+    width_km: float | None = None,
+    metrics: GridMetrics | None = None,
+    planet_radius_km: float = EARTH_RADIUS_KM,
 ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
-    """Ocean strips adjacent to land on the west / east (cylindrical)."""
+    """Ocean strips adjacent to land on the west / east (cylindrical).
+
+    Prefer ``width_km`` + metrics (PR-3). ``width_cells`` remains for legacy.
+    """
     ocean = np.asarray(ocean_mask, dtype=np.bool_)
+    h, w = ocean.shape
+    if width_km is not None:
+        if metrics is None:
+            metrics = grid_metrics(w, h, radius_km=planet_radius_km)
+        cells = metrics.cells_from_km_ew(float(width_km), metrics.height // 2)
+        n_cells = max(1, int(round(cells)))
+    else:
+        n_cells = max(1, int(width_cells if width_cells is not None else 3))
+
     western = np.zeros(ocean.shape, dtype=np.bool_)
     eastern = np.zeros(ocean.shape, dtype=np.bool_)
     # Seed: ocean cell with land immediately west / east
     western |= ocean & ~np.roll(ocean, 1, axis=1)
     eastern |= ocean & ~np.roll(ocean, -1, axis=1)
-    # Grow a few cells into the basin (eastward from west coast, westward from east)
-    for _ in range(max(0, width_cells - 1)):
+    # Grow into the basin (eastward from west coast, westward from east)
+    for _ in range(max(0, n_cells - 1)):
         western |= ocean & np.roll(western, -1, axis=1)
         eastern |= ocean & np.roll(eastern, 1, axis=1)
     # Prefer western label if both (narrow seas)
@@ -164,6 +180,10 @@ def build_monthly_currents(
     ocean_mask: NDArray[np.bool_],
     elevation_m: NDArray[np.floating] | None = None,
     months: int | None = None,
+    boundary_width_km: float | None = None,
+    boundary_width_cells: int | None = None,
+    metrics: GridMetrics | None = None,
+    planet_radius_km: float = EARTH_RADIUS_KM,
 ) -> dict[str, NDArray]:
     """Return monthly ``current_u``, ``current_v`` plus basin/boundary masks."""
     ocean = np.asarray(ocean_mask, dtype=np.bool_)
@@ -172,7 +192,15 @@ def build_monthly_currents(
     n = int(months if months is not None else wu.shape[0])
     h, w = ocean.shape
     basin = basin_ids_on_mask(ocean)
-    western, eastern = western_eastern_boundary_masks(ocean)
+    if metrics is None and boundary_width_km is not None:
+        metrics = grid_metrics(w, h, radius_km=planet_radius_km)
+    western, eastern = western_eastern_boundary_masks(
+        ocean,
+        width_km=boundary_width_km,
+        width_cells=boundary_width_cells,
+        metrics=metrics,
+        planet_radius_km=planet_radius_km,
+    )
 
     depth = None
     if elevation_m is not None:

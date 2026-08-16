@@ -12,7 +12,11 @@ from numpy.typing import NDArray
 
 from worldsim.physical.atmosphere import AtmosphereParams, build_atmosphere
 from worldsim.physical.atmosphere.pipeline import AtmosphereResult
-from worldsim.physical.climate.pipeline import ClimateResult, downsample_mean
+from worldsim.physical.climate.pipeline import (
+    ClimateResult,
+    downsample_mean,
+    replace_climate_temperature,
+)
 from worldsim.physical.erosion.fluvial import apply_fluvial_erosion
 from worldsim.physical.erosion.pass_one import (
     count_land_local_minima,
@@ -21,6 +25,7 @@ from worldsim.physical.erosion.pass_one import (
 )
 from worldsim.physical.erosion.pipeline import ErosionResult, _macro_relief_correlation
 from worldsim.physical.hydrology import HydrologyParams, HydrologyResult, build_hydrology
+from worldsim.physical.landforms import LandformParams, LandformResult, build_landform_analysis
 from worldsim.physical.moisture import MoistureParams, MoistureResult, build_moisture
 from worldsim.physical.ocean import (
     OceanParams,
@@ -46,6 +51,9 @@ class FinalRecalcParams:
     ocean: OceanParams = field(default_factory=OceanParams)
     moisture: MoistureParams = field(default_factory=MoistureParams)
     hydrology: HydrologyParams = field(default_factory=HydrologyParams)
+    landforms: LandformParams = field(default_factory=LandformParams)
+    landform_analysis_width: int | None = None
+    landform_analysis_height: int | None = None
 
 
 @dataclass
@@ -61,7 +69,8 @@ class FinalRecalcResult:
     moisture: MoistureResult
     hydrology: HydrologyResult
     vectors: VectorGeographyResult
-    diagnostics: dict[str, Any]
+    landforms: LandformResult | None = None
+    diagnostics: dict[str, Any] = field(default_factory=dict)
 
     def save(self, directory: Path) -> None:
         directory.mkdir(parents=True, exist_ok=True)
@@ -78,6 +87,8 @@ class FinalRecalcResult:
         self.moisture.save(directory / "moisture")
         self.hydrology.save(directory / "hydrology")
         self.vectors.save(directory / "vectors")
+        if self.landforms is not None:
+            self.landforms.save(directory / "landforms")
         (directory / "final_diagnostics.json").write_text(
             json.dumps(self.diagnostics, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -102,23 +113,23 @@ def correct_climate_for_dem(
     # Only apply lapse on land elevation changes
     dT = -lapse_rate_c_per_km * np.where(ocean, 0.0, delta_km)
     temp = climate.temperature_c + dT[np.newaxis, :, :]
-    return ClimateResult(
-        extent=climate.extent,
-        latitude_deg=climate.latitude_deg,
-        insolation=climate.insolation,
-        temperature_c=temp,
-        continentality=climate.continentality,
+    diag = {
+        **climate.diagnostics,
+        "climate_correction": "lapse_from_dem_v2",
+        "lapse_owner": "final_dem_delta",
+        "mean_abs_temp_delta_c": float(np.mean(np.abs(dT[~ocean])))
+        if np.any(~ocean)
+        else 0.0,
+        "elev_v1_climate_mean": float(e1[~ocean].mean()) if np.any(~ocean) else 0.0,
+        "elev_v2_climate_mean": float(e2[~ocean].mean()) if np.any(~ocean) else 0.0,
+    }
+    prior_lapse = int(diag.get("lapse_apply_count", 1) or 1)
+    diag["lapse_apply_count"] = prior_lapse + 1
+    return replace_climate_temperature(
+        climate,
+        temp,
+        diagnostics=diag,
         elevation_m=elev_new,
-        ocean_mask=climate.ocean_mask,
-        diagnostics={
-            **climate.diagnostics,
-            "climate_correction": "lapse_from_dem_v2",
-            "mean_abs_temp_delta_c": float(np.mean(np.abs(dT[~ocean])))
-            if np.any(~ocean)
-            else 0.0,
-            "elev_v1_climate_mean": float(e1[~ocean].mean()) if np.any(~ocean) else 0.0,
-            "elev_v2_climate_mean": float(e2[~ocean].mean()) if np.any(~ocean) else 0.0,
-        },
     )
 
 
@@ -218,12 +229,18 @@ def build_final_recalculation(
             months=params.months,
             sst_mix=params.ocean.sst_mix,
             inland_decay_cells=params.ocean.inland_decay_cells,
+            inland_decay_km=params.ocean.inland_decay_km,
+            western_boundary_width_km=params.ocean.western_boundary_width_km,
+            western_boundary_width_cells=params.ocean.western_boundary_width_cells,
             western_warm_c=params.ocean.western_warm_c,
             eastern_cool_c=params.ocean.eastern_cool_c,
+            planet_radius_km=params.ocean.planet_radius_km,
         ),
     )
     # Plan B1: Holdridge / hex / atlas temperatures follow ocean SST + inland decay
     climate_c = apply_ocean_temperature_to_climate(climate_c, ocean_circ)
+    climate_c.diagnostics["temperature_state"] = "temperature_final_c"
+    climate_c.diagnostics["provenance_lapse_then_sst"] = True
     moisture_params = MoistureParams(
         months=params.months,
         advect_steps=params.moisture.advect_steps,
@@ -237,6 +254,10 @@ def build_final_recalculation(
         land_et_rate=params.moisture.land_et_rate,
         continentality_dry=params.moisture.continentality_dry,
         lee_dry=params.moisture.lee_dry,
+        diffusion_mix_per_month=params.moisture.diffusion_mix_per_month,
+        spinup_max_years=params.moisture.spinup_max_years,
+        spinup_tolerance_relative=params.moisture.spinup_tolerance_relative,
+        spinup_tolerance_absolute=params.moisture.spinup_tolerance_absolute,
     )
     # First pass (ocean/land only) drives hydrology; lakes/rivers do not exist yet.
     moisture = build_moisture(
@@ -289,6 +310,25 @@ def build_final_recalculation(
         terrain=terrain,
     )
 
+    # PR-9 — LandformAnalysis on unconditioned elevation_v2 (analysis grid)
+    aw = params.landform_analysis_width or climate_c.extent.width
+    ah = params.landform_analysis_height or climate_c.extent.height
+    landforms = build_landform_analysis(
+        elevation_m=elev_v2,
+        ocean_mask=ocean,
+        extent=erosion_v1.extent,
+        analysis_width=aw,
+        analysis_height=ah,
+        orogenic_potential=(
+            interpretation.orogenic_potential if interpretation is not None else None
+        ),
+        tectonic_activity=(
+            interpretation.tectonic_activity if interpretation is not None else None
+        ),
+        params=params.landforms,
+        reporter=reporter,
+    )
+
     stable = (
         corr >= 0.95
         and max_abs < 0.35 * elev_range + 50.0
@@ -320,6 +360,10 @@ def build_final_recalculation(
         "no_catastrophic_feedback": no_catastrophe,
         "hydrology_final_ok": bool(hydrology.diagnostics.get("acceptance_ok")),
         "vectors_final_ok": bool(vectors.diagnostics.get("acceptance_ok")),
+        "landforms_ok": bool(landforms.diagnostics.get("acceptance_ok")),
+        "landform_algorithm": landforms.diagnostics.get("algorithm"),
+        "mountain_range_count": landforms.diagnostics.get("mountain_range_count"),
+        "plateau_count": landforms.diagnostics.get("plateau_count"),
         "climate_mean_abs_temp_delta_c": climate_c.diagnostics.get(
             "mean_abs_temp_delta_c"
         ),
@@ -351,5 +395,6 @@ def build_final_recalculation(
         moisture=moisture,
         hydrology=hydrology,
         vectors=vectors,
+        landforms=landforms,
         diagnostics=diagnostics,
     )

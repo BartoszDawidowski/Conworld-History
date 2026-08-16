@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -87,8 +89,18 @@ def gate_river_mask_by_discharge(
     ocean_mask: NDArray[np.bool_],
     *,
     candidate_quantile: float = 0.50,
-) -> tuple[NDArray[np.bool_], dict[str, float | int]]:
-    """Keep wetter DEM river candidates by catchment Q; inherit downstream on network."""
+    min_effective_discharge: float | None = None,
+    inherit_downstream: bool = False,
+) -> tuple[NDArray[np.bool_], dict[str, Any]]:
+    """Keep river candidates with sufficient effective Q (PR-6).
+
+    Default: **no** downstream inheritance — cells with Q below the physical
+    threshold stay dry even if a wet seed exists upstream (wadi extinction).
+    Nil-like corridors survive only where effective Q remains above threshold.
+
+    ``inherit_downstream=True`` restores the legacy Plan B7 behaviour (tests /
+    display experiments only).
+    """
     ocean = np.asarray(ocean_mask, dtype=np.bool_)
     candidate = np.asarray(candidate_mask, dtype=np.bool_) & ~ocean
     q = np.asarray(discharge_proxy, dtype=np.float64)
@@ -100,13 +112,20 @@ def gate_river_mask_by_discharge(
             "river_discharge_threshold": 0.0,
             "river_seed_cells": 0,
             "river_gate_candidate_quantile": float(candidate_quantile),
+            "river_inherit_downstream": bool(inherit_downstream),
         }
-    thr = max(_land_quantile(q, candidate, candidate_quantile), 1e-9)
+    if min_effective_discharge is not None:
+        thr = max(float(min_effective_discharge), 0.0)
+    else:
+        thr = max(_land_quantile(q, candidate, candidate_quantile), 1e-9)
     seeds = candidate & (q >= thr)
-    gated = propagate_downstream_on_mask(
-        seeds, flow_direction, ocean, limit_mask=candidate
-    )
-    gated |= seeds
+    if inherit_downstream:
+        gated = propagate_downstream_on_mask(
+            seeds, flow_direction, ocean, limit_mask=candidate
+        )
+        gated |= seeds
+    else:
+        gated = seeds
     after = int(np.count_nonzero(gated))
     return gated, {
         "river_cells_before_gate": before,
@@ -114,6 +133,12 @@ def gate_river_mask_by_discharge(
         "river_discharge_threshold": thr,
         "river_seed_cells": int(np.count_nonzero(seeds)),
         "river_gate_candidate_quantile": float(candidate_quantile),
+        "river_inherit_downstream": bool(inherit_downstream),
+        "river_min_effective_discharge": (
+            float(min_effective_discharge)
+            if min_effective_discharge is not None
+            else None
+        ),
     }
 
 

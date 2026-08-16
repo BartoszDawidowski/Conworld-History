@@ -1,0 +1,12 @@
+{
+  "path": "annual_precip.png",
+  "lo": 0.0,
+  "hi": 40.0,
+  "unit": "moisture_proxy_annual",
+  "shape": [
+    64,
+    128
+  ],
+  "stretch": "absolute",
+  "note": "Fixed absolute legend [0, 40] proxy units across seeds"
+}

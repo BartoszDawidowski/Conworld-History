@@ -2,6 +2,7 @@ schema_version: 2
 
 planet:
   earth_like: true
+  radius_km: 6371.0
   axial_tilt_deg: 23.44
   orbital_eccentricity: 0.0167
   solar_constant_relative: 1.0
@@ -29,7 +30,9 @@ resolution:
 
 ocean:
   fraction_target: 0.71
-  # Atlas-tuned climate coupling (2026-08-15)
+  # Atlas-tuned climate coupling (2026-08-15). Cell count is legacy; PR-1
+  # migrates to sst_inland_decay_km via Atlas climate mid-latitude EW spacing.
+  # Optional override: sst_inland_decay_km: <km>
   sst_mix: 0.4
   inland_decay_cells: 60.0
   western_warm_c: 2.2
@@ -50,6 +53,13 @@ terrain:
   orogeny_boost: 0.05
   activity_relief: 0.25
   boundary_relief: 0.35
+  # PR-2: default legacy_max (identity vs M5). Enable power_tail_v2 after calibration.
+  hypsometry_mode: legacy_max
+  hypsometry_anchor_quantile: 0.95
+  hypsometry_anchor_elevation_m: 3000.0
+  hypsometry_body_exponent: 0.70
+  # hypsometry_max_elevation_m: 9000.0  # defaults to land_scale_m when omitted
+  hypsometry_tail_softness: 1.0
 
 erosion:
   iterations: 5
@@ -77,6 +87,23 @@ moisture:
   land_et_rate: 0.4
   continentality_dry: 0.4
   lee_dry: 0.12
+  # PR-4 — physical diffusion + periodic climatology spin-up
+  diffusion_mix_per_month: 0.08
+  spinup_max_years: 4
+  spinup_tolerance_relative: 0.02
+  spinup_tolerance_absolute: 0.001
+  # PR-7 / revised B8 — inside moisture budget (no post-hoc rain)
+  plume_strength: 0.18
+  land_store_capacity: 8.0
+  itcz_convective_scale: 1.2
+  itcz_width_deg: 8.0
+  # PR-8 / revised B9 — transport-first monsoon (wind anomaly into moisture)
+  monsoon_strength: 0.4
+  monsoon_lat_band_min_abs_deg: 5.0
+  monsoon_lat_band_max_abs_deg: 32.0
+  monsoon_max_anomaly_ms: 3.5
+  monsoon_coast_reach_cells: 10.0
+  monsoon_temp_scale_c: 8.0
 
 # Plan B7 — precip-aware river/lake visibility (DEM topology unchanged)
 hydrology:
@@ -92,6 +119,7 @@ hydrology:
   lake_inflow_land_quantile: 0.75
   # Channel transmission losses (Nil OK / wadi dies); 0 = gross accuflux only.
   transmission_rate: 0.45
+  # PR-6 — snow/runoff (defaults); optional river_min_effective_discharge for absolute Q floor
 
 generation:
   quality: final

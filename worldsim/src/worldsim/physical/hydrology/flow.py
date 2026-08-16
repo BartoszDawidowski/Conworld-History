@@ -1,4 +1,4 @@
-"""PyFlwDir flow / accumulation / basins / streams (Milestone 11)."""
+"""PyFlwDir DEM conditioning + canonical cylindrical graph products (PR-5)."""
 
 from __future__ import annotations
 
@@ -17,6 +17,12 @@ from worldsim.physical.hydrology.conditioning import (
     ew_pad,
     wrap_pad_cells,
 )
+from worldsim.physical.hydrology.cylindrical_graph import (
+    CylindricalFlowGraph,
+    accumulate_weights,
+    build_cylindrical_graph,
+    graph_products,
+)
 
 
 def run_pyflwdir_core(
@@ -26,11 +32,11 @@ def run_pyflwdir_core(
     nodata: float = NODATA,
     max_depth: float = -1.0,
 ) -> dict[str, Any]:
-    """Condition DEM and derive D8 flow products with E–W wrap padding.
+    """Fill DEM on a padded domain, crop D8, then build the canonical graph.
 
-    Returns rasters cropped to the original grid plus the actionable
-    ``FlwdirRaster`` for further accumulation (also on the padded domain —
-    callers that need ``accuflux`` should prefer :func:`accuflux_on_land`).
+    Accumulation / basins / stream order come from
+    :class:`~worldsim.physical.hydrology.cylindrical_graph.CylindricalFlowGraph`
+    on the original width — not from cropping padded PyFlwDir products.
     """
     ocean = np.asarray(ocean_mask, dtype=np.bool_)
     h, w = ocean.shape
@@ -41,52 +47,32 @@ def run_pyflwdir_core(
     filled_p, d8_p = pyflwdir_dem.fill_depressions(
         dem_p, nodata=nodata, max_depth=max_depth, outlets="edge"
     )
+    # Local Flwdir only for fill metadata / validity; not used for routing.
     flw = pyflwdir.from_array(
         d8_p, ftype="d8", check_ftype=False, latlon=False
     )
 
-    flow_dir = ew_crop(flw.to_array(ftype="d8"), pad, w)
+    flow_dir = ew_crop(flw.to_array(ftype="d8"), pad, w).astype(np.uint8)
     filled = ew_crop(filled_p, pad, w)
-    # upstream area in cells; nodata on ocean
-    upa_p = flw.upstream_area(unit="cell")
-    flow_acc = ew_crop(upa_p.astype(np.float64), pad, w)
-    flow_acc = np.where(ocean, 0.0, np.where(flow_acc < 0, 0.0, flow_acc))
 
-    basins_p = flw.basins()
-    basin_id = ew_crop(basins_p.astype(np.int32), pad, w)
-    basin_id = np.where(ocean, 0, basin_id)
-
-    order_p = flw.stream_order()
-    stream_order = ew_crop(order_p.astype(np.int16), pad, w)
-    stream_order = np.where(ocean, 0, stream_order)
-
-    # Outlets / pits in padded index space → (row, col) original
-    outlets: list[tuple[int, int]] = []
-    for idx in list(flw.idxs_outlet) + list(flw.idxs_pit):
-        row, col_p = divmod(int(idx), dem_p.shape[1])
-        col = int(col_p) - pad
-        if 0 <= col < w and 0 <= row < h and not ocean[row, col]:
-            outlets.append((row, col))
-    # unique preserve order
-    seen: set[tuple[int, int]] = set()
-    outlet_points: list[tuple[int, int]] = []
-    for p in outlets:
-        if p not in seen:
-            seen.add(p)
-            outlet_points.append(p)
+    graph = build_cylindrical_graph(flow_dir, ocean)
+    products = graph_products(graph)
 
     return {
+        "graph": graph,
         "flw": flw,
         "pad": pad,
         "dem_conditioned_m": filled,
-        "flow_direction": flow_dir.astype(np.uint8),
-        "flow_accumulation": flow_acc,
-        "basin_id": basin_id,
-        "watershed_id": basin_id.copy(),
-        "stream_order": stream_order,
-        "outlet_points": outlet_points,
-        "isvalid": bool(flw.isvalid),
-        "nnodes": int(flw.nnodes),
+        "flow_direction": flow_dir,
+        "flow_accumulation": products["flow_accumulation"],
+        "basin_id": products["basin_id"],
+        "watershed_id": products["watershed_id"],
+        "stream_order": products["stream_order"],
+        "outlet_points": products["outlet_points"],
+        "downstream_flat": graph.downstream_flat,
+        "graph_diagnostics": products["graph_diagnostics"],
+        "isvalid": bool(flw.isvalid) and bool(products["graph_diagnostics"]["graph_valid"]),
+        "nnodes": int(np.count_nonzero(~ocean)),
     }
 
 
@@ -97,11 +83,17 @@ def accuflux_on_land(
     width: int,
     ocean_mask: NDArray[np.bool_],
     weights: NDArray[np.floating],
+    graph: CylindricalFlowGraph | None = None,
 ) -> NDArray[np.float64]:
-    """Accumulate ``weights`` along the padded flow graph; crop to grid."""
+    """Accumulate ``weights`` on the canonical graph (preferred).
+
+    ``flw`` / ``pad`` remain for call-site compatibility but are unused when
+    ``graph`` is provided. If ``graph`` is omitted, a graph is built from a
+    cropped D8 derived from ``flw`` (legacy path — prefer passing ``graph``).
+    """
     ocean = np.asarray(ocean_mask, dtype=np.bool_)
-    w_pad = ew_pad(np.asarray(weights, dtype=np.float64), pad)
-    w_pad = np.where(ew_pad(ocean, pad), 0.0, w_pad)
-    acc_p = flw.accuflux(w_pad)
-    acc = ew_crop(np.asarray(acc_p, dtype=np.float64), pad, width)
-    return np.where(ocean, 0.0, acc)
+    if graph is None:
+        d8_p = flw.to_array(ftype="d8")
+        d8 = ew_crop(d8_p, pad, width).astype(np.uint8)
+        graph = build_cylindrical_graph(d8, ocean)
+    return accumulate_weights(graph, weights)

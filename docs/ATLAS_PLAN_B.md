@@ -1,12 +1,13 @@
 # Atlas Plan B — presentation, climate coupling, UI
 
 > **Status:** **B1–B7 complete** (B7: 2026-08-16). Climate/geography defaults **user-retuned** (see §6 / `milestone_b5.md`).  
-> **Next when instructed:** **B8** (moisture v2) → **B9** (monsoon proxy) → **B10** (Full land polys).  
-> **Hydro UX follow-up:** ✅ flow-direction **layer** + channel transmission losses — §6.3.1 / `docs/validation/hydro_flow_and_transmission.md` (2026-08-16).  
+> **Next Plan B presentation when instructed:** **B10** (Full land polys) may run independently.  
+> **Next climate physics:** Realism **PR-0–PR-9 foundation complete**. Optional: PR-9E calibration / Godot landforms; atlas **B10** anytime. Tracker: [`PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md).  
+> **Hydro UX follow-up:** ✅ flow-direction **layer** + channel transmission losses — §6.3.1 / `docs/validation/hydro_flow_and_transmission.md` (2026-08-16). Annex still requires cylindrical graph + lake/wadi semantics (PR-5/PR-6).  
 > **Date:** 2026-08-16  
-> **Authority:** Post-A8 discussion + 2026-08-15 climate/hydro/moisture planning.  
+> **Authority:** Post-A8 discussion + 2026-08-15 climate/hydro/moisture planning; **amended 2026-08-16** by Physical Realism Annex.  
 > **Rule:** Execute **one Plan B milestone at a time**. Stop after each unless told to continue.  
-> **Physical World:** Prefer shallow hooks; do not reopen M0–19 as a rewrite. Raster SoT remains authoritative; new vectors/UI are presentation or thin climate correction.
+> **Physical World:** Prefer shallow hooks for atlas UX. Correctness follow-ups that touch M6/9/11/13 modules are allowed only via the realism PR track — not as an ad-hoc Plan B rewrite.
 
 ---
 
@@ -37,9 +38,10 @@ Plan A remains the historical record. Do not reopen A1–A8 unless a B milestone
 | 8 | Advanced generation | **Popup** (not inline expand). Close on outside click or ✕. Long help text → **(i)** hover tooltips next to fields. |
 | 9 | Zoom | Slider: **min = Fit**, **max = empirical** (see §5.3). |
 | 10 | Execution | One milestone at a time; validation note per milestone under `docs/validation/`. |
-| 11 | Rivers / lakes vs precip | Topology stays DEM-based; **visibility / masks** gated by catchment discharge (dry local OK if upstream wet). Optional stroke weight ∝ discharge. → **B7**. Follow-up: transmission losses (**Nil OK / wadi dies**) + flow **layer** — §6.3.1 / `hydro_flow_and_transmission.md`. |
-| 12 | Moisture realism | Soft inland plume + land ET recycling + ITCZ tropical source (proxy, not GCM). → **B8** |
-| 13 | Monsoon / trades | Trades already in Hadley (M7). Add **monsoon proxy A** (seasonal land↔ocean wind + moisture). → **B9** |
+| 11 | Rivers / lakes vs precip | Topology stays DEM-based; **visibility / masks** gated by catchment discharge (dry local OK if upstream wet). Optional stroke weight ∝ discharge. → **B7**. Follow-up: transmission losses (**Nil OK / wadi dies**) + flow **layer** — §6.3.1. Further graph/endorheic hardening → realism **PR-5/PR-6**. |
+| 12 | Moisture realism | Soft inland plume + land ET recycling + ITCZ (proxy, not GCM). → **B8 = PR-7**, only **after moisture correctness gate PR-4**. Mechanisms **amended**: no unconstrained post-hoc precip; all terms inside moisture budget. |
+| 13 | Monsoon / trades | Trades already in Hadley (M7). **Monsoon proxy A** → **B9 = PR-8** after PR-7. **Amended:** transport-first wind anomaly; direct precip multiplier is not primary. |
+| 14 | Physical realism annex | Corrective P0/P1 physics (hypsometry, GridMetrics, moisture budget, cylindrical hydro, landforms) lives in `PHYSICAL_REALISM_PLAN.md`, not as new B-milestones except revised B8/B9. |
 
 ---
 
@@ -215,13 +217,13 @@ Candidates (building on A6 / B5):
 
 ### 6.1 Precipitation vs currents (design note)
 
-Moisture **already** consumes SST + `temperature_coupled_c`. Prefer transport/rainout / **B8–B9** over a separate “precip from currents” field (double-count risk).
+Moisture **already** consumes SST + `temperature_coupled_c`. Prefer transport/rainout / realism **PR-4 → B8–B9 (PR-7/8)** over a separate “precip from currents” field (double-count risk).
 
 ### 6.2 Moisture inland reach (post-B4 / B5)
 
 **Symptom (pre-retune):** narrow coastal wet fringe; knobs change absolute precip but interior/coast **ratio** stayed similar; precip PNG min–max hid changes (fixed to absolute scale).
 
-**B5:** expose M9 constants + later default retune (above). **Do not** treat further knob-only tuning as sufficient for continental interiors — see **B8**.
+**B5:** expose M9 constants + later default retune (above). **Do not** treat further knob-only tuning as sufficient for continental interiors — see realism **PR-4** then revised **B8 (PR-7)**. Do not retune advect/rainout knobs to “fix” annex P0 bugs.
 
 | Knob | Packaged default (post-retune) | Role |
 |---|---|---|
@@ -231,7 +233,7 @@ Moisture **already** consumes SST + `temperature_coupled_c`. Prefer transport/ra
 | `moisture_orographic_frac` | `0.85` | Orography / rain shadow |
 | `moisture_convective_scale` | `2.0` | Tropical convection scale |
 | `moisture_ocean_evap_rate` | `1.4` | Ocean source |
-| `moisture_land_et_rate` | `0.4` | Land ET (static; **B8** makes state-dependent) |
+| `moisture_land_et_rate` | `0.4` | Land ET (static; **PR-7/B8** makes water-limited) |
 | `moisture_continentality_dry` | `0.4` | Interior capacity penalty |
 | `moisture_lee_dry` | `0.12` | Lee drying |
 
@@ -255,25 +257,28 @@ Moisture **already** consumes SST + `temperature_coupled_c`. Prefer transport/ra
 | Distant-fed lakes | **Keep** if effective inflow from far wet sources remains sufficient; dry playas without it stay omitted. |
 | Atmospheric lake/river evap | Unchanged role (moisture #2 → ecology). Not a substitute for channel losses. |
 | Self-feed | Still: moisture #1 → hydro/gates → moisture #2. No re-gate on lake self-humidity. |
+| Remaining (annex) | Canonical E–W periodic graph; monthly effective Q; no unconditional downstream river-mask inheritance; explicit open/endorheic/playa; inlet/outlet metadata — **PR-5/PR-6**, not another Plan B UX patch. |
 
-### 6.4 Moisture v2 — plume, recycling, ITCZ (**B8**)
+### 6.4 Moisture v2 — plume, recycling, ITCZ (**B8 = PR-7**)
 
-Three additive proxies (all in scope):
+**Gate:** Do not implement or tune B8 until realism **PR-4** (moisture direction, budget, spin-up, diagnostics) is accepted. See annex §10.1 / `PHYSICAL_REALISM_PLAN.md`.
 
-| Piece | Intent | Sketch |
+Three proxies remain in scope; **implementation constraints amended** (annex §10.7):
+
+| Piece | Intent | Amended sketch |
 |---|---|---|
-| **Soft inland plume** | Widen wet influence beyond advection+rainout collapse | After M9 transport (or blended): moisture/precip contribution decaying with distance-to-ocean (same family as SST `inland_decay_cells`, own scale knob) |
-| **Land ET recycling** | Wet land sustains local humidity | `land_et` × f(recent precip / soil moisture / humidity) instead of flat rate |
-| **ITCZ / tropical source** | Rain under ITCZ even far inland | Band following monthly ITCZ latitude with convective source independent of coastal `q` alone |
+| **Soft inland plume** | Widen wet influence beyond advection+rainout collapse | Transports/mixes **existing** `q`; preferably wind-/flow-aligned; subject to orographic rainout and **q budget**. Isotropic distance-to-ocean may be low-weight fallback/diagnostic — **not** an unconstrained final rain layer. |
+| **Land ET recycling** | Wet land sustains local humidity | Bounded land-water store; ET water-limited (not temperature-only). |
+| **ITCZ / tropical source** | Stronger rain under monthly ITCZ | Strengthens convergence/convection **limited by available moisture**; must not double-count base convection. |
 
-Expose new scales as Advanced knobs with conservative defaults that approximately preserve post-retune look when “off” / identity.
+Expose new scales as Advanced knobs. Defaults chosen after PR-4 validation — do not retune in the same milestone that ships the gate.
 
-### 6.5 Monsoon proxy A + trades note (**B9**)
+### 6.5 Monsoon proxy A + trades note (**B9 = PR-8**)
 
 **Trades:** already present in M7 Hadley (`wind_u` easterly + meridional toward ITCZ). Not true 3D trades, but directionally correct — **no rewrite required** for B9 beyond using them.
 
-**Monsoon (approach A — agreed):** seasonal land↔ocean wind anomaly from land–SST contrast (warm land in summer → onshore moisture advection; winter weaker/offshore or null), applied mainly in tropical/subtropical bands near large landmasses. Optional light precip boost tied to onshore months.  
-**Not in B9:** full pressure-solver monsoon (approach C) or standalone wet-belt without wind (B alone) — A is enough; wet-belt may emerge from A + B8 ITCZ.
+**Monsoon (approach A — amended):** seasonal land↔ocean **wind anomaly** from land–SST contrast → feed corrected wind into moisture transport. Preserve trades outside the active region. A **small optional** precip residual is allowed only inside the moisture budget after transport — not as the primary mechanism.  
+**Not in B9:** full pressure-solver monsoon (approach C) or standalone wet-belt without wind (B alone).
 
 ---
 
@@ -430,29 +435,30 @@ Execute in order unless a later note says otherwise. **Stop after each.**
 
 **Stop unless told to continue.**
 
-**Follow-up (not part of shipped B7):** flow-direction **layer** + channel transmission losses (Nil OK / wadi dies; distant-fed lakes stay) — §6.3.1 / `docs/validation/hydro_flow_and_transmission.md`.
+**Follow-up (shipped 2026-08-16):** flow-direction **layer** + channel transmission losses — §6.3.1. Further hydro correctness → realism **PR-5/PR-6**.
 
 ---
 
 ### Milestone B8 — Moisture v2 (plume + recycling + ITCZ)
 
-**Status:** ⬜ Pending  
-**Design:** §6.4
+**Status:** ✅ **COMPLETE** (2026-08-16) — realism **PR-7**; see `docs/validation/physical_realism_pr7.md` (+ `milestone_b8.md` pointer)  
+**Design:** §6.4 + annex §10.7  
+**Tracker:** [`PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md)
 
-**Delivered when**
+**Delivered when** (annex acceptance wins on conflict)
 
-- **Soft inland plume:** distance-to-ocean decay contribution to moisture/precip (own scale; identity≈off).  
-- **Land ET recycling:** land evaporation scales with wetness state (precip/humidity/soil proxy), not flat `land_et_rate` alone.  
-- **ITCZ tropical source:** monthly band following ITCZ adds convective moisture/precip over land+ocean.  
-- New knobs in YAML + Advanced; defaults chosen so “neutral” settings ≈ post-retune B5 climate look.  
-- Diagnostics: interior/coast precip ratio; ITCZ band mean precip vs off-band.
+- Soft inland plume / mixing **inside** the moisture budget (no independent post-hoc rain field).  
+- Water-limited land ET recycling via bounded land store.  
+- Non-duplicative ITCZ convergence term limited by available `q`.  
+- New knobs in YAML + Advanced; budget/provenance diagnostics.  
+- Validation note: `docs/validation/physical_realism_pr7.md` (and optional `milestone_b8.md` pointer).
 
 **Acceptance**
 
-- Fixed seed: enabling plume raises interior precip relative to coast more than knob-only retune did (ratio moves, not only absolute scale).  
-- Recycling: persistently wet regions show higher land ET / local humidity than deserts at same T.  
-- ITCZ on: tropical land under the band wetter than same latitude far from band when plume alone is weak.  
-- Holdridge / precip maps change coherently; no NaNs; pipeline still `quality: final`.
+- Interior reach improves without erasing strong rain shadows.  
+- Moisture budget remains closed within tolerance.  
+- Wet-land ET exceeds desert ET at matched temperature.  
+- ITCZ seasonal movement visible; Holdridge/precip coherent; no NaN/Inf.
 
 **Stop unless told to continue.**
 
@@ -460,22 +466,23 @@ Execute in order unless a later note says otherwise. **Stop after each.**
 
 ### Milestone B9 — Monsoon proxy A
 
-**Status:** ⬜ Pending  
-**Design:** §6.5
+**Status:** ✅ **COMPLETE** (2026-08-16) — realism **PR-8**; see `docs/validation/physical_realism_pr8.md` (+ `milestone_b9.md` pointer)  
+**Design:** §6.5 + annex §10.8  
+**Tracker:** [`PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md)
 
 **Delivered when**
 
-- Seasonal land↔ocean wind anomaly from land–SST thermal contrast (tropical/subtropical, large landmasses).  
-- Onshore summer months increase moisture advection / precip near affected coasts and near-coast interiors; winter weakens or reverses lightly.  
+- Bounded seasonal land–SST **wind** anomaly into moisture transport.  
+- Precipitation seasonality follows transport; optional residual precip only inside budget.  
 - Uses existing Hadley/trades as base (no full circulation rewrite).  
-- Knobs: monsoon strength, latitude band, optional precip boost; default modest or off-until-tuned.  
-- Diagnostics: summer vs winter mean onshore `u`/`v` near sample tropical west/east coasts; precip seasonality index on land.
+- Knobs: monsoon strength, latitude band; default modest or off-until-tuned.  
+- Validation note: `docs/validation/physical_realism_pr8.md`.
 
 **Acceptance**
 
-- Fixed seed with large tropical continent: JJA vs DJF (or planet-month analogues) show opposite onshore tendency and wetter onshore season.  
-- Trades elsewhere remain easterly in Hadley (no global wind corruption).  
-- Atlas precip / Holdridge show seasonal contrast where monsoon engages.
+- Fixed seed with large tropical continent: opposite onshore tendency and wetter onshore season.  
+- Trades elsewhere remain coherent.  
+- Moisture budget remains closed.
 
 **Stop unless told to continue.**
 
@@ -506,7 +513,8 @@ Execute in order unless a later note says otherwise. **Stop after each.**
 - Replacing analytical hex SoT with display meshes.  
 - Automatic hyperparameter search.  
 - Requiring production-perfect coast curves before B4 land fill ships.  
-- Fully physically conserved water budget for every river cell.
+- Full groundwater / baseflow / dynamic lake volume (annex deferred).  
+- ~~Fully conserved atmospheric moisture budget~~ — **superseded:** budget closure is required under realism **PR-4** (annex §10). Channel hydrology remains a reduced-order discharge proxy, not metre-scale hydraulics.
 
 ---
 
@@ -518,21 +526,23 @@ When B1–B10 are complete (or a subset explicitly accepted as “B done”):
 - Atlas land reads as filled vector + elevation texture in elevation mode.  
 - Other modes sit on untextured land vector.  
 - UI matches §2 / §5.  
-- Rivers/lakes respect precip/discharge gating (B7); moisture v2 (B8); monsoon proxy (B9).  
+- Rivers/lakes respect precip/discharge gating (B7 + §6.3.1); revised moisture v2 (B8/PR-7); revised monsoon (B9/PR-8).  
 - Full land polys available (B10) or explicitly deferred.  
-- Each shipped milestone has `docs/validation/milestone_bN.md`.
+- Each shipped B milestone has `docs/validation/milestone_bN.md` (B8/B9 may point at `physical_realism_pr7/8.md`).  
+- Physical P0/P1 invariants from the annex are tracked under `PHYSICAL_REALISM_PLAN.md`, not claimed done by B1–B7 alone.
 
 ---
 
 ## 10. Suggested human instructions
 
 ```text
-Plan B: B1–B6 complete. Execute one milestone when told:
-  B7 ✅  |  B8 moisture v2  |  B9 monsoon A  |  B10 Full land
-Stop when that milestone’s acceptance is met.
+Plan B presentation: B10 Full land polys when requested (independent of PR track).
+
+Climate physics: do NOT start B8/B9 from Plan B alone.
+Use PHYSICAL_REALISM_PLAN.md: PR-0 → … → PR-4 gate → PR-7 (B8) → PR-8 (B9).
 ```
 
-Recommended climate order: **B7 → B8 → B9**.
+Recommended climate order: **B7 ✅ → (PR-0…PR-6) → B8/PR-7 → B9/PR-8 → B10 anytime**.
 
 ---
 
@@ -544,9 +554,10 @@ Recommended climate order: **B7 → B8 → B9**.
 | Inland decay / moisture knobs | User retune 2026-08-15 (§6) | Further only on request |
 | B7 discharge / lake precip thresholds | Rivers: candidate Q q=0.50. Lakes: rain p70 / river+not-arid p45 / T≥1°C (retune #2 vs desert+ice playas) | Further on request |
 | B7 follow-up: flow layer + transmission | ✅ Layer checkbox + effective Q (`transmission_rate=0.45`) — `hydro_flow_and_transmission.md` | Tune rate on request |
-| B8 plume / ITCZ / recycling scales | Neutral≈identity vs post-retune | B8 experiments |
-| B9 monsoon strength | Modest / expose | B9 after B8 |
+| B8 plume / ITCZ / recycling scales | After PR-4; budgeted terms | PR-7 / B8 experiments |
+| B9 monsoon strength | Modest / expose | PR-8 after PR-7 |
 | Land simplify tolerance | Atlas-only in B3 | If halo or over-smooth appears |
+| Realism PR defaults (hypsometry, spin-up, …) | Annex starting families | Per PR validation; never with correctness fix |
 
 ---
 
@@ -560,3 +571,4 @@ Recommended climate order: **B7 → B8 → B9**.
 | User 2026-08-15 decisions | §§1–2, 5 of this document |
 | User 2026-08-15 climate plan | §1 #11–13, §6.3–6.5, milestones **B7–B9**; Full land renumbered **B10** |
 | User 2026-08-16 hydro UX | §6.3.1; `docs/validation/hydro_flow_and_transmission.md` (flow layer; transmission losses) |
+| `WORLDGEN_PHYSICAL_REALISM_ANNEX.md` | §1 #12–14; §6.4–6.5 amended; B8/B9 = PR-7/PR-8 after PR-4; conflict C-01…C-10 in `PHYSICAL_REALISM_PLAN.md` |

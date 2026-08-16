@@ -285,6 +285,11 @@ def build_world_spatial_model(
         th, tw = np.asarray(elevation_terrain_m).shape
         resolutions["terrain"] = [int(tw), int(th)]
 
+    from worldsim.spatial.hex_grid.layout import HEX_LAYOUT_ALGORITHM_VERSION
+    from worldsim.spatial.units_migration import emit_length_migration_warnings
+
+    lengths = config.resolve_length_units(source_profile="atlas")
+    emit_length_migration_warnings(lengths)
     manifest = WorldManifest(
         world_model_schema_version=WORLD_MODEL_SCHEMA_VERSION,
         master_seed=master_seed,
@@ -298,6 +303,9 @@ def build_world_spatial_model(
             ),
             "vector_acceptance_ok": vectors.diagnostics.get("acceptance_ok"),
             "ecology_acceptance_ok": ecology.diagnostics.get("acceptance_ok"),
+            "hex_layout_algorithm_version": HEX_LAYOUT_ALGORITHM_VERSION,
+            "length_units": lengths.to_dict(),
+            "planet_radius_km": float(config.planet_radius_km),
         },
     )
 

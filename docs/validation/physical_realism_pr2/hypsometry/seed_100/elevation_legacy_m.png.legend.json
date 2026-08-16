@@ -1,0 +1,11 @@
+{
+  "path": "elevation_legacy_m.png",
+  "lo": -6000.0,
+  "hi": 9000.0,
+  "unit": "m",
+  "shape": [
+    128,
+    256
+  ],
+  "stretch": "absolute"
+}

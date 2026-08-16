@@ -10,7 +10,8 @@ from typing import Any
 from worldsim import SCHEMA_VERSION
 
 # Independent of seed SCHEMA_VERSION — bumping this does not reshuffle module seeds.
-WORLD_MODEL_SCHEMA_VERSION = 1
+# v2: PR-1 hex layout algorithm v2 + length-units migration metadata.
+WORLD_MODEL_SCHEMA_VERSION = 2
 
 
 @dataclass

@@ -11,7 +11,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from worldsim.physical.atmosphere.pipeline import AtmosphereResult
-from worldsim.physical.climate.pipeline import ClimateResult
+from worldsim.physical.climate.pipeline import ClimateResult, replace_climate_temperature
 from worldsim.physical.ocean.currents import build_monthly_currents
 from worldsim.physical.ocean.sst import (
     build_monthly_sst,
@@ -19,6 +19,8 @@ from worldsim.physical.ocean.sst import (
 )
 from worldsim.progress import ProgressReporter
 from worldsim.spatial.extent import SpatialExtent
+from worldsim.spatial.metrics import EARTH_RADIUS_KM, grid_metrics
+from worldsim.spatial.units_migration import resolve_planet_lengths
 
 
 @dataclass(frozen=True)
@@ -26,8 +28,12 @@ class OceanParams:
     months: int = 12
     sst_mix: float = 0.4
     inland_decay_cells: float = 60.0
+    inland_decay_km: float | None = None
+    western_boundary_width_km: float | None = None
+    western_boundary_width_cells: int = 3
     western_warm_c: float = 2.2
     eastern_cool_c: float = 1.8
+    planet_radius_km: float = EARTH_RADIUS_KM
 
 
 @dataclass
@@ -58,6 +64,35 @@ class OceanResult:
             json.dumps(self.diagnostics, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+
+
+def _resolve_ocean_lengths(params: OceanParams) -> tuple[float, float]:
+    """Return ``(inland_decay_km, western_boundary_width_km)``."""
+    if params.inland_decay_km is not None and params.western_boundary_width_km is not None:
+        return float(params.inland_decay_km), float(params.western_boundary_width_km)
+    effective = resolve_planet_lengths(
+        {
+            "ocean": {
+                **(
+                    {"sst_inland_decay_km": params.inland_decay_km}
+                    if params.inland_decay_km is not None
+                    else {}
+                ),
+                **(
+                    {"western_boundary_width_km": params.western_boundary_width_km}
+                    if params.western_boundary_width_km is not None
+                    else {}
+                ),
+            }
+        },
+        inland_decay_cells=params.inland_decay_cells,
+        western_boundary_width_cells=float(params.western_boundary_width_cells),
+        radius_km=params.planet_radius_km,
+    )
+    return (
+        float(effective.resolved["sst_inland_decay_km"].value_km),
+        float(effective.resolved["western_boundary_width_km"].value_km),
+    )
 
 
 def _ocean_diagnostics(
@@ -139,21 +174,17 @@ def apply_ocean_temperature_to_climate(
     temp = np.asarray(climate.temperature_c, dtype=np.float64).copy()
     temp[:months] = np.asarray(ocean.temperature_coupled_c[:months], dtype=np.float64)
     diag = dict(climate.diagnostics)
+    prior = int(diag.get("sst_apply_count", 0) or 0)
     diag["ocean_temperature_applied"] = True
     diag["ocean_inland_decay_cells"] = ocean.diagnostics.get("inland_decay_cells")
+    diag["ocean_inland_decay_km"] = ocean.diagnostics.get("inland_decay_km")
     diag["ocean_land_temp_delta_mean_abs"] = ocean.diagnostics.get(
         "land_temp_delta_mean_abs"
     )
-    return ClimateResult(
-        extent=climate.extent,
-        latitude_deg=climate.latitude_deg,
-        insolation=climate.insolation,
-        temperature_c=temp,
-        continentality=climate.continentality,
-        elevation_m=climate.elevation_m,
-        ocean_mask=climate.ocean_mask,
-        diagnostics=diag,
-    )
+    diag["sst_apply_count"] = prior + 1
+    diag["temperature_state"] = "temperature_sst_coupled_c"
+    diag["sst_owner"] = "ocean_coupling"
+    return replace_climate_temperature(climate, temp, diagnostics=diag)
 
 
 def build_ocean_circulation(
@@ -171,6 +202,10 @@ def build_ocean_circulation(
     months = min(
         params.months, atmosphere.wind_u.shape[0], climate.temperature_c.shape[0]
     )
+    h, w = climate.ocean_mask.shape
+    metrics = grid_metrics(w, h, radius_km=params.planet_radius_km)
+    inland_km, boundary_km = _resolve_ocean_lengths(params)
+
     fields = build_monthly_currents(
         wind_u=atmosphere.wind_u[:months],
         wind_v=atmosphere.wind_v[:months],
@@ -178,6 +213,9 @@ def build_ocean_circulation(
         ocean_mask=climate.ocean_mask,
         elevation_m=climate.elevation_m,
         months=months,
+        boundary_width_km=boundary_km,
+        metrics=metrics,
+        planet_radius_km=params.planet_radius_km,
     )
 
     if reporter is not None:
@@ -193,6 +231,8 @@ def build_ocean_circulation(
         latitude_deg=climate.latitude_deg,
         western_warm_c=params.western_warm_c,
         eastern_cool_c=params.eastern_cool_c,
+        metrics=metrics,
+        planet_radius_km=params.planet_radius_km,
     )
 
     if reporter is not None:
@@ -204,7 +244,9 @@ def build_ocean_circulation(
         sst_c=sst,
         ocean_mask=climate.ocean_mask,
         mix=params.sst_mix,
-        inland_decay_cells=params.inland_decay_cells,
+        inland_decay_cells=None,
+        inland_decay_km=inland_km,
+        metrics=metrics,
     )
     # Do not mutate climate here — final recalculation applies writeback once so
     # climate_v1 stays the pre-ocean base for DEM lapse (avoids double-coupling).
@@ -228,7 +270,12 @@ def build_ocean_circulation(
             "months": months,
             "coupled_temp_delta_mean_abs": float(np.mean(np.abs(delta))),
             "climate_temperature_writeback": False,
+            "western_boundary_width_km": boundary_km,
+            "sst_gradients": "metric_v1",
+            "temperature_state": "temperature_sst_coupled_c",
             **couple_diag,
+            "inland_decay_cells": float(params.inland_decay_cells),
+            "inland_decay_km": inland_km,
         }
     )
     # Western vs eastern land contrast near subtropical coasts (biome diversity signal)

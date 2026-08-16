@@ -63,7 +63,7 @@ def test_elevation_lapse_cools_high_land() -> None:
     elev = np.zeros((height, width))
     elev[:, width // 2 :] = 4000.0
     ocean = np.zeros((height, width), dtype=np.bool_)
-    temp, _ = build_monthly_temperature_c(
+    temp, _, _, _ = build_monthly_temperature_c(
         insolation=insol,
         latitude_rad=lat,
         elevation_m=elev,

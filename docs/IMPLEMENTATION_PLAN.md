@@ -1,9 +1,11 @@
 # IMPLEMENTATION_PLAN.md
 
 > **Status:** Milestone **19 complete** (2026-08-15). Physical World v1 plan milestones 0–19 are complete.  
-> **Follow-up:** Atlas UX A1–A8 done (`docs/ATLAS_UX_PLAN.md`). **Next atlas track:** `docs/ATLAS_PLAN_B.md` (B1–B7).  
-> **Date:** 2026-08-15  
-> **Authority:** Derived from `docs/WORLDGEN_ARCHITECTURE.md` (v0.2) §62–§65 and local repository inspection  
+> **Follow-up atlas:** A1–A8 done; Plan B **B1–B7** done (`docs/ATLAS_PLAN_B.md`). Optional presentation: **B10**.  
+> **Follow-up physics:** [`docs/PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md) (**PR-0…PR-9**). Design authority: [`docs/WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md).  
+> **Next when instructed:** **B10** (atlas) or PR-9E / Godot landforms.  
+> **Date:** 2026-08-16  
+> **Authority:** Derived from `docs/WORLDGEN_ARCHITECTURE.md` (v0.2) §62–§65 and local repository inspection; realism amendments from the Physical Realism Annex  
 > **Rule:** Do **not** implement the full project in one pass. Execute **one milestone at a time**.
 
 ---
@@ -389,22 +391,26 @@ These wait for `HISTORY_SIMULATION_ARCHITECTURE.md`.
 
 ### Recommended next human instruction
 
-Physical World plan milestones **0–19** are complete.
+Physical World plan milestones **0–19** are complete (baseline delivered).
 
-**Atlas UX follow-up** is specified in [`docs/ATLAS_UX_PLAN.md`](ATLAS_UX_PLAN.md) (**A1–A5** complete).  
-Do not start an A-milestone unless the human explicitly names it.
+**Scientific hardening** is specified in [`docs/WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md) and tracked in [`docs/PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md).  
+Execute **one PR-N at a time**, starting with **PR-0** when named.
+
+**Atlas:** Plan B B1–B7 done; revised B8/B9 = PR-7/PR-8 after PR-4; **B10** may run independently when named.
 
 Example:
 
-> Atlas UX A1–A8 complete. Further atlas work only when explicitly named.
+> Physical realism: execute PR-0 only (baseline harness). Stop when accepted.
 
 ---
 
 ## 9. Definition of “ready to start coding”
 
-Milestone 19 is complete. The IMPLEMENTATION_PLAN sequence for Physical World v1 is finished.
+Milestone 19 is complete. The IMPLEMENTATION_PLAN sequence for Physical World **v1 baseline** is finished.
 
 - Do not continue into `HISTORY_SIMULATION_ARCHITECTURE.md` unless explicitly requested.
-- Atlas polish work uses **`docs/ATLAS_UX_PLAN.md`**, one A-milestone at a time (currently through **A8**).
+- Do not calibrate history against hex latitude aggregates until realism **PR-1** hex geometry is accepted.
+- Physical correctness follow-ups use **`docs/PHYSICAL_REALISM_PLAN.md`**, one PR-N at a time.
+- Atlas presentation polish uses **`docs/ATLAS_PLAN_B.md`** (B10) or earlier A/B docs only when named.
 
-**Physical World v1 Done** remains as defined in architecture §68; this plan is the path to that Done state, not the Done state itself.
+**Physical World v1 Done** (architecture §68) remains the baseline Done state. Annex Global Definition of Done (§21) is an **additional** realism bar tracked separately.

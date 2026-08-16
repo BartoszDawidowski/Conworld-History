@@ -113,7 +113,7 @@ def test_hydrology_from_small_world(tmp_path: Path) -> None:
 
 
 def test_gate_river_drops_arid_headwater_keeps_wet_corridor() -> None:
-    """Dry high-acc stubs drop; wet highland → arid trunk stays (downstream inherit)."""
+    """Dry high-acc stubs drop; wet Q corridor stays without downstream inheritance."""
     h, w = 5, 8
     ocean = np.zeros((h, w), dtype=bool)
     ocean[:, -1] = True
@@ -132,6 +132,39 @@ def test_gate_river_drops_arid_headwater_keeps_wet_corridor() -> None:
     assert not gated[2, 0], "arid headwater without wet Q should drop"
     assert gated[2, 3] and gated[2, 6], "wet catchment corridor must remain"
     assert diag["river_cells_after_gate"] < diag["river_cells_before_gate"]
+    assert diag["river_inherit_downstream"] is False
+
+
+def test_gate_river_wadi_no_downstream_inheritance() -> None:
+    """PR-6 fixture: Q 100,80,20,0,0 → zeros not restored by inheritance."""
+    h, w = 3, 8
+    ocean = np.zeros((h, w), dtype=bool)
+    ocean[:, -1] = True
+    candidate = np.zeros((h, w), dtype=bool)
+    candidate[1, :6] = True
+    d8 = np.full((h, w), 1, dtype=np.uint8)
+    q = np.zeros((h, w), dtype=np.float64)
+    q[1, :6] = [100.0, 80.0, 20.0, 0.0, 0.0, 0.0]
+    gated, _ = gate_river_mask_by_discharge(
+        candidate,
+        q,
+        d8,
+        ocean,
+        min_effective_discharge=10.0,
+        inherit_downstream=False,
+    )
+    assert bool(gated[1, 0]) and bool(gated[1, 1]) and bool(gated[1, 2])
+    assert not gated[1, 3] and not gated[1, 4] and not gated[1, 5]
+    # Legacy inherit would fill zeros — ensure default does not
+    gated_legacy, _ = gate_river_mask_by_discharge(
+        candidate,
+        q,
+        d8,
+        ocean,
+        min_effective_discharge=10.0,
+        inherit_downstream=True,
+    )
+    assert bool(gated_legacy[1, 5]), "legacy inherit still fills arid trunk"
 
 
 def test_propagate_downstream_fills_arid_corridor() -> None:

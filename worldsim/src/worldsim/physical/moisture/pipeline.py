@@ -11,6 +11,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from worldsim.physical.atmosphere.pipeline import AtmosphereResult
+from worldsim.physical.atmosphere.monsoon import apply_monsoon_wind_anomaly
 from worldsim.physical.climate.pipeline import ClimateResult
 from worldsim.physical.moisture.transport import build_monthly_moisture
 from worldsim.physical.ocean.pipeline import OceanResult
@@ -32,6 +33,22 @@ class MoistureParams:
     land_et_rate: float = 0.4
     continentality_dry: float = 0.4
     lee_dry: float = 0.12
+    diffusion_mix_per_month: float = 0.08
+    spinup_max_years: int = 4
+    spinup_tolerance_relative: float = 0.02
+    spinup_tolerance_absolute: float = 1e-3
+    # PR-7 / revised B8
+    plume_strength: float = 0.18
+    land_store_capacity: float = 8.0
+    itcz_convective_scale: float = 1.2
+    itcz_width_deg: float = 8.0
+    # PR-8 / revised B9 — monsoon transport
+    monsoon_strength: float = 0.4
+    monsoon_lat_band_min_abs_deg: float = 5.0
+    monsoon_lat_band_max_abs_deg: float = 32.0
+    monsoon_max_anomaly_ms: float = 3.5
+    monsoon_coast_reach_cells: float = 10.0
+    monsoon_temp_scale_c: float = 8.0
 
 
 @dataclass
@@ -178,10 +195,33 @@ def build_moisture(
     )
     sst = ocean.sst_c[:months] if ocean is not None else None
 
+    wind_u = np.asarray(atmosphere.wind_u[:months], dtype=np.float64)
+    wind_v = np.asarray(atmosphere.wind_v[:months], dtype=np.float64)
+    monsoon_diag: dict[str, Any] = {"b9_terms_active": False, "monsoon_strength": 0.0}
+    if (
+        ocean is not None
+        and sst is not None
+        and float(params.monsoon_strength) > 0.0
+    ):
+        wind_u, wind_v, monsoon_diag = apply_monsoon_wind_anomaly(
+            wind_u,
+            wind_v,
+            land_temperature_c=temp,
+            sst_c=sst,
+            ocean_mask=climate.ocean_mask,
+            latitude_deg=climate.latitude_deg,
+            strength=params.monsoon_strength,
+            lat_band_min_abs_deg=params.monsoon_lat_band_min_abs_deg,
+            lat_band_max_abs_deg=params.monsoon_lat_band_max_abs_deg,
+            max_anomaly_ms=params.monsoon_max_anomaly_ms,
+            coast_reach_cells=params.monsoon_coast_reach_cells,
+            temp_scale_c=params.monsoon_temp_scale_c,
+        )
+
     fields = build_monthly_moisture(
         temperature_c=temp,
-        wind_u=atmosphere.wind_u[:months],
-        wind_v=atmosphere.wind_v[:months],
+        wind_u=wind_u,
+        wind_v=wind_v,
         elevation_m=climate.elevation_m,
         ocean_mask=climate.ocean_mask,
         latitude_deg=climate.latitude_deg,
@@ -192,6 +232,7 @@ def build_moisture(
         months=months,
         advect_steps=params.advect_steps,
         advect_wind_scale=params.advect_wind_scale,
+        diffusion_mix_per_month=params.diffusion_mix_per_month,
         large_scale_frac=params.large_scale_frac,
         orographic_frac=params.orographic_frac,
         convective_scale=params.convective_scale,
@@ -201,6 +242,14 @@ def build_moisture(
         land_et_rate=params.land_et_rate,
         continentality_dry=params.continentality_dry,
         lee_dry=params.lee_dry,
+        spinup_max_years=params.spinup_max_years,
+        spinup_tolerance_relative=params.spinup_tolerance_relative,
+        spinup_tolerance_absolute=params.spinup_tolerance_absolute,
+        plume_strength=params.plume_strength,
+        land_store_capacity=params.land_store_capacity,
+        itcz_latitude_deg=atmosphere.itcz_latitude_deg[:months],
+        itcz_convective_scale=params.itcz_convective_scale,
+        itcz_width_deg=params.itcz_width_deg,
     )
 
     if reporter is not None:
@@ -212,7 +261,7 @@ def build_moisture(
         atmospheric_moisture=fields["atmospheric_moisture"],
         evaporation=fields["evaporation"],
         orographic_lift=fields["orographic_lift"],
-        wind_u=atmosphere.wind_u[:months],
+        wind_u=wind_u,
         ocean_mask=climate.ocean_mask,
         elevation_m=climate.elevation_m,
         latitude_deg=climate.latitude_deg,
@@ -233,6 +282,21 @@ def build_moisture(
             "land_et_rate": params.land_et_rate,
             "continentality_dry": params.continentality_dry,
             "lee_dry": params.lee_dry,
+            "diffusion_mix_per_month": params.diffusion_mix_per_month,
+            "spinup_max_years": params.spinup_max_years,
+            "plume_strength": params.plume_strength,
+            "land_store_capacity": params.land_store_capacity,
+            "itcz_convective_scale": params.itcz_convective_scale,
+            "itcz_width_deg": params.itcz_width_deg,
+            "b8_terms_active": bool(
+                params.plume_strength > 0.0
+                or params.land_store_capacity > 0.0
+                or params.itcz_convective_scale > 0.0
+            ),
+            "monsoon_strength": params.monsoon_strength,
+            "monsoon_lat_band_min_abs_deg": params.monsoon_lat_band_min_abs_deg,
+            "monsoon_lat_band_max_abs_deg": params.monsoon_lat_band_max_abs_deg,
+            **monsoon_diag,
             "inland_water_sources": bool(
                 lake_mask is not None or river_mask is not None
             ),
@@ -242,6 +306,11 @@ def build_moisture(
             "river_cell_count": int(np.count_nonzero(river_mask))
             if river_mask is not None
             else 0,
+            "moisture_role": (
+                "moisture_ecology" if lake_mask is not None or river_mask is not None
+                else "moisture_hydrology_input"
+            ),
+            **(fields["budget"] if isinstance(fields.get("budget"), dict) else {}),
         }
     )
 

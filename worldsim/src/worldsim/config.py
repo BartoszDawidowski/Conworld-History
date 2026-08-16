@@ -53,6 +53,13 @@ class PlanetConfig:
     orogeny_boost: float = 0.05
     activity_relief: float = 0.25
     boundary_relief: float = 0.35
+    # PR-2 — hypsometry (default legacy_max; enable power_tail_v2 via YAML)
+    hypsometry_mode: str = "legacy_max"
+    hypsometry_anchor_quantile: float = 0.95
+    hypsometry_anchor_elevation_m: float = 3000.0
+    hypsometry_body_exponent: float = 0.70
+    hypsometry_max_elevation_m: float | None = None
+    hypsometry_tail_softness: float = 1.0
     # Plan B5 — ocean coupling (Atlas-tuned 2026-08-15)
     sst_mix: float = 0.4
     inland_decay_cells: float = 60.0
@@ -70,6 +77,21 @@ class PlanetConfig:
     moisture_land_et_rate: float = 0.4
     moisture_continentality_dry: float = 0.4
     moisture_lee_dry: float = 0.12
+    moisture_diffusion_mix_per_month: float = 0.08
+    moisture_spinup_max_years: int = 4
+    moisture_spinup_tolerance_relative: float = 0.02
+    moisture_spinup_tolerance_absolute: float = 1e-3
+    # PR-7 / revised B8
+    moisture_plume_strength: float = 0.18
+    moisture_land_store_capacity: float = 8.0
+    moisture_itcz_convective_scale: float = 1.2
+    moisture_itcz_width_deg: float = 8.0
+    moisture_monsoon_strength: float = 0.4
+    moisture_monsoon_lat_band_min_abs_deg: float = 5.0
+    moisture_monsoon_lat_band_max_abs_deg: float = 32.0
+    moisture_monsoon_max_anomaly_ms: float = 3.5
+    moisture_monsoon_coast_reach_cells: float = 10.0
+    moisture_monsoon_temp_scale_c: float = 8.0
     # Plan B7 — precip-aware hydro gates
     hydrology_river_acc_fraction: float = 0.02
     hydrology_lake_min_depth_m: float = 2.0
@@ -82,17 +104,53 @@ class PlanetConfig:
     # Plan B5 — climate mean / Holdridge precip scaling
     base_temp_c: float = 25.0
     precip_scale_mm: float = 200.0
+    # PR-1 — physical planet radius (km); length migration uses this
+    planet_radius_km: float = 6371.0
+    # Optional explicit km overrides (None → convert from *_cells via Atlas profile)
+    sst_inland_decay_km: float | None = None
+    continentality_scale_km: float | None = None
+    western_boundary_width_km: float | None = None
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    def resolve_length_units(
+        self, *, source_profile: str = "atlas"
+    ) -> "EffectiveLengthConfig":
+        from worldsim.spatial.units_migration import resolve_planet_lengths
+
+        # Prefer constructor fields; raw YAML may also carry km keys.
+        raw = dict(self.raw) if self.raw else {}
+        ocean = dict(raw.get("ocean") or {})
+        climate = dict(raw.get("climate") or {})
+        if self.sst_inland_decay_km is not None:
+            ocean["sst_inland_decay_km"] = self.sst_inland_decay_km
+        if self.western_boundary_width_km is not None:
+            ocean["western_boundary_width_km"] = self.western_boundary_width_km
+        if self.continentality_scale_km is not None:
+            climate["continentality_scale_km"] = self.continentality_scale_km
+        raw["ocean"] = ocean
+        raw["climate"] = climate
+        return resolve_planet_lengths(
+            raw,
+            inland_decay_cells=self.inland_decay_cells,
+            source_profile=source_profile,
+            radius_km=self.planet_radius_km,
+        )
 
     def to_ocean_params(self) -> "OceanParams":
         from worldsim.physical.ocean import OceanParams
 
+        lengths = self.resolve_length_units()
         return OceanParams(
             months=self.climate_months,
             sst_mix=self.sst_mix,
             inland_decay_cells=self.inland_decay_cells,
+            inland_decay_km=float(lengths.resolved["sst_inland_decay_km"].value_km),
+            western_boundary_width_km=float(
+                lengths.resolved["western_boundary_width_km"].value_km
+            ),
             western_warm_c=self.western_warm_c,
             eastern_cool_c=self.eastern_cool_c,
+            planet_radius_km=self.planet_radius_km,
         )
 
     def to_moisture_params(self) -> "MoistureParams":
@@ -111,6 +169,20 @@ class PlanetConfig:
             land_et_rate=self.moisture_land_et_rate,
             continentality_dry=self.moisture_continentality_dry,
             lee_dry=self.moisture_lee_dry,
+            diffusion_mix_per_month=self.moisture_diffusion_mix_per_month,
+            spinup_max_years=self.moisture_spinup_max_years,
+            spinup_tolerance_relative=self.moisture_spinup_tolerance_relative,
+            spinup_tolerance_absolute=self.moisture_spinup_tolerance_absolute,
+            plume_strength=self.moisture_plume_strength,
+            land_store_capacity=self.moisture_land_store_capacity,
+            itcz_convective_scale=self.moisture_itcz_convective_scale,
+            itcz_width_deg=self.moisture_itcz_width_deg,
+            monsoon_strength=self.moisture_monsoon_strength,
+            monsoon_lat_band_min_abs_deg=self.moisture_monsoon_lat_band_min_abs_deg,
+            monsoon_lat_band_max_abs_deg=self.moisture_monsoon_lat_band_max_abs_deg,
+            monsoon_max_anomaly_ms=self.moisture_monsoon_max_anomaly_ms,
+            monsoon_coast_reach_cells=self.moisture_monsoon_coast_reach_cells,
+            monsoon_temp_scale_c=self.moisture_monsoon_temp_scale_c,
         )
 
     def to_ecology_params(self) -> "EcologyParams":
@@ -207,6 +279,9 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     earth_like = bool(planet.get("earth_like", True))
     if not earth_like:
         raise ConfigError("only earth_like planets are supported in v1")
+    planet_radius_km = float(planet.get("radius_km", planet.get("planet_radius_km", 6371.0)))
+    if planet_radius_km <= 0.0:
+        raise ConfigError("planet.radius_km must be > 0")
 
     wrap_y = bool(map_cfg.get("wrap_y", False))
     if wrap_y:
@@ -264,6 +339,33 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     boundary_relief = float(terrain_cfg.get("boundary_relief", 0.35))
     if boundary_relief < 0.0:
         raise ConfigError("terrain.boundary_relief must be >= 0")
+    hypsometry_mode = str(terrain_cfg.get("hypsometry_mode", "legacy_max"))
+    if hypsometry_mode not in ("legacy_max", "power_tail_v2"):
+        raise ConfigError(
+            "terrain.hypsometry_mode must be 'legacy_max' or 'power_tail_v2'"
+        )
+    hypsometry_anchor_quantile = float(
+        terrain_cfg.get("hypsometry_anchor_quantile", 0.95)
+    )
+    if not 0.5 <= hypsometry_anchor_quantile <= 0.999:
+        raise ConfigError("terrain.hypsometry_anchor_quantile must be in [0.5, 0.999]")
+    hypsometry_anchor_elevation_m = float(
+        terrain_cfg.get("hypsometry_anchor_elevation_m", 3000.0)
+    )
+    if hypsometry_anchor_elevation_m <= 0.0:
+        raise ConfigError("terrain.hypsometry_anchor_elevation_m must be > 0")
+    hypsometry_body_exponent = float(terrain_cfg.get("hypsometry_body_exponent", 0.70))
+    if hypsometry_body_exponent <= 0.0:
+        raise ConfigError("terrain.hypsometry_body_exponent must be > 0")
+    hyp_max_raw = terrain_cfg.get("hypsometry_max_elevation_m")
+    hypsometry_max_elevation_m = (
+        float(hyp_max_raw) if hyp_max_raw is not None else None
+    )
+    if hypsometry_max_elevation_m is not None and hypsometry_max_elevation_m <= 0.0:
+        raise ConfigError("terrain.hypsometry_max_elevation_m must be > 0")
+    hypsometry_tail_softness = float(terrain_cfg.get("hypsometry_tail_softness", 1.0))
+    if hypsometry_tail_softness <= 0.0:
+        raise ConfigError("terrain.hypsometry_tail_softness must be > 0")
 
     tectonics_folding_ratio = float(tectonics_cfg.get("folding_ratio", 0.01))
     if tectonics_folding_ratio < 0.0:
@@ -288,6 +390,18 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     inland_decay_cells = float(ocean_cfg.get("inland_decay_cells", 60.0))
     if inland_decay_cells <= 0.0:
         raise ConfigError("ocean.inland_decay_cells must be > 0")
+    sst_km_raw = ocean_cfg.get("sst_inland_decay_km", ocean_cfg.get("inland_decay_km"))
+    sst_inland_decay_km = float(sst_km_raw) if sst_km_raw is not None else None
+    if sst_inland_decay_km is not None and sst_inland_decay_km <= 0.0:
+        raise ConfigError("ocean.sst_inland_decay_km must be > 0")
+    west_km_raw = ocean_cfg.get("western_boundary_width_km")
+    western_boundary_width_km = float(west_km_raw) if west_km_raw is not None else None
+    if western_boundary_width_km is not None and western_boundary_width_km <= 0.0:
+        raise ConfigError("ocean.western_boundary_width_km must be > 0")
+    cont_km_raw = climate.get("continentality_scale_km")
+    continentality_scale_km = float(cont_km_raw) if cont_km_raw is not None else None
+    if continentality_scale_km is not None and continentality_scale_km <= 0.0:
+        raise ConfigError("climate.continentality_scale_km must be > 0")
     western_warm_c = float(ocean_cfg.get("western_warm_c", 2.2))
     eastern_cool_c = float(ocean_cfg.get("eastern_cool_c", 1.8))
 
@@ -330,6 +444,73 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     moisture_lee_dry = float(moisture_cfg.get("lee_dry", 0.12))
     if moisture_lee_dry < 0.0:
         raise ConfigError("moisture.lee_dry must be >= 0")
+    moisture_diffusion_mix_per_month = float(
+        moisture_cfg.get("diffusion_mix_per_month", 0.08)
+    )
+    if not 0.0 <= moisture_diffusion_mix_per_month < 1.0:
+        raise ConfigError("moisture.diffusion_mix_per_month must be in [0, 1)")
+    moisture_spinup_max_years = int(moisture_cfg.get("spinup_max_years", 4))
+    if moisture_spinup_max_years < 1:
+        raise ConfigError("moisture.spinup_max_years must be >= 1")
+    moisture_spinup_tolerance_relative = float(
+        moisture_cfg.get("spinup_tolerance_relative", 0.02)
+    )
+    if moisture_spinup_tolerance_relative < 0.0:
+        raise ConfigError("moisture.spinup_tolerance_relative must be >= 0")
+    moisture_spinup_tolerance_absolute = float(
+        moisture_cfg.get("spinup_tolerance_absolute", 1e-3)
+    )
+    if moisture_spinup_tolerance_absolute < 0.0:
+        raise ConfigError("moisture.spinup_tolerance_absolute must be >= 0")
+    moisture_plume_strength = float(moisture_cfg.get("plume_strength", 0.18))
+    if not 0.0 <= moisture_plume_strength < 1.0:
+        raise ConfigError("moisture.plume_strength must be in [0, 1)")
+    moisture_land_store_capacity = float(
+        moisture_cfg.get("land_store_capacity", 8.0)
+    )
+    if moisture_land_store_capacity < 0.0:
+        raise ConfigError("moisture.land_store_capacity must be >= 0")
+    moisture_itcz_convective_scale = float(
+        moisture_cfg.get("itcz_convective_scale", 1.2)
+    )
+    if moisture_itcz_convective_scale < 0.0:
+        raise ConfigError("moisture.itcz_convective_scale must be >= 0")
+    moisture_itcz_width_deg = float(moisture_cfg.get("itcz_width_deg", 8.0))
+    if moisture_itcz_width_deg <= 0.0:
+        raise ConfigError("moisture.itcz_width_deg must be > 0")
+    moisture_monsoon_strength = float(moisture_cfg.get("monsoon_strength", 0.4))
+    if moisture_monsoon_strength < 0.0:
+        raise ConfigError("moisture.monsoon_strength must be >= 0")
+    moisture_monsoon_lat_band_min_abs_deg = float(
+        moisture_cfg.get("monsoon_lat_band_min_abs_deg", 5.0)
+    )
+    moisture_monsoon_lat_band_max_abs_deg = float(
+        moisture_cfg.get("monsoon_lat_band_max_abs_deg", 32.0)
+    )
+    if moisture_monsoon_lat_band_min_abs_deg < 0.0:
+        raise ConfigError("moisture.monsoon_lat_band_min_abs_deg must be >= 0")
+    if (
+        moisture_monsoon_lat_band_max_abs_deg
+        <= moisture_monsoon_lat_band_min_abs_deg
+    ):
+        raise ConfigError(
+            "moisture.monsoon_lat_band_max_abs_deg must be > min"
+        )
+    moisture_monsoon_max_anomaly_ms = float(
+        moisture_cfg.get("monsoon_max_anomaly_ms", 3.5)
+    )
+    if moisture_monsoon_max_anomaly_ms < 0.0:
+        raise ConfigError("moisture.monsoon_max_anomaly_ms must be >= 0")
+    moisture_monsoon_coast_reach_cells = float(
+        moisture_cfg.get("monsoon_coast_reach_cells", 10.0)
+    )
+    if moisture_monsoon_coast_reach_cells <= 0.0:
+        raise ConfigError("moisture.monsoon_coast_reach_cells must be > 0")
+    moisture_monsoon_temp_scale_c = float(
+        moisture_cfg.get("monsoon_temp_scale_c", 8.0)
+    )
+    if moisture_monsoon_temp_scale_c <= 0.0:
+        raise ConfigError("moisture.monsoon_temp_scale_c must be > 0")
 
     hydro_cfg = data.get("hydrology") or {}
     if hydro_cfg is None:
@@ -415,6 +596,12 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
         orogeny_boost=orogeny_boost,
         activity_relief=activity_relief,
         boundary_relief=boundary_relief,
+        hypsometry_mode=hypsometry_mode,
+        hypsometry_anchor_quantile=hypsometry_anchor_quantile,
+        hypsometry_anchor_elevation_m=hypsometry_anchor_elevation_m,
+        hypsometry_body_exponent=hypsometry_body_exponent,
+        hypsometry_max_elevation_m=hypsometry_max_elevation_m,
+        hypsometry_tail_softness=hypsometry_tail_softness,
         sst_mix=sst_mix,
         inland_decay_cells=inland_decay_cells,
         western_warm_c=western_warm_c,
@@ -430,6 +617,20 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
         moisture_land_et_rate=moisture_land_et_rate,
         moisture_continentality_dry=moisture_continentality_dry,
         moisture_lee_dry=moisture_lee_dry,
+        moisture_diffusion_mix_per_month=moisture_diffusion_mix_per_month,
+        moisture_spinup_max_years=moisture_spinup_max_years,
+        moisture_spinup_tolerance_relative=moisture_spinup_tolerance_relative,
+        moisture_spinup_tolerance_absolute=moisture_spinup_tolerance_absolute,
+        moisture_plume_strength=moisture_plume_strength,
+        moisture_land_store_capacity=moisture_land_store_capacity,
+        moisture_itcz_convective_scale=moisture_itcz_convective_scale,
+        moisture_itcz_width_deg=moisture_itcz_width_deg,
+        moisture_monsoon_strength=moisture_monsoon_strength,
+        moisture_monsoon_lat_band_min_abs_deg=moisture_monsoon_lat_band_min_abs_deg,
+        moisture_monsoon_lat_band_max_abs_deg=moisture_monsoon_lat_band_max_abs_deg,
+        moisture_monsoon_max_anomaly_ms=moisture_monsoon_max_anomaly_ms,
+        moisture_monsoon_coast_reach_cells=moisture_monsoon_coast_reach_cells,
+        moisture_monsoon_temp_scale_c=moisture_monsoon_temp_scale_c,
         hydrology_river_acc_fraction=hydrology_river_acc_fraction,
         hydrology_lake_min_depth_m=hydrology_lake_min_depth_m,
         hydrology_river_discharge_candidate_quantile=hydrology_river_discharge_candidate_quantile,
@@ -440,6 +641,10 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
         hydrology_transmission_rate=hydrology_transmission_rate,
         base_temp_c=base_temp_c,
         precip_scale_mm=precip_scale_mm,
+        planet_radius_km=planet_radius_km,
+        sst_inland_decay_km=sst_inland_decay_km,
+        continentality_scale_km=continentality_scale_km,
+        western_boundary_width_km=western_boundary_width_km,
         raw=dict(data),
     )
 

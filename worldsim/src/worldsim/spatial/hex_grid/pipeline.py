@@ -30,8 +30,10 @@ from worldsim.spatial.hex_grid.intersections import (
     river_ids_per_hex,
 )
 from worldsim.spatial.hex_grid.layout import (
+    HEX_LAYOUT_ALGORITHM_VERSION,
     HexGridSpec,
     all_hex_centers,
+    hex_id,
     hex_latitudes_deg,
     neighbour_matrix,
     neighbours,
@@ -63,6 +65,13 @@ class HexAnalysisResult:
     coastline_segment_ids: list[list[int]]
     river_edge_mask: NDArray[np.uint8]
     diagnostics: dict[str, Any]
+    # PR-9 landform aggregates (optional; zeros if analysis absent)
+    mountain_fraction: NDArray[np.float64] | None = None
+    plateau_fraction: NDArray[np.float64] | None = None
+    context_dominant: NDArray[np.int32] | None = None
+    terrain_barrier_strength: NDArray[np.float64] | None = None
+    mountain_range_ids: list[list[int]] | None = None
+    plateau_ids: list[list[int]] | None = None
 
     @property
     def n_cells(self) -> int:
@@ -70,37 +79,42 @@ class HexAnalysisResult:
 
     def save(self, directory: Path) -> None:
         directory.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(
-            directory / "hex_environment.npz",
-            center_x=self.center_x,
-            center_y=self.center_y,
-            latitude_deg=self.latitude_deg,
-            neighbours=self.neighbours,
-            land_fraction=self.land_fraction,
-            ocean_fraction=self.ocean_fraction,
-            lake_fraction=self.lake_fraction,
-            cell_count=self.cell_count,
-            elevation_mean=self.elevation_mean,
-            elevation_min=self.elevation_min,
-            elevation_max=self.elevation_max,
-            elevation_std=self.elevation_std,
-            temperature_mean=self.temperature_mean,
-            precipitation_mean=self.precipitation_mean,
-            humidity_mean=self.humidity_mean,
-            holdridge_dominant=self.holdridge_dominant,
-            permeability_mean=self.permeability_mean,
-            river_edge_mask=self.river_edge_mask,
-        )
+        payload: dict[str, Any] = {
+            "center_x": self.center_x,
+            "center_y": self.center_y,
+            "latitude_deg": self.latitude_deg,
+            "neighbours": self.neighbours,
+            "land_fraction": self.land_fraction,
+            "ocean_fraction": self.ocean_fraction,
+            "lake_fraction": self.lake_fraction,
+            "cell_count": self.cell_count,
+            "elevation_mean": self.elevation_mean,
+            "elevation_min": self.elevation_min,
+            "elevation_max": self.elevation_max,
+            "elevation_std": self.elevation_std,
+            "temperature_mean": self.temperature_mean,
+            "precipitation_mean": self.precipitation_mean,
+            "humidity_mean": self.humidity_mean,
+            "holdridge_dominant": self.holdridge_dominant,
+            "permeability_mean": self.permeability_mean,
+            "river_edge_mask": self.river_edge_mask,
+        }
+        if self.mountain_fraction is not None:
+            payload["mountain_fraction"] = self.mountain_fraction
+            payload["plateau_fraction"] = self.plateau_fraction
+            payload["context_dominant"] = self.context_dominant
+            payload["terrain_barrier_strength"] = self.terrain_barrier_strength
+        np.savez_compressed(directory / "hex_environment.npz", **payload)
+        refs = {
+            "river_ids": self.river_ids,
+            "lake_ids": self.lake_ids,
+            "coastline_segment_ids": self.coastline_segment_ids,
+        }
+        if self.mountain_range_ids is not None:
+            refs["mountain_range_ids"] = self.mountain_range_ids
+            refs["plateau_ids"] = self.plateau_ids
         (directory / "hex_object_refs.json").write_text(
-            json.dumps(
-                {
-                    "river_ids": self.river_ids,
-                    "lake_ids": self.lake_ids,
-                    "coastline_segment_ids": self.coastline_segment_ids,
-                },
-                separators=(",", ":"),
-            )
-            + "\n",
+            json.dumps(refs, separators=(",", ":")) + "\n",
             encoding="utf-8",
         )
         (directory / "hex_diagnostics.json").write_text(
@@ -162,6 +176,30 @@ class HexAnalysisResult:
             coastline_segment_ids=list(refs.get("coastline_segment_ids", [])),
             river_edge_mask=np.asarray(env["river_edge_mask"], dtype=np.uint8),
             diagnostics=diagnostics,
+            mountain_fraction=(
+                np.asarray(env["mountain_fraction"], dtype=np.float64)
+                if "mountain_fraction" in env.files
+                else None
+            ),
+            plateau_fraction=(
+                np.asarray(env["plateau_fraction"], dtype=np.float64)
+                if "plateau_fraction" in env.files
+                else None
+            ),
+            context_dominant=(
+                np.asarray(env["context_dominant"], dtype=np.int32)
+                if "context_dominant" in env.files
+                else None
+            ),
+            terrain_barrier_strength=(
+                np.asarray(env["terrain_barrier_strength"], dtype=np.float64)
+                if "terrain_barrier_strength" in env.files
+                else None
+            ),
+            mountain_range_ids=list(refs["mountain_range_ids"])
+            if "mountain_range_ids" in refs
+            else None,
+            plateau_ids=list(refs["plateau_ids"]) if "plateau_ids" in refs else None,
         )
 
 
@@ -173,6 +211,7 @@ def build_hex_analysis_grid(
     hydrology: HydrologyResult | None = None,
     vectors: VectorGeographyResult | None = None,
     elevation_terrain_m: NDArray[np.floating] | None = None,
+    landforms: Any | None = None,
     width: int = 256,
     height: int = 128,
     reporter: ProgressReporter | None = None,
@@ -313,22 +352,103 @@ def build_hex_analysis_grid(
     topology_ok = bool(ew_wrap_ok and ns_nowrap_ok and n == width * height)
     # Production default is 256×128; smaller grids are allowed in unit tests.
     production_size_ok = n == 32768
+
+    # PR-9 landform aggregates (climate-grid landform rasters → hex)
+    mountain_frac = plateau_frac = barrier = None
+    context_dom = None
+    mtn_ids: list[list[int]] | None = None
+    plat_ids: list[list[int]] | None = None
+    if landforms is not None and getattr(landforms, "mountain_score_u8", None) is not None:
+        from worldsim.physical.climate.pipeline import downsample_mean as _ds
+
+        cw, ch = climate.extent.width, climate.extent.height
+        mscore = _ds(
+            landforms.mountain_score_u8.astype(np.float64) / 255.0, cw, ch
+        )
+        pscore = _ds(
+            landforms.plateau_score_u8.astype(np.float64) / 255.0, cw, ch
+        )
+        mountain_frac, _, _, _, _ = aggregate_scalar(mscore, hex_of, n_hex=n, mask=land)
+        plateau_frac, _, _, _, _ = aggregate_scalar(pscore, hex_of, n_hex=n, mask=land)
+        ctx = landforms.context_id
+        if ctx.shape != (ch, cw):
+            # nearest downsample
+            y_idx = (np.arange(ch) * ctx.shape[0] / ch).astype(np.int32)
+            x_idx = (np.arange(cw) * ctx.shape[1] / cw).astype(np.int32)
+            ctx = ctx[y_idx][:, x_idx]
+        context_dom = dominant_int(ctx.astype(np.int32), hex_of, n_hex=n, mask=land)
+        barrier = np.clip(mountain_frac * 0.85 + (1.0 - land_frac) * 0.0, 0.0, 1.0)
+        # Intersecting object IDs: unique positive IDs per hex from downsampled maps
+        rid = landforms.mountain_range_id
+        pid = landforms.plateau_id
+        if rid.shape != (ch, cw):
+            y_idx = (np.arange(ch) * rid.shape[0] / ch).astype(np.int32)
+            x_idx = (np.arange(cw) * rid.shape[1] / cw).astype(np.int32)
+            rid = rid[y_idx][:, x_idx]
+            pid = pid[y_idx][:, x_idx]
+        mtn_ids = [[] for _ in range(n)]
+        plat_ids = [[] for _ in range(n)]
+        for j in range(ch):
+            for i in range(cw):
+                hid = int(hex_of[j, i])
+                if hid < 0 or hid >= n:
+                    continue
+                r = int(rid[j, i])
+                p = int(pid[j, i])
+                if r > 0 and r not in mtn_ids[hid]:
+                    mtn_ids[hid].append(r)
+                if p > 0 and p not in plat_ids[hid]:
+                    plat_ids[hid].append(p)
+
+    # PR-1 layout invariants (cheap; always recorded)
+    abs_y = np.abs(cy)
+    no_pole_clip = bool(np.all(abs_y < 1.0 - 1e-12))
+    mean_lat = float(np.mean(lat))
+    row_y = np.empty(height, dtype=np.float64)
+    for r in range(height):
+        ys = [float(cy[hex_id(q, r, width=width)]) for q in range(width)]
+        row_y[r] = float(np.mean(ys))
+    mirror_err = [
+        abs(float(row_y[r] + row_y[height - 1 - r])) for r in range(height // 2)
+    ]
+    ns_mirror_ok = bool(max(mirror_err) < 0.02) if mirror_err else True
+    mean_lat_ok = bool(abs(mean_lat) < 0.25)
+
     diagnostics: dict[str, Any] = {
         "width": width,
         "height": height,
         "n_cells": n,
+        "hex_layout_algorithm_version": HEX_LAYOUT_ALGORITHM_VERSION,
         "exact_32768": production_size_ok,
         "ew_wrap_ok": bool(ew_wrap_ok),
         "ns_nowrap_ok": bool(ns_nowrap_ok),
+        "no_pole_clip_ok": no_pole_clip,
+        "mean_latitude_deg": mean_lat,
+        "mean_latitude_ok": mean_lat_ok,
+        "ns_mirror_ok": ns_mirror_ok,
         "ocean_fraction_global": global_ocean,
         "ocean_fraction_hex_mean": hex_ocean,
         "fraction_consistency_ok": frac_ok,
         "elevation_sample_consistency_ok": sample_ok,
         "hexes_with_samples": int(np.count_nonzero(counts > 0)),
-        "acceptance_ok": bool(topology_ok and frac_ok and sample_ok),
-        "production_acceptance_ok": bool(
-            topology_ok and production_size_ok and frac_ok and sample_ok
+        "acceptance_ok": bool(
+            topology_ok
+            and frac_ok
+            and sample_ok
+            and no_pole_clip
+            and mean_lat_ok
+            and ns_mirror_ok
         ),
+        "production_acceptance_ok": bool(
+            topology_ok
+            and production_size_ok
+            and frac_ok
+            and sample_ok
+            and no_pole_clip
+            and mean_lat_ok
+            and ns_mirror_ok
+        ),
+        "landforms_aggregated": mountain_frac is not None,
     }
 
     if reporter is not None:
@@ -359,4 +479,10 @@ def build_hex_analysis_grid(
         coastline_segment_ids=coast_ids,
         river_edge_mask=edge_mask,
         diagnostics=diagnostics,
+        mountain_fraction=mountain_frac,
+        plateau_fraction=plateau_frac,
+        context_dominant=context_dom,
+        terrain_barrier_strength=barrier,
+        mountain_range_ids=mtn_ids,
+        plateau_ids=plat_ids,
     )

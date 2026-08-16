@@ -22,7 +22,7 @@ from worldsim.physical.terrain.coastline import (
     extract_coastline_segments,
     save_coastline_geojson_like,
 )
-from worldsim.physical.terrain.elevation import raw_to_elevation_m
+from worldsim.physical.terrain.elevation import raw_to_elevation_m_with_diagnostics
 from worldsim.physical.terrain.refine import refine_terrain, upsample_mask_field
 from worldsim.physical.terrain.sealevel import (
     calibrate_sea_level,
@@ -48,6 +48,13 @@ class TerrainParams:
     orogeny_boost: float = 0.05
     activity_relief: float = 0.25
     boundary_relief: float = 0.35
+    # PR-2 hypsometry (default legacy until calibration enables power_tail_v2)
+    hypsometry_mode: str = "legacy_max"
+    hypsometry_anchor_quantile: float = 0.95
+    hypsometry_anchor_elevation_m: float = 3000.0
+    hypsometry_body_exponent: float = 0.70
+    hypsometry_max_elevation_m: float | None = None
+    hypsometry_tail_softness: float = 1.0  # reserved / documented; asymptote uses max/anchor
 
 
 @dataclass
@@ -126,12 +133,46 @@ def build_terrain_ocean(
         refined_raw, ocean_fraction_target=params.ocean_fraction_target
     )
     ocean_mask = ocean_mask_from_sea_level(refined_raw, sea_level_raw)
-    elevation_m = raw_to_elevation_m(
+    ocean_mask_before = ocean_mask.copy()
+    land_components_before, land_count_before = label_water_bodies(~ocean_mask)
+
+    elevation_m, hyps_diag = raw_to_elevation_m_with_diagnostics(
         refined_raw,
         sea_level_raw,
         land_scale_m=params.land_scale_m,
         ocean_scale_m=params.ocean_scale_m,
+        ocean_mask=ocean_mask,
+        hypsometry_mode=params.hypsometry_mode,
+        hypsometry_anchor_quantile=params.hypsometry_anchor_quantile,
+        hypsometry_anchor_elevation_m=params.hypsometry_anchor_elevation_m,
+        hypsometry_body_exponent=params.hypsometry_body_exponent,
+        hypsometry_max_elevation_m=params.hypsometry_max_elevation_m,
     )
+
+    # Land transform must not alter ocean_mask / land components.
+    _land_ids_after, land_count_after = label_water_bodies(~ocean_mask)
+    del land_components_before
+
+    # Rank-order check on land raw u vs land metres (ties ignored).
+    land = ~ocean_mask
+    rank_ok = True
+    if np.count_nonzero(land) >= 2:
+        u = np.maximum(refined_raw[land] - sea_level_raw, 0.0)
+        z = elevation_m[land]
+        rng = np.random.default_rng(0)
+        n = int(u.size)
+        sample = rng.choice(n, size=min(4096, n), replace=False)
+        uu = u[sample]
+        zz = z[sample]
+        order_u = np.argsort(uu, kind="mergesort")
+        order_z = np.argsort(zz, kind="mergesort")
+        ru = np.empty_like(uu)
+        rz = np.empty_like(zz)
+        ru[order_u] = np.arange(uu.size, dtype=np.float64)
+        rz[order_z] = np.arange(zz.size, dtype=np.float64)
+        if float(np.std(ru)) > 0 and float(np.std(rz)) > 0:
+            corr = float(np.corrcoef(ru, rz)[0, 1])
+            rank_ok = corr > 0.999
 
     land = ~ocean_mask
     if np.any(land) and np.any(ocean_mask):
@@ -170,6 +211,25 @@ def build_terrain_ocean(
 
     seam_gap = float(np.mean(np.abs(elevation_m[:, 0] - elevation_m[:, -1])))
     elev_range = float(np.ptp(elevation_m)) + 1e-12
+    land_elev = elevation_m[land] if np.any(land) else np.array([], dtype=np.float64)
+    if land_elev.size:
+        qs = (10, 25, 50, 75, 90, 95, 99)
+        land_hyp = {
+            "land_cells": int(land_elev.size),
+            "mean_m": float(land_elev.mean()),
+            "max_m": float(land_elev.max()),
+            "min_m": float(land_elev.min()),
+            **{f"p{q}": float(np.percentile(land_elev, q)) for q in qs},
+            "frac_above_1km": float(np.mean(land_elev > 1000.0)),
+            "frac_above_2km": float(np.mean(land_elev > 2000.0)),
+            "frac_above_3km": float(np.mean(land_elev > 3000.0)),
+            "frac_above_5km": float(np.mean(land_elev > 5000.0)),
+            "frac_above_7km": float(np.mean(land_elev > 7000.0)),
+            "frac_below_200m": float(np.mean(land_elev < 200.0)),
+            "frac_below_500m": float(np.mean(land_elev < 500.0)),
+        }
+    else:
+        land_hyp = {"land_cells": 0}
 
     diagnostics = {
         "width": params.width,
@@ -184,6 +244,13 @@ def build_terrain_ocean(
         "elevation_min_m": float(np.min(elevation_m)),
         "elevation_max_m": float(np.max(elevation_m)),
         "shelf_fraction": float(np.mean(shelf_mask)),
+        "hypsometry": hyps_diag,
+        "land_hypsometry": land_hyp,
+        "land_component_count_before": int(land_count_before),
+        "land_component_count_after": int(land_count_after),
+        "land_components_unchanged": bool(land_count_before == land_count_after),
+        "ocean_mask_unchanged": bool(np.array_equal(ocean_mask, ocean_mask_before)),
+        "rank_order_ok": bool(rank_ok),
     }
     if reporter is not None:
         reporter.progress("terrain", 1.0)

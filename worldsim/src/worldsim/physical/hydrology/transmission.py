@@ -1,13 +1,16 @@
-"""Effective discharge with channel transmission losses (Plan B §6.3.1)."""
+"""Effective discharge with channel transmission losses (Plan B §6.3.1 / PR-5)."""
 
 from __future__ import annotations
-
-from collections import defaultdict
 
 import numpy as np
 from numpy.typing import NDArray
 
 from worldsim.physical.hydrology.conditioning import ew_crop, ew_pad
+from worldsim.physical.hydrology.cylindrical_graph import (
+    CylindricalFlowGraph,
+    build_cylindrical_graph,
+    effective_discharge,
+)
 
 
 def transmission_sink(
@@ -42,38 +45,12 @@ def effective_discharge_with_transmission(
     ocean_mask: NDArray[np.bool_],
     precip: NDArray[np.floating],
     sink: NDArray[np.floating],
+    graph: CylindricalFlowGraph | None = None,
 ) -> NDArray[np.float64]:
-    """Route precip − transmission sink along D8 (upstream → downstream).
-
-    ``q[cell] = max(0, precip + Σ upstream q − sink)``. Strong upstream Q can
-    survive an arid corridor (Nil); weak Q evaporates (wadi).
-    """
+    """Route precip − transmission sink on the canonical cylindrical graph."""
     ocean = np.asarray(ocean_mask, dtype=np.bool_)
-    precip_p = ew_pad(np.asarray(precip, dtype=np.float64), pad)
-    sink_p = ew_pad(np.asarray(sink, dtype=np.float64), pad)
-    ocean_p = ew_pad(ocean, pad)
-    hp, wp = precip_p.shape
-    ds = np.asarray(flw.idxs_ds, dtype=np.int32)
-    seq = np.asarray(flw.idxs_seq, dtype=np.int32)
-    ups: dict[int, list[int]] = defaultdict(list)
-    for idx in range(len(ds)):
-        j = int(ds[idx])
-        if j >= 0:
-            ups[j].append(idx)
-
-    q = np.zeros((hp, wp), dtype=np.float64)
-    # idxs_seq is downstream→upstream; reverse ⇒ process sources first.
-    for idx in seq[::-1]:
-        idx_i = int(idx)
-        r, c = divmod(idx_i, wp)
-        if ocean_p[r, c]:
-            continue
-        total = float(precip_p[r, c])
-        for u in ups[idx_i]:
-            ur, uc = divmod(int(u), wp)
-            total += q[ur, uc]
-        total -= float(sink_p[r, c])
-        q[r, c] = total if total > 0.0 else 0.0
-
-    out = ew_crop(q, pad, width)
-    return np.where(ocean, 0.0, out)
+    if graph is None:
+        d8_p = flw.to_array(ftype="d8")  # type: ignore[attr-defined]
+        d8 = ew_crop(d8_p, pad, width).astype(np.uint8)
+        graph = build_cylindrical_graph(d8, ocean)
+    return effective_discharge(graph, precip, sink)

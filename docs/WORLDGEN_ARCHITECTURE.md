@@ -1,9 +1,10 @@
 # WORLDGEN_ARCHITECTURE.md
 
 > **Status:** Architecture specification — v0.2  
-> **Date:** 2026-08-13  
+> **Date:** 2026-08-13 (header amended 2026-08-16)  
 > **Audience:** coding agents and developers implementing the physical-world generator and spatial substrate for a procedural conworld history simulator  
 > **Authority:** This document is the canonical architecture specification for the physical world and spatial model.  
+> **Corrective follow-up:** Demonstrated physical-correctness issues and the PR-0…PR-9 hardening sequence are normative in [`docs/WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md) (tracker: [`docs/PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md)). Where the annex identifies a confirmed invariant failure, its corrective requirement takes precedence over an earlier qualitative acceptance statement; unrelated architectural decisions in this document remain valid.  
 > **Target:** A deterministic Earth-like conworld generator whose output can support procedural history simulation from prehistory to the Renaissance, with Godot used primarily as an interactive atlas, visualization layer, and simulation front-end.
 
 ---

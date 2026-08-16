@@ -224,6 +224,12 @@ def _build_terrain_for_state(
             orogeny_boost=config.orogeny_boost,
             activity_relief=config.activity_relief,
             boundary_relief=config.boundary_relief,
+            hypsometry_mode=config.hypsometry_mode,
+            hypsometry_anchor_quantile=config.hypsometry_anchor_quantile,
+            hypsometry_anchor_elevation_m=config.hypsometry_anchor_elevation_m,
+            hypsometry_body_exponent=config.hypsometry_body_exponent,
+            hypsometry_max_elevation_m=config.hypsometry_max_elevation_m,
+            hypsometry_tail_softness=config.hypsometry_tail_softness,
         ),
         detail_seed=detail_seed,
         reporter=reporter,
@@ -329,6 +335,7 @@ def _build_climate_for_state(
     ch = int(
         climate_height if climate_height is not None else config.climate_resolution[1]
     )
+    lengths = config.resolve_length_units()
     climate = build_base_climate(
         terrain=terrain,
         params=ClimateParams(
@@ -337,6 +344,10 @@ def _build_climate_for_state(
             months=config.climate_months,
             axial_tilt_deg=config.axial_tilt_deg,
             base_temp_c=config.base_temp_c,
+            continentality_scale_km=float(
+                lengths.resolved["continentality_scale_km"].value_km
+            ),
+            planet_radius_km=config.planet_radius_km,
         ),
         reporter=reporter,
     )
@@ -1569,6 +1580,7 @@ def run_hex(
         hydrology=final.hydrology,
         vectors=final.vectors,
         elevation_terrain_m=final.elevation_v2_m,
+        landforms=final.landforms,
         width=hex_w,
         height=hex_h,
         reporter=reporter,
@@ -1674,6 +1686,7 @@ def run_world(
         hydrology=final.hydrology,
         vectors=final.vectors,
         elevation_terrain_m=final.elevation_v2_m,
+        landforms=final.landforms,
         width=hex_w,
         height=hex_h,
         reporter=reporter,

@@ -1,0 +1,146 @@
+{
+  "schema_version": 2,
+  "worldsim_version": "0.0.0",
+  "planet_schema_version": 2,
+  "master_seed": 100,
+  "profile": "quick",
+  "grids": {
+    "tectonics": [
+      128,
+      64
+    ],
+    "terrain": [
+      256,
+      128
+    ],
+    "climate": [
+      128,
+      64
+    ],
+    "analysis": [
+      128,
+      64
+    ]
+  },
+  "config": {
+    "schema_version": 2,
+    "earth_like": true,
+    "axial_tilt_deg": 23.44,
+    "orbital_eccentricity": 0.0167,
+    "solar_constant_relative": 1.0,
+    "rotation_period_hours": 24.0,
+    "year_days": 365.2422,
+    "topology": "cylindrical",
+    "wrap_x": true,
+    "wrap_y": false,
+    "projection": "cylindrical_equal_area",
+    "analysis_width": 128,
+    "analysis_height": 64,
+    "analysis_orientation": "flat_top",
+    "tectonics_resolution": [
+      1024,
+      512
+    ],
+    "climate_resolution": [
+      1024,
+      512
+    ],
+    "terrain_target": [
+      4096,
+      2048
+    ],
+    "terrain_production": [
+      4096,
+      2048
+    ],
+    "hydrology_target": [
+      4096,
+      2048
+    ],
+    "climate_months": 12,
+    "generation_quality": "final",
+    "ocean_fraction_target": 0.71,
+    "tectonics_num_plates": 7,
+    "tectonics_cycle_count": 3,
+    "terrain_detail_amplitude": 0.02,
+    "erosion_iterations": 5,
+    "erosion_fluvial_k": 8.0,
+    "tectonics_folding_ratio": 0.01,
+    "tectonics_sea_level": 0.65,
+    "tectonics_erosion_period": 100,
+    "land_scale_m": 9000.0,
+    "ocean_scale_m": 10000.0,
+    "orogeny_boost": 0.05,
+    "activity_relief": 0.25,
+    "boundary_relief": 0.35,
+    "sst_mix": 0.4,
+    "inland_decay_cells": 60.0,
+    "western_warm_c": 2.2,
+    "eastern_cool_c": 1.8,
+    "moisture_advect_steps": 32,
+    "moisture_advect_wind_scale": 0.2,
+    "moisture_large_scale_frac": 0.15,
+    "moisture_orographic_frac": 0.85,
+    "moisture_convective_scale": 2.0,
+    "moisture_ocean_evap_rate": 1.4,
+    "moisture_lake_evap_rate": 0.75,
+    "moisture_river_evap_rate": 0.4,
+    "moisture_land_et_rate": 0.4,
+    "moisture_continentality_dry": 0.4,
+    "moisture_lee_dry": 0.12,
+    "hydrology_river_acc_fraction": 0.02,
+    "hydrology_lake_min_depth_m": 2.0,
+    "hydrology_river_discharge_candidate_quantile": 0.5,
+    "hydrology_lake_precip_land_quantile": 0.7,
+    "hydrology_lake_arid_precip_land_quantile": 0.45,
+    "hydrology_lake_min_mean_temp_c": 1.0,
+    "hydrology_lake_inflow_land_quantile": 0.75,
+    "hydrology_transmission_rate": 0.45,
+    "base_temp_c": 25.0,
+    "precip_scale_mm": 200.0
+  },
+  "run_metadata": {
+    "dry_run": false,
+    "milestone": 16,
+    "output_dir": "/private/var/folders/ch/7_t9br613kdgqmsmvp_hvvjc0000gn/T/physical_realism_pr0_ifmc4pa5/seed_100",
+    "tectonics_seed": 1481684468,
+    "seam_column": 79,
+    "tectonics_metadata_source": "native_extended",
+    "tectonics_interpretation": true,
+    "boundary_cell_count": 1351,
+    "terrain_resolution": [
+      256,
+      128
+    ],
+    "ocean_fraction": 0.709991455078125,
+    "sea_level_raw": 0.7589592625286309,
+    "coastline_feature_count": 1402,
+    "climate_resolution": [
+      128,
+      64
+    ],
+    "seasonal_inversion_ok": true,
+    "expected_zonal_tendencies_ok": true,
+    "ocean_no_land_crossing": true,
+    "ocean_acceptance_ok": true,
+    "moisture_acceptance_ok": true,
+    "windward_leeward_ok": true,
+    "erosion_acceptance_ok": true,
+    "macro_relief_preserved": true,
+    "drainage_quality_improved": true,
+    "hydrology_acceptance_ok": true,
+    "drainage_graph_valid": true,
+    "vector_acceptance_ok": true,
+    "river_topology_valid": true,
+    "final_acceptance_ok": true,
+    "stable_final_geography": true,
+    "no_catastrophic_feedback": true,
+    "ecology_acceptance_ok": true,
+    "hex_n_cells": 8192,
+    "hex_acceptance_ok": false,
+    "hex_production_acceptance_ok": false,
+    "world_model_schema_version": 1,
+    "world_acceptance_ok": false,
+    "world_root_ready": true
+  }
+}

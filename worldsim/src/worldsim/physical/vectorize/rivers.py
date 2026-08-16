@@ -11,13 +11,9 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import numpy as np
-import pyflwdir
 from numpy.typing import NDArray
 
-from worldsim.physical.vectorize.coords import (
-    polyline_length_norm,
-    pyflwdir_xy_to_norm,
-)
+from worldsim.physical.vectorize.coords import polyline_length_norm
 from worldsim.spatial.extent import SpatialExtent
 
 NodeType = Literal["source", "confluence", "lake_inlet", "lake_outlet", "mouth", "junction"]
@@ -219,8 +215,18 @@ def build_river_network(
     extent: SpatialExtent,
     lake_id: NDArray[np.integer] | None = None,
 ) -> RiverNetwork:
-    """Build canonical river network from D8 + river mask (hex-independent)."""
-    d8 = np.asarray(flow_direction)
+    """Build canonical river network from the cylindrical D8 graph (PR-5).
+
+    Does **not** reconstruct a non-periodic ``pyflwdir.FlwdirRaster`` from the
+    cropped D8 raster (that created seam pits).
+    """
+    from worldsim.physical.hydrology.cylindrical_graph import (
+        build_cylindrical_graph,
+        cell_path_to_norm_geometry,
+        extract_river_cell_paths,
+    )
+
+    d8 = np.asarray(flow_direction, dtype=np.uint8)
     mask = np.asarray(river_mask, dtype=np.bool_)
     ocean = np.asarray(ocean_mask, dtype=np.bool_)
     lakes = np.asarray(lake_mask, dtype=np.bool_)
@@ -230,11 +236,11 @@ def build_river_network(
         else lakes.astype(np.int32)
     )
     h, w = mask.shape
-
-    flw = pyflwdir.from_array(d8, ftype="d8", check_ftype=False)
     if not np.any(mask):
         return RiverNetwork()
-    feats = flw.streams(mask=mask, direction="down")
+
+    graph = build_cylindrical_graph(d8, ocean)
+    paths = extract_river_cell_paths(graph, mask)
 
     nodes_by_key: dict[tuple[int, int], RiverNode] = {}
     nodes: list[RiverNode] = []
@@ -246,6 +252,8 @@ def build_river_network(
         hint: NodeType,
         *,
         node_lake_id: int = 0,
+        row: int | None = None,
+        col: int | None = None,
     ) -> RiverNode:
         key = _point_key(nx, ny)
         if key in nodes_by_key:
@@ -258,29 +266,31 @@ def build_river_network(
             ):
                 node.type = hint
             return node
-        col = int(np.clip(np.floor(nx * w), 0, w - 1))
-        row = int(np.clip(np.floor((1.0 - ny) * 0.5 * h), 0, h - 1))
+        if row is None or col is None:
+            col_i = int(np.clip(np.floor((nx % 1.0) * w), 0, w - 1))
+            row_i = int(np.clip(np.floor((1.0 - ny) * 0.5 * h), 0, h - 1))
+        else:
+            row_i, col_i = int(row), int(col) % w
         node = RiverNode(
             id=len(nodes) + 1,
-            x=nx,
+            x=float(nx % 1.0) if np.isfinite(nx) else 0.0,
             y=ny,
             type=hint,
-            row=row,
-            col=col,
+            row=row_i,
+            col=col_i,
             lake_id=int(node_lake_id),
         )
+        # Prefer storing unwrapped x for seam continuity in geometry; node x wrapped.
         nodes.append(node)
         nodes_by_key[key] = node
         return node
 
-    incoming: dict[int, int] = {}
-    outgoing: dict[int, int] = {}
-
-    for feat in feats:
-        coords_raw = feat["geometry"]["coordinates"]
-        if len(coords_raw) < 2:
+    for path in paths:
+        rows = [p[0] for p in path]
+        cols = [p[1] for p in path]
+        geom = cell_path_to_norm_geometry(rows, cols, height=h, width=w)
+        if len(geom) < 2:
             continue
-        geom = [pyflwdir_xy_to_norm(float(x), float(y), extent) for x, y in coords_raw]
         cleaned: list[tuple[float, float]] = [geom[0]]
         for p in geom[1:]:
             if _point_key(p[0], p[1]) != _point_key(cleaned[-1][0], cleaned[-1][1]):
@@ -291,22 +301,19 @@ def build_river_network(
         if polyline_length_norm(geom) < 1e-12:
             continue
 
-        mid = geom[len(geom) // 2]
-        col = int(np.clip(np.floor(mid[0] * w), 0, w - 1))
-        row = int(np.clip(np.floor((1.0 - mid[1]) * 0.5 * h), 0, h - 1))
-        order = int(stream_order[row, col])
-        bid = int(basin_id[row, col])
-        mean_q = float(discharge_proxy[row, col])
+        mid_i = len(path) // 2
+        mr, mc = path[mid_i]
+        order = int(stream_order[mr, mc])
+        bid = int(basin_id[mr, mc])
+        mean_q = float(discharge_proxy[mr, mc])
         monthly = [
-            float(monthly_discharge[m, row, col])
+            float(monthly_discharge[m, mr, mc])
             for m in range(monthly_discharge.shape[0])
         ]
 
-        # Continuous centreline (no clip through lakes). Atlas covers through-flow
-        # by drawing opaque lakes above rivers.
         length = polyline_length_norm(geom)
-        sr, sc = _norm_to_row_col(geom[0][0], geom[0][1], h, w)
-        er, ec = _norm_to_row_col(geom[-1][0], geom[-1][1], h, w)
+        sr, sc = path[0]
+        er, ec = path[-1]
         from_lid = int(lid_raster[sr, sc]) if lakes[sr, sc] else 0
         to_lid = int(lid_raster[er, ec]) if lakes[er, ec] else 0
 
@@ -319,8 +326,12 @@ def build_river_network(
                 to_lid = 0
                 break
 
-        p0 = get_node(geom[0][0], geom[0][1], start_t, node_lake_id=from_lid)
-        p1 = get_node(geom[-1][0], geom[-1][1], end_t, node_lake_id=to_lid)
+        p0 = get_node(
+            geom[0][0], geom[0][1], start_t, node_lake_id=from_lid, row=sr, col=sc
+        )
+        p1 = get_node(
+            geom[-1][0], geom[-1][1], end_t, node_lake_id=to_lid, row=er, col=ec
+        )
         if p0.id == p1.id:
             continue
         seg = RiverSegment(
@@ -337,13 +348,11 @@ def build_river_network(
             to_lake_id=to_lid,
         )
         segments.append(seg)
-        outgoing[p0.id] = outgoing.get(p0.id, 0) + 1
-        incoming[p1.id] = incoming.get(p1.id, 0) + 1
 
     used = {s.from_node for s in segments} | {s.to_node for s in segments}
     nodes = [n for n in nodes if n.id in used]
-    incoming = {}
-    outgoing = {}
+    incoming: dict[int, int] = {}
+    outgoing: dict[int, int] = {}
     for s in segments:
         outgoing[s.from_node] = outgoing.get(s.from_node, 0) + 1
         incoming[s.to_node] = incoming.get(s.to_node, 0) + 1

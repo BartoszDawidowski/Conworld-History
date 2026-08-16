@@ -89,6 +89,13 @@ def _load_lakes(path: Path) -> list[Lake]:
                 ),
                 closed_basin=bool(item.get("closed_basin", True)),
                 area_cells=int(item.get("area_cells", 0)),
+                water_state=str(item.get("water_state", "endorheic")),
+                spill_elevation=(
+                    None
+                    if item.get("spill_elevation") is None
+                    else float(item["spill_elevation"])
+                ),
+                mean_effective_inflow=float(item.get("mean_effective_inflow", 0.0)),
             )
         )
     return lakes

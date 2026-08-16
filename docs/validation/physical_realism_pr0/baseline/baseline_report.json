@@ -1,0 +1,290 @@
+{
+  "realism_schema_version": 1,
+  "audit_baseline_commit": "6a961161c2a10d322de0990e6cbec8317ea80a5c",
+  "worldsim_version": "0.0.0",
+  "planet_schema_version": 2,
+  "profile": "quick",
+  "seeds": [
+    1,
+    42,
+    100
+  ],
+  "host": {
+    "platform": "macOS-26.1-arm64-arm-64bit",
+    "python": "3.12.13",
+    "machine": "arm64"
+  },
+  "fixture_probes": {
+    "northward_impulse": {
+      "mass_north_of_seed": 0.0,
+      "mass_south_of_seed": 0.9375,
+      "mass_at_seed": 0.0625,
+      "total_mass": 1.0
+    },
+    "precip_overshoot": {
+      "max_overshoot": 2.395154487224808,
+      "mean_precip": 0.17524941776814867,
+      "mean_q_available": 0.45500000000000007,
+      "cells_overshoot": 0.0625
+    },
+    "january_ramp": {
+      "monthly_land_mean_precip": [
+        0.00041170911186677155,
+        0.0018698145894367486,
+        0.004645051927695735,
+        0.008902260893221393,
+        0.014687148550425033,
+        0.021926996585476696,
+        0.03044830480685398,
+        0.040007877525650375,
+        0.05032886247413788,
+        0.06113325643302029,
+        0.07216570408217396,
+        0.0832073036362143
+      ],
+      "jan_over_jul_ratio": 0.01352157745655827,
+      "max_minus_min": 0.08279559452434752
+    },
+    "land_max_hits_scale": {
+      "max_a": 9000.0,
+      "max_b": 9000.0,
+      "land_scale_m": 9000.0
+    }
+  },
+  "seed_records": [
+    {
+      "master_seed": 1,
+      "profile": "quick",
+      "elapsed_s": 2.352,
+      "peak_rss_mb_before": 139.859375,
+      "peak_rss_mb_after": 198.03125,
+      "hypsometry": {
+        "land_cells": 9503,
+        "mean_m": 2210.670102769145,
+        "max_m": 8939.353388547352,
+        "min_m": 0.005223882002172933,
+        "p10": 289.6121135325958,
+        "p25": 1083.1948217444371,
+        "p50": 1967.980052201752,
+        "p75": 3020.9657041852424,
+        "p90": 4315.7117071155335,
+        "p95": 5159.570464846562,
+        "p99": 7129.591357392189,
+        "frac_above_1km": 0.7688098495212038,
+        "frac_above_2km": 0.48952962222456065,
+        "frac_above_3km": 0.2524465958118489,
+        "frac_above_5km": 0.0558770914448069,
+        "frac_above_7km": 0.011470062085657162,
+        "frac_below_200m": 0.07871198568872988,
+        "frac_below_500m": 0.13995580343049563,
+        "hits_land_scale_max": false
+      },
+      "moisture": {
+        "land_mean": 4.61614959265474,
+        "land_p50": 0.8037955104502404,
+        "land_p90": 12.322863096394386,
+        "land_max": 135.31891971898395,
+        "coast_mean": 14.445615724989844,
+        "interior_mean": 2.6492238592410455,
+        "interior_coast_ratio": 0.18339293455370578
+      },
+      "hydrology": {
+        "land_cells": 9503,
+        "river_cells": 96,
+        "river_land_fraction": 0.0029296875,
+        "lake_cells": 364,
+        "acc_land_max": 1538.0,
+        "acc_land_p90": 12.800000000001091
+      },
+      "checksums": {
+        "elevation_v2_m": "504a90dc9083575e005e5c3357f938350d47cb792d3a7528b0c236c9eca3890e",
+        "ocean_mask": "c20ee3149e3c21ce52c560fbcefe51d3568a808650f369509957a5edc415f669",
+        "annual_precipitation": "df5634591950cf01a7ecea8c139fb416e6e168987963a02713224692ae6263a3",
+        "flow_direction": "9434cf32bcc1a5a840cb36118207ed0daff6236eaf874edb10bb7d8e4119ef34",
+        "basin_id": "53b4196eb8ce216e54470338dc76a57684b7bd56c5c653c91218a6041dff7b9b"
+      },
+      "absolute_maps": [
+        {
+          "path": "elevation_m.png",
+          "lo": -6000.0,
+          "hi": 9000.0,
+          "unit": "m",
+          "shape": [
+            128,
+            256
+          ],
+          "stretch": "absolute"
+        },
+        {
+          "path": "annual_precip.png",
+          "lo": 0.0,
+          "hi": 40.0,
+          "unit": "moisture_proxy_annual",
+          "shape": [
+            64,
+            128
+          ],
+          "stretch": "absolute",
+          "note": "Fixed absolute legend [0, 40] proxy units across seeds"
+        }
+      ],
+      "effective_config_checksum": "b833dc1e8aae931efbe620f405064002d979cad01337491b29f50a81d1ff0496"
+    },
+    {
+      "master_seed": 42,
+      "profile": "quick",
+      "elapsed_s": 2.306,
+      "peak_rss_mb_before": 198.03125,
+      "peak_rss_mb_after": 198.03125,
+      "hypsometry": {
+        "land_cells": 9503,
+        "mean_m": 2182.373416138953,
+        "max_m": 8939.374462529953,
+        "min_m": 0.2090421946359956,
+        "p10": 452.0286959837254,
+        "p25": 1166.1726100249173,
+        "p50": 1918.4059204295195,
+        "p75": 2820.637038037928,
+        "p90": 4153.996247233789,
+        "p95": 5441.722300651688,
+        "p99": 7250.663815026698,
+        "frac_above_1km": 0.7965905503525202,
+        "frac_above_2km": 0.46995685572976953,
+        "frac_above_3km": 0.21919393875618226,
+        "frac_above_5km": 0.06324318636220141,
+        "frac_above_7km": 0.013469430706092812,
+        "frac_below_200m": 0.06313795643481006,
+        "frac_below_500m": 0.10912343470483005,
+        "hits_land_scale_max": false
+      },
+      "moisture": {
+        "land_mean": 5.410535292927743,
+        "land_p50": 0.6411343783889156,
+        "land_p90": 14.917882271813296,
+        "land_max": 122.52735679243145,
+        "coast_mean": 18.023755565219727,
+        "interior_mean": 3.280359914290919,
+        "interior_coast_ratio": 0.18200201963574114
+      },
+      "hydrology": {
+        "land_cells": 9503,
+        "river_cells": 108,
+        "river_land_fraction": 0.0032958984375,
+        "lake_cells": 833,
+        "acc_land_max": 2073.0,
+        "acc_land_p90": 19.0
+      },
+      "checksums": {
+        "elevation_v2_m": "a9650efc7a89860f5ed98d481c92044e9730641b5e5115d925612e840488c2eb",
+        "ocean_mask": "1c4f9a25ad266468d075240e6a1cd0856ac8ff5d334ebc29fe53df24f23638ec",
+        "annual_precipitation": "60738ff77018e801574b69ccd988a55027d6bfff276d4f4d2634662fb5179b32",
+        "flow_direction": "88d8f74a98d253d58ea163f87a8e62b1d944f54e88d8fcf2cc336da527144ba2",
+        "basin_id": "e14f2dbbc779cc38e20a037a1437b548accbf1c75cbb653e58ae7d8064cfddc0"
+      },
+      "absolute_maps": [
+        {
+          "path": "elevation_m.png",
+          "lo": -6000.0,
+          "hi": 9000.0,
+          "unit": "m",
+          "shape": [
+            128,
+            256
+          ],
+          "stretch": "absolute"
+        },
+        {
+          "path": "annual_precip.png",
+          "lo": 0.0,
+          "hi": 40.0,
+          "unit": "moisture_proxy_annual",
+          "shape": [
+            64,
+            128
+          ],
+          "stretch": "absolute",
+          "note": "Fixed absolute legend [0, 40] proxy units across seeds"
+        }
+      ],
+      "effective_config_checksum": "0dcd9dc02e396932d7b63a9c45e08fc52852e4bc034bcbb169b5ea7d8bc82e67"
+    },
+    {
+      "master_seed": 100,
+      "profile": "quick",
+      "elapsed_s": 2.408,
+      "peak_rss_mb_before": 198.03125,
+      "peak_rss_mb_after": 201.53125,
+      "hypsometry": {
+        "land_cells": 9503,
+        "mean_m": 2864.823394904047,
+        "max_m": 8939.354110853346,
+        "min_m": 0.0038637995009115815,
+        "p10": 186.00355453576924,
+        "p25": 1584.5481612525132,
+        "p50": 2637.5949716009773,
+        "p75": 4035.282585619001,
+        "p90": 5722.186347938971,
+        "p95": 6548.899238913605,
+        "p99": 7785.956040723284,
+        "frac_above_1km": 0.8134273387351363,
+        "frac_above_2km": 0.6678943491528991,
+        "frac_above_3km": 0.4149216037040934,
+        "frac_above_5km": 0.1512154056613701,
+        "frac_above_7km": 0.03156897821740503,
+        "frac_below_200m": 0.1035462485530885,
+        "frac_below_500m": 0.14795327791223825,
+        "hits_land_scale_max": false
+      },
+      "moisture": {
+        "land_mean": 5.547608712551764,
+        "land_p50": 0.4230164988570686,
+        "land_p90": 14.718873036547446,
+        "land_max": 142.89255568537035,
+        "coast_mean": 17.39765654804239,
+        "interior_mean": 2.777553110807424,
+        "interior_coast_ratio": 0.15965099110546346
+      },
+      "hydrology": {
+        "land_cells": 9503,
+        "river_cells": 96,
+        "river_land_fraction": 0.0029296875,
+        "lake_cells": 719,
+        "acc_land_max": 1522.0,
+        "acc_land_p90": 13.0
+      },
+      "checksums": {
+        "elevation_v2_m": "c4964b22da840d189f722081520224079d6300a2ff5686aa1cec03479f718798",
+        "ocean_mask": "6018c5855d2a24301097485b699c9d4e5e1d29152a1f8d75970029e3b53dea4c",
+        "annual_precipitation": "300e48dc91aa46df552ef150342139693236f175ed46da9caa4dbdca7af1dbdc",
+        "flow_direction": "df15a27f84a9fc35c196067cb3ae386b7696b413f2b4a288ca84062d52703218",
+        "basin_id": "432bc0ce25ffc6ebb080c46d8113a713d2a17544fb0d9d8f4f9ccb4f38187bff"
+      },
+      "absolute_maps": [
+        {
+          "path": "elevation_m.png",
+          "lo": -6000.0,
+          "hi": 9000.0,
+          "unit": "m",
+          "shape": [
+            128,
+            256
+          ],
+          "stretch": "absolute"
+        },
+        {
+          "path": "annual_precip.png",
+          "lo": 0.0,
+          "hi": 40.0,
+          "unit": "moisture_proxy_annual",
+          "shape": [
+            64,
+            128
+          ],
+          "stretch": "absolute",
+          "note": "Fixed absolute legend [0, 40] proxy units across seeds"
+        }
+      ],
+      "effective_config_checksum": "f24f69135d078b82d0e3e9bd824359c4c93562cd20f266d478bbdfe150df985d"
+    }
+  ]
+}

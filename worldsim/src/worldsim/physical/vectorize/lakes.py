@@ -22,6 +22,9 @@ class Lake:
     outlet_river_id: int | None = None
     closed_basin: bool = True
     area_cells: int = 0
+    water_state: str = "endorheic"
+    spill_elevation: float | None = None
+    mean_effective_inflow: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -33,6 +36,9 @@ class Lake:
             "outlet_river_id": self.outlet_river_id,
             "closed_basin": self.closed_basin,
             "area_cells": self.area_cells,
+            "water_state": self.water_state,
+            "spill_elevation": self.spill_elevation,
+            "mean_effective_inflow": self.mean_effective_inflow,
         }
 
 
@@ -106,7 +112,22 @@ def build_lakes(
     elevation_m: NDArray[np.floating],
     basin_id: NDArray[np.integer],
     extent: SpatialExtent,
+    lake_records: list[dict[str, Any]] | None = None,
+    river_network: Any | None = None,
 ) -> list[Lake]:
+    records_by_id = {
+        int(r["lake_id"]): r for r in (lake_records or []) if "lake_id" in r
+    }
+    # Inlet/outlet river ids from network segments touching lakes
+    inlets: dict[int, list[int]] = {}
+    outlets: dict[int, int] = {}
+    if river_network is not None:
+        for seg in getattr(river_network, "segments", []):
+            if int(seg.to_lake_id) > 0:
+                inlets.setdefault(int(seg.to_lake_id), []).append(int(seg.id))
+            if int(seg.from_lake_id) > 0:
+                outlets[int(seg.from_lake_id)] = int(seg.id)
+
     lids = np.unique(lake_id[lake_id > 0])
     lakes: list[Lake] = []
     for lid in lids:
@@ -117,17 +138,27 @@ def build_lakes(
         if len(ring) < 4:  # closed ring → at least 3 unique + close
             continue
         elev = float(np.mean(elevation_m[m]))
-        # Dominant basin among lake cells
         bids, counts = np.unique(basin_id[m], return_counts=True)
         bid = int(bids[int(np.argmax(counts))]) if len(bids) else 0
+        rec = records_by_id.get(int(lid), {})
+        closed = bool(rec.get("closed_basin", True))
         lakes.append(
             Lake(
                 id=int(lid),
                 polygon=ring,
-                surface_elevation=elev,
-                basin_id=bid,
-                closed_basin=True,
+                surface_elevation=float(rec.get("surface_elevation_m", elev)),
+                basin_id=int(rec.get("basin_id", bid)),
+                inlet_river_ids=list(inlets.get(int(lid), [])),
+                outlet_river_id=outlets.get(int(lid)),
+                closed_basin=closed,
                 area_cells=int(np.count_nonzero(m)),
+                water_state=str(rec.get("water_state", "endorheic" if closed else "open")),
+                spill_elevation=(
+                    float(rec["spill_elevation_m"])
+                    if rec.get("spill_elevation_m") is not None
+                    else None
+                ),
+                mean_effective_inflow=float(rec.get("mean_effective_inflow", 0.0)),
             )
         )
     return lakes

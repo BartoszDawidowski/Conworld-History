@@ -37,4 +37,5 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
     "slow: long-running generation tests (e.g. full 1024×512 PyPlatec)",
+    "realism_audit: annex physical-realism invariants (xfail until fixed)",
 ]
