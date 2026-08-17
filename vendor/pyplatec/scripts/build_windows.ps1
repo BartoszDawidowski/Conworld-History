@@ -6,8 +6,9 @@
 #   .\vendor\pyplatec\scripts\build_windows.ps1
 
 $ErrorActionPreference = "Stop"
-$Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-Set-Location (Join-Path $Root "vendor\pyplatec")
+# PSScriptRoot = …/vendor/pyplatec/scripts → package root is one level up.
+$PkgRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $PkgRoot
 
 Write-Host "Building worldsim-platec (extended PyPlatec)..."
 if (Get-Command uv -ErrorAction SilentlyContinue) {
