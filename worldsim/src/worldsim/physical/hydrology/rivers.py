@@ -28,7 +28,7 @@ def river_mask_from_accumulation(
     flow_accumulation: NDArray[np.floating],
     ocean_mask: NDArray[np.bool_],
     *,
-    fraction: float = 0.02,
+    fraction: float = 0.035,
     min_cells: int = 8,
 ) -> NDArray[np.bool_]:
     """Cells with high upstream area (land only)."""

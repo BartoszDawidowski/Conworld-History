@@ -68,18 +68,20 @@ def compute_scores(
     flat = metrics["flatness_meso"]
     mean_macro = metrics["mean_elev_macro"]
 
-    # Mountain: meso relief + slope + local prominence (peak/ridge TPI)
+    # Mountain: meso relief + ruggedness + prominence. Scales chosen so
+    # typical hills stay below ~0.55 and orogens exceed 0.60 (CR-9 / F-13).
     mean_slope_m = metrics["mean_slope_meso"]
     tpi_abs = np.abs(metrics["tpi_fine"])
     mountain = (
-        0.20 * _norm(relief_f, 400.0)
-        + 0.35 * _norm(relief_m, 700.0)
-        + 0.15 * _norm(rough_m, 250.0)
-        + 0.15 * _norm(mean_slope_m, 0.12)
-        + 0.15 * _norm(tpi_abs, 250.0)
+        0.18 * _norm(relief_f, 800.0)
+        + 0.30 * _norm(relief_m, 1500.0)
+        + 0.16 * _norm(rough_m, 450.0)
+        + 0.12 * _norm(mean_slope_m, 0.04)
+        + 0.24 * _norm(tpi_abs, 300.0)
     )
-    # Mild flatness penalty (plateau interiors stay low; ridges keep score)
-    mountain = mountain * (1.0 - 0.30 * np.clip(flat - 0.5, 0.0, 1.0))
+    # Flat interiors drop; summits (high |TPI|) keep score even if metric slope is tiny.
+    flat_pen = np.clip(flat - 0.40, 0.0, 1.0) * np.clip(1.0 - tpi_abs / 120.0, 0.0, 1.0)
+    mountain = mountain * (1.0 - 0.40 * flat_pen)
 
     # Lowland reference: lower quantile of land elevation
     if np.any(land):
@@ -169,12 +171,12 @@ def classify_layers(
     local[land & (tpi_f > 40.0) & (slope >= 0.05)] = int(LocalForm.RIDGE)
     local[land & (tpi_f < -60.0)] = int(LocalForm.VALLEY)
     local[land & (tpi_f < -120.0) & (slope < 0.08)] = int(LocalForm.DEPRESSION)
-    # Escarpment: strong local elev step. Metric slope is tiny on coarse
-    # planetary grids, so relief dominates the label.
-    esc = land & (relief_f >= 200.0) & (
+    # Escarpment: steep local step. Metric slope is tiny on coarse grids,
+    # so meso/fine relief still qualifies a rim (plateau fixture).
+    esc = land & (relief_f >= 280.0) & (
         (slope >= params.escarpment_slope)
-        | (mean_slope_m >= 0.0008)
-        | (relief_f >= 400.0)
+        | (mean_slope_m >= 0.0015)
+        | (relief_f >= 700.0)
     )
     local[esc] = int(LocalForm.ESCARPMENT)
 

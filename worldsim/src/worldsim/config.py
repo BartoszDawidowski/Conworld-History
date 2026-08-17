@@ -94,8 +94,9 @@ class PlanetConfig:
     moisture_monsoon_coast_reach_km: float | None = 800.0
     moisture_monsoon_coast_reach_cells: float = 10.0
     moisture_monsoon_temp_scale_c: float = 8.0
+    moisture_monsoon_regional_mean_km: float = 500.0
     # Plan B7 — precip-aware hydro gates
-    hydrology_river_acc_fraction: float = 0.02
+    hydrology_river_acc_fraction: float = 0.035
     hydrology_lake_min_depth_m: float = 2.0
     hydrology_river_discharge_candidate_quantile: float = 0.50
     hydrology_lake_precip_land_quantile: float = 0.70
@@ -106,7 +107,7 @@ class PlanetConfig:
     hydrology_fill_max_depth_m: float = 25.0
     hydrology_river_min_catchment_km2: float | None = 500.0
     # CR-5 landforms
-    landform_mountain_score_threshold: float = 0.50
+    landform_mountain_score_threshold: float = 0.60
     landform_plateau_score_threshold: float = 0.40
     landform_fine_radius_km: float = 60.0
     landform_meso_radius_km: float = 150.0
@@ -197,6 +198,7 @@ class PlanetConfig:
             monsoon_coast_reach_km=self.moisture_monsoon_coast_reach_km,
             monsoon_coast_reach_cells=self.moisture_monsoon_coast_reach_cells,
             monsoon_temp_scale_c=self.moisture_monsoon_temp_scale_c,
+            monsoon_regional_mean_km=self.moisture_monsoon_regional_mean_km,
             planet_radius_km=self.planet_radius_km,
         )
 
@@ -558,13 +560,18 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     )
     if moisture_monsoon_temp_scale_c <= 0.0:
         raise ConfigError("moisture.monsoon_temp_scale_c must be > 0")
+    moisture_monsoon_regional_mean_km = float(
+        moisture_cfg.get("monsoon_regional_mean_km", 500.0)
+    )
+    if moisture_monsoon_regional_mean_km < 0.0:
+        raise ConfigError("moisture.monsoon_regional_mean_km must be >= 0")
 
     hydro_cfg = data.get("hydrology") or {}
     if hydro_cfg is None:
         hydro_cfg = {}
     if not isinstance(hydro_cfg, dict):
         raise ConfigError("hydrology must be a mapping when provided")
-    hydrology_river_acc_fraction = float(hydro_cfg.get("river_acc_fraction", 0.02))
+    hydrology_river_acc_fraction = float(hydro_cfg.get("river_acc_fraction", 0.035))
     if not 0.0 < hydrology_river_acc_fraction <= 1.0:
         raise ConfigError("hydrology.river_acc_fraction must be in (0, 1]")
     hydrology_lake_min_depth_m = float(hydro_cfg.get("lake_min_depth_m", 2.0))
@@ -621,7 +628,7 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     if not isinstance(land_cfg, dict):
         raise ConfigError("landforms must be a mapping when provided")
     landform_mountain_score_threshold = float(
-        land_cfg.get("mountain_score_threshold", 0.50)
+        land_cfg.get("mountain_score_threshold", 0.60)
     )
     landform_plateau_score_threshold = float(
         land_cfg.get("plateau_score_threshold", 0.40)
@@ -707,6 +714,7 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
         moisture_monsoon_coast_reach_km=moisture_monsoon_coast_reach_km,
         moisture_monsoon_coast_reach_cells=moisture_monsoon_coast_reach_cells,
         moisture_monsoon_temp_scale_c=moisture_monsoon_temp_scale_c,
+        moisture_monsoon_regional_mean_km=moisture_monsoon_regional_mean_km,
         hydrology_river_acc_fraction=hydrology_river_acc_fraction,
         hydrology_lake_min_depth_m=hydrology_lake_min_depth_m,
         hydrology_river_discharge_candidate_quantile=hydrology_river_discharge_candidate_quantile,

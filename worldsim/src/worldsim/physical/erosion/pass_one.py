@@ -1,21 +1,102 @@
-"""Climate-informed first erosion pass (Milestone 10 / Stage I)."""
+"""Climate-informed first erosion pass (Milestone 10 / Stage I / CR-9)."""
 
 from __future__ import annotations
 
 import numpy as np
 from numpy.typing import NDArray
 
-from worldsim.physical.atmosphere.circulation import elevation_gradients_cylindrical
+from worldsim.spatial.metrics import EARTH_RADIUS_KM, GridMetrics, grid_metrics
+
+# Cell laplacian * 0.08 matched ~1 km cells (F-21). Physical kappa = that * (1000 m)².
+THERMAL_KAPPA_REF_M = 1000.0
+
+
+def _metrics_for(
+    elevation_m: NDArray[np.floating],
+    *,
+    planet_radius_km: float = EARTH_RADIUS_KM,
+    metrics: GridMetrics | None = None,
+) -> GridMetrics:
+    if metrics is not None:
+        return metrics
+    h, w = np.asarray(elevation_m).shape
+    return grid_metrics(w, h, radius_km=float(planet_radius_km))
 
 
 def slope_magnitude(
     elevation_m: NDArray[np.floating],
     *,
-    cell_scale_m: float = 1000.0,
+    cell_scale_m: float | None = None,
+    planet_radius_km: float = EARTH_RADIUS_KM,
+    metrics: GridMetrics | None = None,
 ) -> NDArray[np.float64]:
-    """Dimensionless-ish slope from cylindrical elevation gradients."""
-    gx, gy = elevation_gradients_cylindrical(elevation_m)
-    return np.hypot(gx, gy) / max(float(cell_scale_m), 1.0)
+    """Metric slope (rise/run) via GridMetrics. ``cell_scale_m`` is a leftover no-op."""
+    _ = cell_scale_m
+    gm = _metrics_for(
+        elevation_m, planet_radius_km=planet_radius_km, metrics=metrics
+    )
+    return gm.metric_slope(elevation_m)
+
+
+def _metric_laplacian(
+    elev: NDArray[np.floating],
+    metrics: GridMetrics,
+) -> NDArray[np.float64]:
+    """∇²h in m⁻¹ (second derivative wrt metres)."""
+    e = np.asarray(elev, dtype=np.float64)
+    dx = np.maximum(metrics.ew_spacing_km() * 1000.0, 1.0)
+    dy = np.maximum(metrics.ns_spacing_km() * 1000.0, 1.0)
+    east = np.roll(e, -1, axis=1)
+    west = np.roll(e, 1, axis=1)
+    north = np.empty_like(e)
+    south = np.empty_like(e)
+    north[:-1, :] = e[1:, :]
+    north[-1, :] = e[-1, :]
+    south[1:, :] = e[:-1, :]
+    south[0, :] = e[0, :]
+    dxx = (east - 2.0 * e + west) / (dx[:, None] ** 2)
+    dyy = (south - 2.0 * e + north) / (dy[:, None] ** 2)
+    return dxx + dyy
+
+
+def condition_micro_depressions(
+    elevation_m: NDArray[np.floating],
+    ocean_mask: NDArray[np.bool_],
+    *,
+    max_depth_m: float = 25.0,
+    passes: int = 8,
+) -> NDArray[np.float64]:
+    """Fill land pits shallower than ``max_depth_m`` (CR-9 / F-21).
+
+    Deep closed basins stay; numerical fluvial pits do not.
+    """
+    elev = np.asarray(elevation_m, dtype=np.float64).copy()
+    ocean = np.asarray(ocean_mask, dtype=bool)
+    land = ~ocean
+    cap = float(max(max_depth_m, 0.0))
+    if cap <= 0.0:
+        return elev
+
+    def _neighbors(e: NDArray[np.float64]) -> NDArray[np.float64]:
+        east = np.roll(e, -1, axis=1)
+        west = np.roll(e, 1, axis=1)
+        north = np.empty_like(e)
+        south = np.empty_like(e)
+        north[:-1, :] = e[1:, :]
+        north[-1, :] = e[-1, :]
+        south[1:, :] = e[:-1, :]
+        south[0, :] = e[0, :]
+        return np.minimum(np.minimum(east, west), np.minimum(north, south))
+
+    for _ in range(max(1, int(passes))):
+        nmin = _neighbors(elev)
+        depth = nmin - elev
+        pits = land & (depth > 1e-6) & (depth <= cap)
+        if not np.any(pits):
+            break
+        elev = np.where(pits, nmin, elev)
+        elev = np.where(land, np.maximum(elev, 0.0), elev)
+    return elev
 
 
 def rock_resistance_proxy(
@@ -93,12 +174,14 @@ def apply_erosion_pass_one(
     fluvial_k: float = 8.0,
     max_step_m: float = 25.0,
     macro_blend: float = 0.35,
+    planet_radius_km: float = EARTH_RADIUS_KM,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Return ``(dem_v1, erosion_delta_m)`` with land-only climate-informed erosion.
 
     Combines mild thermal diffusion (artefact reduction), precip×slope incision,
     and pit filling for drainage tendency. Macro-relief is anchored by blending
-    back toward the original DEM each step.
+    back toward the original DEM each step. Slope and diffusion use GridMetrics
+    (CR-9 / F-21); ``thermal_kappa`` is the 1 km-cell coefficient.
     """
     elev0 = np.asarray(elevation_m, dtype=np.float64).copy()
     elev = elev0.copy()
@@ -113,6 +196,8 @@ def apply_erosion_pass_one(
     p_norm = np.clip(p_norm, 0.0, 2.5)
     resist = np.asarray(resistance, dtype=np.float64)
     erodibility = 1.0 / np.maximum(resist, 0.15)
+    gm = _metrics_for(elev, planet_radius_km=planet_radius_km)
+    kappa_m2 = float(thermal_kappa) * (THERMAL_KAPPA_REF_M ** 2)
 
     def _neighbors(e: NDArray[np.float64]) -> tuple[NDArray, NDArray, NDArray, NDArray]:
         east = np.roll(e, -1, axis=1)
@@ -126,11 +211,10 @@ def apply_erosion_pass_one(
         return east, west, north, south
 
     for _ in range(max(1, int(iterations))):
-        # Thermal diffusion — reduces checkerboard / noise
-        lap = _laplacian_cylindrical(elev)
-        thermal = np.clip(thermal_kappa * lap, -max_step_m, max_step_m)
+        lap = _metric_laplacian(elev, gm)
+        thermal = np.clip(kappa_m2 * lap, -max_step_m, max_step_m)
 
-        slope = slope_magnitude(elev)
+        slope = slope_magnitude(elev, metrics=gm)
         fluvial = np.clip(
             -fluvial_k * p_norm * slope * erodibility, -max_step_m, 0.0
         )

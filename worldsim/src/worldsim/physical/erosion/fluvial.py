@@ -5,9 +5,13 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
+from worldsim.spatial.metrics import EARTH_RADIUS_KM
+
 from worldsim.physical.erosion.pass_one import (
-    _laplacian_cylindrical,
-    rock_resistance_proxy,
+    THERMAL_KAPPA_REF_M,
+    _metric_laplacian,
+    _metrics_for,
+    condition_micro_depressions,
     slope_magnitude,
 )
 
@@ -45,10 +49,13 @@ def apply_fluvial_erosion(
     max_step_m: float = 30.0,
     macro_blend: float = 0.40,
     deposit_frac: float = 0.25,
+    planet_radius_km: float = EARTH_RADIUS_KM,
+    micro_fill_max_depth_m: float = 25.0,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Incise along rivers; deposit a fraction on nearby low slopes.
 
     Returns ``(elevation_v2, delta_m)``. Ocean bathymetry is unchanged.
+    After incision, shallow numerical pits are filled (CR-9 / F-21).
     """
     elev0 = np.asarray(elevation_m, dtype=np.float64).copy()
     elev = elev0.copy()
@@ -63,10 +70,11 @@ def apply_fluvial_erosion(
         q_norm = q
     q_norm = np.clip(q_norm, 0.0, 3.0)
     erodibility = 1.0 / np.maximum(np.asarray(resistance, dtype=np.float64), 0.15)
+    gm = _metrics_for(elev, planet_radius_km=planet_radius_km)
+    kappa_m2 = 0.04 * (THERMAL_KAPPA_REF_M ** 2)
 
     for _ in range(max(1, int(iterations))):
-        slope = slope_magnitude(elev)
-        # Stream power ∝ Q^m * S^n
+        slope = slope_magnitude(elev, metrics=gm)
         incision = (
             -stream_power_k
             * (q_norm**0.5)
@@ -77,14 +85,12 @@ def apply_fluvial_erosion(
         incision = np.clip(incision, -max_step_m, 0.0)
         incision = np.where(land, incision, 0.0)
 
-        # Mild thermal diffusion on land (artefact control)
-        lap = _laplacian_cylindrical(elev)
-        thermal = np.clip(0.04 * lap, -0.5 * max_step_m, 0.5 * max_step_m)
+        lap = _metric_laplacian(elev, gm)
+        thermal = np.clip(kappa_m2 * lap, -0.5 * max_step_m, 0.5 * max_step_m)
         thermal = np.where(land, thermal, 0.0)
 
         elev = elev + incision + thermal
 
-        # Deposit a fraction of removed mass on low-slope river-adjacent land
         removed = np.where(incision < 0.0, -incision, 0.0)
         mass = float(removed.sum())
         if mass > 0.0 and np.any(land):
@@ -100,4 +106,8 @@ def apply_fluvial_erosion(
 
     elev = np.where(ocean, elev0, elev)
     elev = np.where(land, np.maximum(elev, 0.0), elev)
+    elev = condition_micro_depressions(
+        elev, ocean, max_depth_m=float(micro_fill_max_depth_m)
+    )
+    elev = np.where(ocean, elev0, elev)
     return elev, elev - elev0

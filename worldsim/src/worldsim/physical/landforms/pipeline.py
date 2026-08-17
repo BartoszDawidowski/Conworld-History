@@ -22,12 +22,14 @@ from worldsim.physical.landforms.objects import (
     MountainRange,
     Plateau,
     components_to_geojson_polygons,
+    components_to_geojson_ridges,
     extract_mountain_ranges,
     extract_plateaus,
 )
 from worldsim.physical.landforms.params import (
     LANDFORM_ALGORITHM_VERSION,
     LandformParams,
+    params_are_calibrated,
 )
 from worldsim.progress import ProgressReporter
 from worldsim.spatial.extent import SpatialExtent
@@ -97,6 +99,11 @@ class LandformResult:
         )
         (out_vec / "plateaus.geojson").write_text(
             json.dumps({"type": "FeatureCollection", "features": plat_feats}) + "\n",
+            encoding="utf-8",
+        )
+        ridge_feats = components_to_geojson_ridges(self.mountain_ranges)
+        (out_vec / "mountain_ridges.geojson").write_text(
+            json.dumps({"type": "FeatureCollection", "features": ridge_feats}) + "\n",
             encoding="utf-8",
         )
 
@@ -261,7 +268,7 @@ def build_landform_analysis(
         and int(layers["context_id"].shape[0]) == ah
         and int(layers["context_id"].shape[1]) == aw
     )
-    calibrated = True
+    calibrated = params_are_calibrated(params)
     diagnostics: dict[str, Any] = {
         "enabled": True,
         "algorithm": LANDFORM_ALGORITHM_VERSION,
@@ -293,6 +300,9 @@ def build_landform_analysis(
             mountain_frac <= float(params.max_mountain_land_fraction)
         ),
         "acceptance_ok": bool(structural_ok and calibrated),
+        "ridge_centerlines": int(
+            sum(1 for r in ranges if len(r.ridge_line) >= 2)
+        ),
     }
 
     if reporter is not None:

@@ -51,7 +51,7 @@ def test_seasonal_onshore_offshore_contrast() -> None:
     assert onshore[5] > 0.2
     assert onshore[11] < -0.2
     assert diag.get("seasonal_onshore_sign_flip") is True
-    assert diag.get("algorithm") == "monsoon_local_coast_wind_v2"
+    assert diag.get("algorithm") == "monsoon_anomaly_gate_v1"
 
 
 def test_trades_preserved_outside_monsoon_band() -> None:

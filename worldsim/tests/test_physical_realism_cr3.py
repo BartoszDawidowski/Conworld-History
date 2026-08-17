@@ -96,7 +96,7 @@ def test_monsoon_local_not_hemisphere_mean() -> None:
     assert june_du > 0.15
     assert dec_du < -0.15
     assert june_du > 0.1  # onshore (eastward) on west coast of land
-    assert diag.get("algorithm") == "monsoon_local_coast_wind_v2"
+    assert diag.get("algorithm") == "monsoon_anomaly_gate_v1"
 
 
 def test_sst_anomaly_coast_gt_deep() -> None:

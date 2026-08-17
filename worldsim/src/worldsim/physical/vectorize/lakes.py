@@ -8,7 +8,6 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from worldsim.physical.vectorize.coords import cell_center_norm
 from worldsim.spatial.extent import SpatialExtent
 
 
@@ -72,36 +71,86 @@ def _sanitize_ring(ring: list[tuple[float, float]]) -> list[tuple[float, float]]
     return out
 
 
+def _corner_norm(
+    col_v: float,
+    row_v: float,
+    extent: SpatialExtent,
+) -> tuple[float, float]:
+    """Cell-corner (not centre) to normalised cylindrical (x, y)."""
+    width, height = extent.width, extent.height
+    x = float(col_v) / float(width)
+    y = 1.0 - float(row_v) * 2.0 / float(height)
+    return float(x % 1.0), float(y)
+
+
+def _directed_outline_rings(
+    mask: NDArray[np.bool_],
+) -> list[list[tuple[int, int]]]:
+    """Clockwise outer rings of 4-connected True cells (cell-corner vertices).
+
+    Each True cell contributes the sides that face False / NS-out. Chaining
+    those directed edges gives a non-self-intersecting outline for concave
+    bodies (CR-6 / F-20). Angular sort around the centroid is not used.
+    """
+    body = np.asarray(mask, dtype=bool)
+    h, w = body.shape
+    edges: dict[tuple[int, int], list[tuple[int, int]]] = {}
+
+    def add(a: tuple[int, int], b: tuple[int, int]) -> None:
+        edges.setdefault(a, []).append(b)
+
+    rows, cols = np.where(body)
+    for r, c in zip(rows.tolist(), cols.tolist()):
+        west = body[r, (c - 1) % w]
+        east = body[r, (c + 1) % w]
+        north = body[r - 1, c] if r > 0 else False
+        south = body[r + 1, c] if r + 1 < h else False
+        # Image y increases south. Walk so the interior is on the right.
+        if not west:
+            add((c, r + 1), (c, r))
+        if not east:
+            add((c + 1, r), (c + 1, r + 1))
+        if not north:
+            add((c, r), (c + 1, r))
+        if not south:
+            add((c + 1, r + 1), (c, r + 1))
+
+    rings: list[list[tuple[int, int]]] = []
+    while edges:
+        start = next(iter(edges))
+        ring = [start]
+        cur = start
+        for _ in range(h * w * 4 + 2):
+            nxts = edges.get(cur)
+            if not nxts:
+                break
+            nxt = nxts.pop(0)
+            if not nxts:
+                del edges[cur]
+            ring.append(nxt)
+            cur = nxt
+            if cur == start and len(ring) > 2:
+                break
+        if cur in edges and not edges[cur]:
+            del edges[cur]
+        if len(ring) >= 4:
+            rings.append(ring)
+        # Drop leftover stubs from this component.
+        if start in edges and not edges[start]:
+            del edges[start]
+    return rings
+
+
 def _boundary_ring(
     mask: NDArray[np.bool_],
     extent: SpatialExtent,
 ) -> list[tuple[float, float]]:
-    """Axis-aligned boundary loop of a connected lake mask (may be coarse)."""
-    h, w = mask.shape
-    # Collect unique edge midpoints as polygon vertices via contour of bbox + edge walk
-    rows, cols = np.where(mask)
-    if len(rows) == 0:
+    """Outer contour of a connected lake mask (cell-edge union, not centroid sort)."""
+    rings = _directed_outline_rings(mask)
+    if not rings:
         return []
-    # Use sorted boundary cells' centres as a simple ring via convex-ish hull of edge cells
-    edge = np.zeros_like(mask)
-    for r, c in zip(rows.tolist(), cols.tolist()):
-        for dj, di in ((0, 1), (0, -1), (1, 0), (-1, 0)):
-            rr, cc = r + dj, (c + di) % w
-            if rr < 0 or rr >= h or not mask[rr, cc]:
-                edge[r, c] = True
-                break
-    er, ec = np.where(edge)
-    if len(er) == 0:
-        # single cell — not a drawable polygon
-        return []
-    # Order by angle around centroid for a closed ring
-    pts = np.column_stack([ec.astype(np.float64), er.astype(np.float64)])
-    cy, cx = float(pts[:, 1].mean()), float(pts[:, 0].mean())
-    ang = np.arctan2(pts[:, 1] - cy, pts[:, 0] - cx)
-    order = np.argsort(ang)
-    ring = [cell_center_norm(float(pts[i, 0]), float(pts[i, 1]), extent) for i in order]
-    if ring and ring[0] != ring[-1]:
-        ring.append(ring[0])
+    verts = max(rings, key=len)
+    ring = [_corner_norm(float(x), float(y), extent) for x, y in verts]
     return _sanitize_ring(ring)
 
 

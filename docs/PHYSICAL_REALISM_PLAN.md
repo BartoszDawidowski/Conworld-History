@@ -1,9 +1,9 @@
 # Physical Realism Plan — operational tracker
 
-> **Status:** **PR-0–PR-9 foundation delivered**; **CR-0–CR-5 accepted** — [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md).  
+> **Status:** **PR-0–PR-9 foundation delivered**; **CR-0–CR-9** accepted — [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md).  
 > **Authority:** [`docs/WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md) (design) + corrections doc (production defects / repair order).  
 > **Rule:** One milestone at a time. Validate → `docs/validation/physical_realism_{pr|cr}N.md` → stop.  
-> **Next when instructed:** optional **B10** (atlas) or a named moisture/hypsometry follow-up.
+> **Next when instructed:** optional atlas **B10**. Do not calibrate precip until Atlas spin-up leftover is measured.
 
 ---
 
@@ -26,7 +26,7 @@ This document is the **execution index** for scientific hardening of the physica
 | `IMPLEMENTATION_PLAN.md` | M0–19 historical record (complete); points here for realism follow-up |
 | `ATLAS_PLAN_B.md` | Atlas UX B1–B7 done; **B8/B9 mechanisms and order amended** by annex |
 | `WORLDGEN_PHYSICAL_REALISM_ANNEX.md` | Normative corrective design + PR-0…PR-9 sequence |
-| `PHYSICAL_REALISM_CORRECTIONS.md` | Post–PR-9 defect register + **CR-0…CR-5** repair order |
+| `PHYSICAL_REALISM_CORRECTIONS.md` | Post–PR-9 defect register + **CR-0…CR-9** repair order |
 | This file | Living status + conflict register + next milestone |
 
 Where the annex identifies a demonstrated correctness problem, its corrective requirement **takes precedence** over an earlier qualitative “milestone complete” acceptance statement. Where the **corrections** document shows production failure of an accepted PR, the CR track **takes precedence** until the defect is closed. Unrelated architectural decisions remain valid.
@@ -39,15 +39,15 @@ Where the annex identifies a demonstrated correctness problem, its corrective re
 |---|---|---|
 | C-01 | Plan B next = **B8** immediately after B7 | **Resolved.** Revised B8 = **PR-7**; revised B9 = **PR-8**. |
 | C-02 | B8 soft plume may add distance-to-ocean precip contribution | **Resolved (PR-7).** Plume mixes existing `q` inside budget (D-08). Production wire: see **F-02** / **CR-1**. |
-| C-03 | B9 optional light precip boost as peer mechanism | **Resolved (PR-8).** Monsoon is transport-first; regime bug **F-07** / **CR-3**. |
-| C-04 | Plan B §8: “fully physically conserved water budget” out of scope | **Superseded** for atmospheric moisture: budget closure is **P0** (annex §10). Production spin-up: **F-03/F-04** / **CR-3**. |
+| C-03 | B9 optional light precip boost as peer mechanism | **Resolved (PR-8) scaffolding.** Production monsoon **partial CR-8 / F-07** (Atlas leftover). |
+| C-04 | Plan B §8: “fully physically conserved water budget” out of scope | **Superseded** P0 (annex §10). Production spin-up **partial CR-8 / F-03** (Atlas leftover). |
 | C-05 | Plan B: “prefer shallow hooks; do not reopen M0–19” | Softened: **scientific-hardening follow-ups** to M6/9/11/13 modules are in scope; **not** a full generator rewrite. |
-| C-06 | B7 + §6.3.1 transmission / flow layer = Nil/wadi done | **PR-5/PR-6 scaffolding; production endorheism ✅ CR-4.** |
-| C-07 | Every Lake `closed_basin=True`; fill-all depressions | **Closed CR-4** — finite fill; typed closed basins. |
-| C-08 | Cell-based climate scales (`*_cells`) as permanent params | Migrate to **km** via GridMetrics (**PR-1** / **CR-2** / **CR-5** hydro km²); leftovers `advect_steps`, bathymetry shelf cells. |
+| C-06 | B7 + §6.3.1 transmission / flow layer = Nil/wadi done | PET×12 + liquid mask ✅ **CR-6**; soil/Q m³/s/km ✅ **CR-7**. |
+| C-07 | Every Lake `closed_basin=True`; fill-all depressions | Finite fill CR-4; land-outlet vs closed ✅ **CR-6**. |
+| C-08 | Cell-based climate scales (`*_cells`) as permanent params | Godot omits `continentality_scale_km` (**F-19**, closed CR-6); `advect_steps` is CFL cap (**CR-8**); erosion metric slope (**CR-9**). |
 | C-09 | Single max land normalisation / every seed hits `land_scale_m` | **power_tail_v2** production default (**CR-5**); `tail_softness` real (**F-12**). |
 | C-10 | Moisture #2 labeled as if it caused hydrology | Provenance split: `moisture_hydrology_input` vs `moisture_ecology` (D-13); diagnostics must not mislabel. |
-| C-11 | PR-0…PR-9 “complete” ⇒ production-ready climate | **Superseded 2026-08-17.** Foundation complete; production repair **CR-0…CR-5 accepted**. Leftovers: moisture trial band, Full gate (**F-14**), mountain score 0.60–0.65. |
+| C-11 | PR-0…PR-9 “complete” ⇒ production-ready climate | **Superseded.** CR-0…CR-9 accepted; Atlas regen leftovers remain. |
 
 ---
 
@@ -60,7 +60,11 @@ PR-0 … PR-9   Foundation (delivered; see honest status in corrections §6)
   → CR-2  GridMetrics / subgrid transpose / cell→km leftovers
   → CR-3  Moisture closure + SST anomaly + monsoon regime   ← HARD GATE
   → CR-4  Monthly hydrology + typed outlets / endorheism     ← HARD GATE
-  → CR-5  Joint calibration (hypsometry, climate, landforms / 9E)
+  → CR-5  Joint calibration — hypsometry accepted; landforms reopened
+  → CR-6  Hydrology hotfix (PET, outlets, liquid mask, Godot km)  ✅
+  → CR-7  Light hydrology v2  ✅
+  → CR-8  Atmosphere (conservative advect, monsoon, one hydro↔evap pass)  ✅
+  → CR-9  Erosion / landforms / BiomeV2  ✅
 
 Parallel (atlas presentation only, when requested):
   B10  Full-resolution land polygons  — no PR/CR dependency
@@ -89,16 +93,20 @@ Corrected physical derivation order (annex §6) remains authoritative for pipeli
 
 Detail: annex §§7–19. Production defects: corrections §3 (F-01…).
 
-### 4.2 Corrections (CR-0…CR-5)
+### 4.2 Corrections (CR-0…CR-9)
 
 | ID | Title | Status | Validation note |
 |---|---|---|---|
 | CR-0 | CI + harness honesty | ✅ Complete | [`docs/validation/physical_realism_cr0.md`](validation/physical_realism_cr0.md) |
 | CR-1 | Parameter propagation + acceptance honesty | ✅ Complete | [`docs/validation/physical_realism_cr1.md`](validation/physical_realism_cr1.md) |
 | CR-2 | GridMetrics / subgrid / km leftovers | ✅ Complete | [`docs/validation/physical_realism_cr2.md`](validation/physical_realism_cr2.md) |
-| CR-3 | Moisture + SST anomaly + monsoon | ✅ Complete | [`docs/validation/physical_realism_cr3.md`](validation/physical_realism_cr3.md) |
-| CR-4 | Monthly hydro + endorheism | ✅ Complete | [`docs/validation/physical_realism_cr4.md`](validation/physical_realism_cr4.md) |
-| CR-5 | Joint calibration (+ PR-9E) | ✅ Complete | [`docs/validation/physical_realism_cr5.md`](validation/physical_realism_cr5.md) |
+| CR-3 | Moisture + SST anomaly + monsoon | ⚠️ Fixtures OK; production reopened | [`docs/validation/physical_realism_cr3.md`](validation/physical_realism_cr3.md) |
+| CR-4 | Monthly hydro + endorheism | ⚠️ Fixtures OK; PET×12 / lakes reopened | [`docs/validation/physical_realism_cr4.md`](validation/physical_realism_cr4.md) |
+| CR-5 | Joint calibration (+ PR-9E) | ⚠️ Hypsometry OK; landforms reopened | [`docs/validation/physical_realism_cr5.md`](validation/physical_realism_cr5.md) |
+| CR-6 | Hydrology hotfix | ✅ Complete | [`docs/validation/physical_realism_cr6.md`](validation/physical_realism_cr6.md) |
+| CR-7 | Light hydrology v2 | ✅ Complete | [`docs/validation/physical_realism_cr7.md`](validation/physical_realism_cr7.md) |
+| CR-8 | Atmosphere (advect / lee / monsoon) | ✅ Complete | [`docs/validation/physical_realism_cr8.md`](validation/physical_realism_cr8.md) |
+| CR-9 | Erosion, landforms, BiomeV2 | ✅ Complete | [`docs/validation/physical_realism_cr9.md`](validation/physical_realism_cr9.md) |
 
 ---
 
@@ -108,7 +116,7 @@ Detail: annex §§7–19. Production defects: corrections §3 (F-01…).
 |---|---|---|
 | B1–B7 + hydro UX | Baseline delivered | Remains; does not prove annex invariants |
 | B8 | **= PR-7** after PR-4 | Production closure → **CR-1/CR-3** |
-| B9 | **= PR-8** after PR-7 | Regime fix ✅ **CR-3**; production `monsoon_strength=0.35` |
+| B9 | **= PR-8** after PR-7 | Scaffolding CR-3; production monsoon **CR-8** (Atlas leftover) |
 | B10 | Independent | Atlas Full land polys; may run anytime when instructed |
 
 ---
@@ -123,13 +131,11 @@ Landforms (**PR-9** / **CR-5**) feed hex caches and `EnvironmentAdapter` later; 
 
 ## 7. Suggested human instructions
 
-CR track is complete. Moisture trial-band / Full gate / mountain score 0.60–0.65 need a named follow-up. Do not retune `folding_ratio` or `ocean_evap_rate` to hide leftovers.
-
-Optional atlas:
-
 ```text
-Atlas Plan B: execute B10 only.
+Plan B presentation: B10 Full land polys when requested.
 ```
+
+CR track is complete. Atlas spin-up leftover remains until regen. Optional atlas **B10** remains independent presentation.
 
 ---
 
@@ -139,7 +145,8 @@ Atlas Plan B: execute B10 only.
 |---|---|
 | Annex §4 decision register D-01…D-16 | Binding |
 | Annex §15 PR-0…PR-9 | Foundation sequence |
-| Corrections F-01…F-14 / CR-0…CR-5 | Production repair |
+| Corrections F-01…F-21 / CR-0…CR-9 | Production repair |
+| Production audit Atlas 183716 / 85ea366 | Reopened hydro + moisture |
 | Annex §20 traceability matrix | Requirement IDs |
 | Audit commit `6a96116…` | Baseline for harness |
 | Production audit 2026-08-17 (Quick 1/42/100) | Corrections evidence |

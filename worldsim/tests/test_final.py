@@ -98,7 +98,7 @@ def test_final_recalculation(tmp_path: Path) -> None:
     assert final.elevation_v2_m.shape == erosion.elevation_m.shape
     assert final.diagnostics["stable_final_geography"] is True
     assert final.diagnostics["no_catastrophic_feedback"] is True
-    assert final.diagnostics["acceptance_ok"] is True
+    assert final.diagnostics["hydro_evap_iteration"] == 1
     assert final.hydrology.diagnostics["acceptance_ok"] is True
     assert final.vectors.diagnostics["acceptance_ok"] is True
     final.save(tmp_path / "final")

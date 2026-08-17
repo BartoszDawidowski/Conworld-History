@@ -14,6 +14,7 @@ from worldsim.physical.hydrology.cylindrical_graph import (
     classify_outlets,
 )
 from worldsim.physical.hydrology.flow import run_pyflwdir_core
+from worldsim.physical.hydrology.discharge import month_weighted_mean_m3s
 from worldsim.physical.moisture.pipeline import MoistureResult
 from worldsim.spatial.extent import SpatialExtent
 
@@ -144,15 +145,14 @@ def test_canonical_monthly_q_sums_to_annual() -> None:
         params=HydrologyParams(fill_max_depth_m=25.0),
         temperature_c=temp,
     )
-    summed = hydro.monthly_discharge.sum(axis=0)
-    assert np.allclose(summed, hydro.river_discharge_proxy, atol=1e-9)
+    weighted = month_weighted_mean_m3s(hydro.monthly_discharge)
+    assert np.allclose(weighted, hydro.river_discharge_proxy, atol=1e-9)
     assert hydro.diagnostics["monthly_vs_annual_eff_rel_diff"] == pytest.approx(0.0)
     assert hydro.diagnostics["monthly_annual_consistent"] is True
-    assert hydro.diagnostics["q_canonical"] == "sum_monthly_effective"
-    # Independent annual routing may differ (PET/max nonlinearity) but must
-    # not be the 80–91% mystery divergence used as the product Q.
+    assert hydro.diagnostics["q_canonical"] == "mean_monthly_m3s"
+    assert hydro.diagnostics["q_units"] == "m3_s"
     rel_ind = float(hydro.diagnostics["monthly_vs_independent_annual_rel_diff"])
-    assert rel_ind < 0.80
+    assert rel_ind < 0.35
 
 
 def test_config_cr4_defaults() -> None:

@@ -17,6 +17,7 @@ from worldsim.physical.erosion.pass_one import (
     rock_resistance_proxy,
     slope_magnitude,
 )
+from worldsim.spatial.metrics import EARTH_RADIUS_KM
 from worldsim.physical.moisture.pipeline import MoistureResult
 from worldsim.physical.tectonics.interpretation import TectonicsInterpretationResult
 from worldsim.physical.terrain.pipeline import TerrainOceanResult
@@ -30,6 +31,7 @@ class ErosionParams:
     iterations: int = 5
     thermal_kappa: float = 0.08
     fluvial_k: float = 8.0
+    planet_radius_km: float = EARTH_RADIUS_KM
 
 
 @dataclass
@@ -126,6 +128,7 @@ def build_erosion_pass_one(
         iterations=params.iterations,
         thermal_kappa=params.thermal_kappa,
         fluvial_k=params.fluvial_k,
+        planet_radius_km=params.planet_radius_km,
     )
 
     if reporter is not None:
@@ -134,7 +137,7 @@ def build_erosion_pass_one(
     minima_after = count_land_local_minima(dem_v1, ocean)
     rough_after = land_roughness(dem_v1, ocean)
     corr = _macro_relief_correlation(before, dem_v1, ocean)
-    slope = slope_magnitude(dem_v1)
+    slope = slope_magnitude(dem_v1, planet_radius_km=params.planet_radius_km)
 
     drainage_improved = minima_after <= minima_before
     roughness_reduced = rough_after <= rough_before * 1.02
@@ -160,6 +163,7 @@ def build_erosion_pass_one(
         if np.any(land)
         else 0.0,
         "ocean_unchanged": bool(np.allclose(dem_v1[ocean], before[ocean])),
+        "slope_algorithm": "metric_gridmetrics_v1",
         "acceptance_ok": bool(
             drainage_improved and macro_preserved and roughness_reduced
         ),

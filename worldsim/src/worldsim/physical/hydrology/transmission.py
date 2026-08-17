@@ -12,32 +12,56 @@ from worldsim.physical.hydrology.cylindrical_graph import (
     effective_discharge,
 )
 
+# Non-leap civil month lengths. Holdridge PET is an *annual* millimetre total.
+MONTH_DAYS = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+YEAR_DAYS = 365
+_MONTH_DAYS = MONTH_DAYS
+_YEAR_DAYS = YEAR_DAYS
+
+
+def month_pet_fraction(month_index: int) -> float:
+    """Share of annual Holdridge PET that belongs to one calendar month."""
+    return float(MONTH_DAYS[int(month_index) % 12]) / float(YEAR_DAYS)
+
 
 def transmission_sink(
     precip: NDArray[np.floating],
-    temperature_annual_c: NDArray[np.floating],
+    temperature_c: NDArray[np.floating],
     ocean_mask: NDArray[np.bool_],
     *,
     transmission_rate: float = 0.45,
     precip_scale_mm: float = 200.0,
+    pet_year_fraction: float = 1.0,
+    path_length_km: NDArray[np.floating] | None = None,
+    transmission_ref_km: float = 50.0,
+    residual_pet_proxy: NDArray[np.floating] | None = None,
 ) -> NDArray[np.float64]:
-    """Local channel loss in runoff-proxy units: rate × max(0, PET − water).
+    """Channel loss in runoff-proxy units.
 
-    ``precip`` is the water available to the channel this step (monthly runoff
-    or annual runoff), not raw precipitation — snow held in store is not yet
-    in the river (CR-4 / F-09).
+    Default demand is rate × max(0, PET − local water) (CR-6). Monthly callers
+    must pass ``pet_year_fraction = days_in_month / 365``.
 
-    PET ≈ 58.93 × biotemp (Holdridge); avoid importing ecology (circular).
+    CR-7: ``path_length_km`` scales demand by ``length / transmission_ref_km``
+    (per-km loss). ``residual_pet_proxy`` is PET left after the soil bucket so
+    channel ET does not double-count land ET.
     """
     ocean = np.asarray(ocean_mask, dtype=np.bool_)
     p = np.asarray(precip, dtype=np.float64)
-    t = np.asarray(temperature_annual_c, dtype=np.float64)
-    bio = np.clip(t, 0.0, 30.0)
-    pet_mm = 58.93 * bio
-    precip_mm = np.maximum(p, 0.0) * float(precip_scale_mm)
-    demand_mm = np.maximum(pet_mm - precip_mm, 0.0)
-    demand = demand_mm / max(float(precip_scale_mm), 1e-6)
+    t = np.asarray(temperature_c, dtype=np.float64)
+    frac = max(float(pet_year_fraction), 0.0)
+    scale = max(float(precip_scale_mm), 1e-6)
+    if residual_pet_proxy is not None:
+        demand = np.maximum(np.asarray(residual_pet_proxy, dtype=np.float64), 0.0)
+    else:
+        bio = np.clip(t, 0.0, 30.0)
+        pet_mm = 58.93 * bio * frac
+        precip_mm = np.maximum(p, 0.0) * scale
+        demand = np.maximum(pet_mm - precip_mm, 0.0) / scale
     sink = float(transmission_rate) * demand
+    if path_length_km is not None:
+        length = np.maximum(np.asarray(path_length_km, dtype=np.float64), 0.0)
+        ref = max(float(transmission_ref_km), 1e-6)
+        sink = sink * (length / ref)
     return np.where(ocean, 0.0, sink)
 
 

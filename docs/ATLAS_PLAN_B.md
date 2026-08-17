@@ -2,7 +2,7 @@
 
 > **Status:** **B1–B7 complete** (B7: 2026-08-16). Climate/geography defaults **user-retuned** (see §6 / `milestone_b5.md`).  
 > **Next Plan B presentation when instructed:** **B10** (Full land polys) may run independently.  
-> **Next climate physics:** **CR-0–CR-5 ✅** — [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md). Tracker: [`PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md). Do not retune B8/B9 knobs to hide remaining leftovers (moisture trial band, Full gate).  
+> **Next climate physics:** CR track complete. Optional **B10** — [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md). Atlas 183716 leftovers until regen.  
 > **Hydro UX follow-up:** ✅ flow-direction **layer** + channel transmission losses — §6.3.1 / `docs/validation/hydro_flow_and_transmission.md` (2026-08-16). Annex still requires cylindrical graph + lake/wadi semantics (PR-5/PR-6).  
 > **Date:** 2026-08-16  
 > **Authority:** Post-A8 discussion + 2026-08-15 climate/hydro/moisture planning; **amended 2026-08-16** by Physical Realism Annex.  
@@ -538,14 +538,14 @@ When B1–B10 are complete (or a subset explicitly accepted as “B done”):
 ```text
 Plan B presentation: B10 Full land polys when requested (independent of PR/CR track).
 
-Climate physics: **CR-0…CR-5 complete**.
+Climate physics: **CR-0…CR-9 complete**. Optional B10 next.
 Use PHYSICAL_REALISM_PLAN.md + PHYSICAL_REALISM_CORRECTIONS.md.
-Do not retune B8/B9 knobs to hide leftover moisture-band / Full-gate items.
+Do not retune B8/B9 knobs or precipitation to hide fake lakes / PET×12.
 ```
 
-Recommended climate order: **B7 ✅ → PR-0…PR-9 foundation → CR-0…CR-5 ✅ → B10 anytime**.
+Recommended climate order: **B7 ✅ → PR-0…PR-9 foundation → CR-0…CR-5 notes → CR-6…CR-9 → B10 anytime**.
 
-After CR-5: keep `folding_ratio=0.01`; do not raise `ocean_evap_rate` to “fix” inland dryness. Production hypsometry is `power_tail_v2`. Moisture trial band is leftover (not retuned).
+After 183716 audit: keep `folding_ratio=0.01`; do not raise `ocean_evap_rate` or `lake_min_depth_m` to “fix” lakes; CR-8 atmosphere is in (Atlas spin-up leftover until regen). Production hypsometry stays `power_tail_v2`.
 
 ---
 

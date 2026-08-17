@@ -11,6 +11,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from worldsim.physical.climate.pipeline import ClimateResult, downsample_mean
+from worldsim.physical.ecology.biome_v2 import classify_biome_v2
 from worldsim.physical.ecology.biotemperature import (
     annual_biotemperature_c,
     holdridge_pet_mm,
@@ -49,6 +50,11 @@ class EcologyResult:
     holdridge_zone_id: NDArray[np.int16]
     ecology_override: NDArray[np.int16]
     diagnostics: dict[str, Any]
+    frost_months: NDArray[np.int16] | None = None
+    growing_season_months: NDArray[np.int16] | None = None
+    water_deficit_mm: NDArray[np.float64] | None = None
+    soil_state: NDArray[np.uint8] | None = None
+    biome_v2_class: NDArray[np.uint8] | None = None
 
     def save(self, directory: Path) -> None:
         directory.mkdir(parents=True, exist_ok=True)
@@ -65,6 +71,18 @@ class EcologyResult:
             holdridge_zone_id=self.holdridge_zone_id,
             ecology_override=self.ecology_override,
         )
+        if self.biome_v2_class is not None:
+            extra = {
+                "frost_months": self.frost_months,
+                "growing_season_months": self.growing_season_months,
+                "water_deficit_mm": self.water_deficit_mm,
+                "soil_state": self.soil_state,
+                "biome_v2_class": self.biome_v2_class,
+            }
+            np.savez_compressed(
+                directory / "biome_v2.npz",
+                **{k: v for k, v in extra.items() if v is not None},
+            )
         (directory / "holdridge_zone_legend.json").write_text(
             json.dumps(build_zone_legend(), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -140,6 +158,29 @@ def build_ecology(
         alpine_elev_m=params.alpine_elev_m,
     )
 
+    monthly_p = moisture.precipitation
+    if monthly_p.ndim == 3 and monthly_p.shape[1:] != (h, w):
+        monthly_p = np.stack(
+            [upsample_bilinear_cylindrical(monthly_p[m], w, h) for m in range(monthly_p.shape[0])],
+            axis=0,
+        )
+    soil_m = soils["soil_moisture"]
+    if hydrology is not None and getattr(hydrology, "soil_store", None) is not None:
+        store = np.asarray(hydrology.soil_store, dtype=np.float64)
+        if store.size and store.ndim == 2:
+            if store.shape != (h, w):
+                store = downsample_mean(store, w, h)
+            cap = float(getattr(hydrology, "diagnostics", {}).get("soil_capacity", 1.0) or 1.0)
+            soil_m = np.clip(store / max(cap, 1e-6), 0.0, 1.0)
+            soil_m = np.where(ocean, 0.0, soil_m)
+    biome = classify_biome_v2(
+        temperature_c=climate.temperature_c[: monthly_p.shape[0]],
+        precipitation=monthly_p,
+        ocean_mask=ocean,
+        soil_moisture=soil_m,
+        precip_scale_mm=params.precip_scale_mm,
+    )
+
     if reporter is not None:
         reporter.progress("ecology", 0.85)
 
@@ -180,6 +221,8 @@ def build_ecology(
         "pet_ratio_max": float(np.max(ratio[land])) if np.any(land) else float("nan"),
         "zone_counts": zone_counts,
         "precip_scale_mm": params.precip_scale_mm,
+        "holdridge_role": "annual_diagnostic",
+        **biome["diagnostics"],
         "acceptance_ok": bool(all_defined and land_ok and ocean_ok),
     }
 
@@ -199,5 +242,10 @@ def build_ecology(
         pet_ratio=ratio,
         holdridge_zone_id=zones,
         ecology_override=override,
+        frost_months=biome["frost_months"],
+        growing_season_months=biome["growing_season_months"],
+        water_deficit_mm=biome["water_deficit_mm"],
+        soil_state=biome["soil_state"],
+        biome_v2_class=biome["biome_v2_class"],
         diagnostics=diagnostics,
     )

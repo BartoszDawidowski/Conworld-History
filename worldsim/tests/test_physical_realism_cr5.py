@@ -74,7 +74,7 @@ def test_config_cr5_defaults() -> None:
     hp = cfg.to_hydrology_params()
     assert hp.river_min_catchment_km2 == pytest.approx(500.0)
     lf = cfg.to_landform_params()
-    assert lf.mountain_score_threshold == pytest.approx(0.50)
+    assert lf.mountain_score_threshold == pytest.approx(0.60)
     assert lf.meso_radius_km == pytest.approx(150.0)
     assert lf.min_plateau_km2 == pytest.approx(2500.0)
 
@@ -118,7 +118,7 @@ def test_production_defaults_keep_plateau_and_limit_mountains() -> None:
         ),
     )
     assert len(cres.mountain_ranges) >= 1
-    assert float(cres.mountain_score_u8[24, 32]) >= 0.50 * 255 * 0.9
+    assert float(cres.mountain_score_u8[24, 32]) >= 0.60 * 255 * 0.85
 
 
 def test_hydro_catchment_cells_scale_with_grid() -> None:

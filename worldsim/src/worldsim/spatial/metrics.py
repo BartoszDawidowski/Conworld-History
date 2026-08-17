@@ -165,23 +165,56 @@ class GridMetrics:
 
     def d8_step_length_m(self, row: int, d8_code: int) -> float:
         """Physical length (m) of one D8 step leaving ``row``."""
+        return self.d8_step_length_km(row, d8_code) * 1000.0
+
+    def d8_step_length_km(self, row: int, d8_code: int) -> float:
+        """Physical length (km) of one D8 step leaving ``row``."""
         code = int(d8_code)
         if code not in _D8_OFFSETS:
             return 0.0
         dj, di = _D8_OFFSETS[code]
         j = int(row)
-        ew = float(self.ew_spacing_km()[j]) * 1000.0
+        ew = float(self.ew_spacing_km()[j])
         if dj == 0:
             return abs(di) * ew
-        # NS component: use gap from this row toward neighbour
         if dj > 0:
-            ns = float(self.ns_spacing_km()[j]) * 1000.0
+            ns = float(self.ns_spacing_km()[j])
         else:
-            ns = float(self.ns_spacing_km()[max(j - 1, 0)]) * 1000.0
+            ns = float(self.ns_spacing_km()[max(j - 1, 0)])
         if di == 0:
             return abs(dj) * ns
-        # Diagonal: use EW at this row and NS gap
         return math.hypot(ew, ns)
+
+    def d8_step_length_km_field(
+        self, flow_direction: NDArray[np.integer]
+    ) -> NDArray[np.float64]:
+        """Per-cell D8 step length (km) from a flow-direction raster."""
+        d8 = np.asarray(flow_direction)
+        if d8.shape != (self.height, self.width):
+            raise ValueError("flow_direction shape mismatch")
+        out = np.zeros((self.height, self.width), dtype=np.float64)
+        ew = self.ew_spacing_km()
+        ns = self.ns_spacing_km()
+        ns_north = np.empty(self.height, dtype=np.float64)
+        ns_north[0] = ns[0]
+        ns_north[1:] = ns[:-1]
+        row_idx = np.broadcast_to(
+            np.arange(self.height, dtype=np.int32)[:, None], d8.shape
+        )
+        for code, (dj, di) in _D8_OFFSETS.items():
+            sel = d8 == code
+            if not np.any(sel):
+                continue
+            if dj == 0:
+                length = np.abs(float(di)) * ew
+            elif di == 0:
+                gap = ns if dj > 0 else ns_north
+                length = np.abs(float(dj)) * gap
+            else:
+                gap = ns if dj > 0 else ns_north
+                length = np.hypot(ew, gap)
+            out[sel] = length[row_idx[sel]]
+        return out
 
     def neighbourhood_halfwidth_cells(self, radius_km: float) -> NDArray[np.int32]:
         """Per-row EW half-width in cells for a circular-ish km radius."""

@@ -13,7 +13,10 @@ from numpy.typing import NDArray
 from worldsim.physical.atmosphere.pipeline import AtmosphereResult
 from worldsim.physical.atmosphere.monsoon import apply_monsoon_wind_anomaly
 from worldsim.physical.climate.pipeline import ClimateResult
-from worldsim.physical.moisture.transport import build_monthly_moisture
+from worldsim.physical.moisture.transport import (
+    ADVECT_SCALE_REF_WIDTH,
+    build_monthly_moisture,
+)
 from worldsim.physical.ocean.pipeline import OceanResult
 from worldsim.progress import ProgressReporter
 from worldsim.spatial.extent import SpatialExtent
@@ -93,6 +96,7 @@ class MoistureParams:
     monsoon_coast_reach_km: float | None = 800.0
     monsoon_coast_reach_cells: float = 10.0
     monsoon_temp_scale_c: float = 8.0
+    monsoon_regional_mean_km: float = 500.0
     planet_radius_km: float = 6371.0
 
 
@@ -224,6 +228,7 @@ def build_moisture(
     params: MoistureParams | None = None,
     lake_mask: NDArray[np.bool_] | None = None,
     river_mask: NDArray[np.bool_] | None = None,
+    lake_fraction: NDArray[np.floating] | None = None,
     reporter: ProgressReporter | None = None,
 ) -> MoistureResult:
     params = params or MoistureParams()
@@ -265,8 +270,22 @@ def build_moisture(
         planet_radius_km=params.planet_radius_km,
     )
     monsoon_diag: dict[str, Any] = {"b9_terms_active": False, "monsoon_strength": 0.0}
-    # CR-3: monsoon contrast uses climate (pre-SST) land temperatures when available.
-    monsoon_land_t = np.asarray(climate.temperature_c[:months], dtype=np.float64)
+    # CR-8: pre-SST base T (not SST-coupled surface), reduced to sea level inside monsoon.
+    if climate.temperature_base_c is not None:
+        monsoon_land_t = np.asarray(climate.temperature_base_c[:months], dtype=np.float64)
+        monsoon_t_source = "temperature_base_c"
+    else:
+        monsoon_land_t = np.asarray(climate.temperature_c[:months], dtype=np.float64)
+        monsoon_t_source = "temperature_c"
+    if params.monsoon_regional_mean_km is not None and float(params.monsoon_regional_mean_km) > 0.0:
+        regional_cells = _midlat_cells_from_km(
+            width=w,
+            height=h,
+            reach_km=float(params.monsoon_regional_mean_km),
+            planet_radius_km=params.planet_radius_km,
+        )
+    else:
+        regional_cells = 0.0
     if (
         ocean is not None
         and sst is not None
@@ -285,6 +304,11 @@ def build_moisture(
             max_anomaly_ms=params.monsoon_max_anomaly_ms,
             coast_reach_cells=coast_reach_cells,
             temp_scale_c=params.monsoon_temp_scale_c,
+            regional_mean_cells=regional_cells,
+            elevation_m=climate.elevation_m,
+            lapse_rate_c_per_km=float(
+                climate.diagnostics.get("lapse_rate_c_per_km", 6.5)
+            ),
         )
 
     fields = build_monthly_moisture(
@@ -298,6 +322,7 @@ def build_moisture(
         continentality=climate.continentality,
         lake_mask=lake_mask,
         river_mask=river_mask,
+        lake_fraction=lake_fraction,
         months=months,
         advect_steps=params.advect_steps,
         advect_wind_scale=params.advect_wind_scale,
@@ -320,6 +345,8 @@ def build_moisture(
         itcz_latitude_deg=atmosphere.itcz_latitude_deg[:months],
         itcz_convective_scale=params.itcz_convective_scale,
         itcz_width_deg=params.itcz_width_deg,
+        planet_radius_km=params.planet_radius_km,
+        advect_scale_ref_width=ADVECT_SCALE_REF_WIDTH,
     )
 
     if reporter is not None:
@@ -371,6 +398,9 @@ def build_moisture(
             "monsoon_coast_reach_km": params.monsoon_coast_reach_km,
             "monsoon_coast_reach_cells_effective": coast_reach_cells,
             "monsoon_coast_reach_source": coast_reach_source,
+            "monsoon_temperature_source": monsoon_t_source,
+            "monsoon_regional_mean_km": params.monsoon_regional_mean_km,
+            "monsoon_regional_mean_cells_effective": regional_cells,
             **monsoon_diag,
             "inland_water_sources": bool(
                 lake_mask is not None or river_mask is not None

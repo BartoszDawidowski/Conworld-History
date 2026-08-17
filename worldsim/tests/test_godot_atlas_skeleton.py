@@ -153,7 +153,11 @@ def test_godot_project_skeleton_exists() -> None:
     assert "folding_ratio" in main_gd
     assert "land_scale_m" in main_gd
     assert "orogeny_boost" in main_gd
-    assert "base_temp_c" in main_gd
+    assert "continentality_scale_km: 500.0" in main_gd
+    assert "monsoon_regional_mean_km: 500.0" in main_gd
+    assert "mountain_score_threshold: 0.60" in main_gd
+    assert "river_acc_fraction: 0.035" in main_gd
+    assert "water_state" in vectors
     assert "precip_scale_mm" in main_gd
     main_tscn = (GODOT / "scenes" / "Main.tscn").read_text(encoding="utf-8")
     assert "BaseTempSpin" in main_tscn

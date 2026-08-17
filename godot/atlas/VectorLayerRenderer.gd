@@ -124,7 +124,11 @@ func _rebuild_lake_rings_px() -> void:
 	_lake_rings_px.clear()
 	lakes_skipped_degenerate = 0
 	for poly in _lakes:
-		# Lakes: longest seam-safe ring, lightly smoothed (must stay triangulable).
+		var state := str(poly.get("water_state", ""))
+		# CR-6: fill only open water + watered endorheic. Playa/ice stay in
+		# geojson for diagnostics but are not drawn as liquid.
+		if state != "" and state != "open" and state != "endorheic":
+			continue
 		var best := PackedVector2Array()
 		for piece in _to_pixel_polylines(poly.get("coords", [])):
 			var ring := _sanitize_polygon_ring(piece)
@@ -662,6 +666,7 @@ func _load_polygons(path: String) -> Array:
 		out.append({
 			"id": int(props.get("id", 0)),
 			"closed_basin": bool(props.get("closed_basin", true)),
+			"water_state": str(props.get("water_state", "")),
 			"area_cells": int(props.get("area_cells", 0)),
 			"surface_elevation": float(props.get("surface_elevation", 0.0)),
 			"coords": rings[0],

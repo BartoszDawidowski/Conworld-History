@@ -15,6 +15,7 @@ from worldsim.physical.hydrology.cylindrical_graph import (
 )
 
 WaterState = Literal["open", "endorheic", "seasonal_or_playa", "frozen_or_ice_covered"]
+LIQUID_WATER_STATES: frozenset[str] = frozenset({"open", "endorheic"})
 
 
 def spill_elevation_m(
@@ -91,10 +92,11 @@ def classify_lake_body(
             has_land_outlet = True
             outlet_rc = (r, c)
 
-    # CR-4: fill-all lake geometry can include spill-side cells that still
-    # drain outward in the unfilled routing graph. Closed iff an inland pit
-    # remains and the body does not reach the ocean.
-    closed_basin = bool(has_inland_sink and not has_ocean_outlet)
+    # CR-6 / F-16: a land outflow means the body is not a closed basin, even
+    # if a numerical pit remains inside the fill envelope.
+    closed_basin = bool(
+        has_inland_sink and not has_ocean_outlet and not has_land_outlet
+    )
     mean_temp = float(np.mean(temp[body])) if np.any(body) else float("nan")
     mean_inflow = float(np.mean(q[body])) if np.any(body) else 0.0
     mean_precip = float(np.mean(precip[body])) if np.any(body) else 0.0
@@ -167,3 +169,20 @@ def build_lake_records(
         rec["basin_id"] = int(bids[int(np.argmax(counts))]) if len(bids) else 0
         records.append(rec)
     return records
+
+
+def liquid_lake_mask(
+    lake_id: NDArray[np.integer],
+    lake_records: list[dict[str, Any]],
+) -> NDArray[np.bool_]:
+    """Open + watered endorheic cells only (playa/ice are not liquid product water)."""
+    ids = np.asarray(lake_id)
+    out = np.zeros(ids.shape, dtype=bool)
+    for rec in lake_records:
+        if str(rec.get("water_state", "")) not in LIQUID_WATER_STATES:
+            continue
+        lid = int(rec["lake_id"])
+        if lid <= 0:
+            continue
+        out |= ids == lid
+    return out

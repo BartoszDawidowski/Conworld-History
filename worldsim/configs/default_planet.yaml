@@ -89,6 +89,7 @@ moisture:
   land_et_rate: 0.4
   continentality_dry: 0.4
   lee_dry: 0.12
+  # CR-8: condensation brake on leeward descent (not a q mass sink).
   # PR-4 — physical diffusion + periodic climatology spin-up
   diffusion_mix_per_month: 0.08
   # CR-3: production default — joint q+store closure; audit seeds needed ~16–20.
@@ -102,7 +103,7 @@ moisture:
   land_store_capacity: 8.0
   itcz_convective_scale: 1.2
   itcz_width_deg: 8.0
-  # PR-8 / CR-3 — local-coast monsoon (re-enabled modestly after regime fix)
+  # PR-8 / CR-8 — anomaly monsoon vs own annual means; gated if sign never flips
   monsoon_strength: 0.35
   monsoon_lat_band_min_abs_deg: 5.0
   monsoon_lat_band_max_abs_deg: 32.0
@@ -110,10 +111,13 @@ moisture:
   monsoon_coast_reach_km: 800.0
   monsoon_coast_reach_cells: 10.0  # legacy; ignored when km set
   monsoon_temp_scale_c: 8.0
+  monsoon_regional_mean_km: 500.0
+  # CR-8: regional mean of land/SST anomalies (km). advect_steps is a CFL cap.
 
 # Plan B7 — precip-aware river/lake visibility (DEM topology unchanged)
 hydrology:
-  river_acc_fraction: 0.02
+  # CR-6: top 3.5% accumulation (0.02 hid ~104k km² trunks on Atlas).
+  river_acc_fraction: 0.035
   lake_min_depth_m: 2.0
   # Quantile of discharge on accumulation candidates (0.5 ≈ drop driest half of network).
   river_discharge_candidate_quantile: 0.50
@@ -124,17 +128,21 @@ hydrology:
   lake_min_mean_temp_c: 1.0
   lake_inflow_land_quantile: 0.75
   # Channel transmission losses (Nil OK / wadi dies); 0 = gross accuflux only.
+  # CR-7 scales this demand by path_length_km / 50 km (HydrologyParams.transmission_ref_km).
   transmission_rate: 0.45
   # CR-4: fill only numerical pits shallower than this pour depth (m).
   # Negative = legacy fill-all (no closed basins).
   fill_max_depth_m: 25.0
   # CR-5: physical river catchment floor (km²); cell count derived via GridMetrics.
+  # CR-7: applied *before* river_acc_fraction display LOD.
   river_min_catchment_km2: 500.0
   # PR-6 — snow/runoff (defaults); optional river_min_effective_discharge for absolute Q floor
+  # CR-7 soil bucket / Q m³/s / channel states use HydrologyParams defaults
+  # (soil_capacity=1.0, soil_quickflow_frac=0.20, transmission_ref_km=50).
 
-# CR-5 / PR-9E — landform thresholds (km scales + km² object floors)
+# CR-9 / PR-9E — landform thresholds (score retune; km scales + km² floors)
 landforms:
-  mountain_score_threshold: 0.50
+  mountain_score_threshold: 0.60
   plateau_score_threshold: 0.40
   fine_radius_km: 60.0
   meso_radius_km: 150.0

@@ -86,4 +86,4 @@ Raw JSON: [`physical_realism_cr5/seed_table.json`](physical_realism_cr5/seed_tab
 - Remaining cell knobs (`advect_steps`, bathymetry shelf cells, …) — not this milestone  
 - `folding_ratio` / `ocean_evap_rate` left frozen (do not retune to hide defects)
 
-**Decision:** accept CR-5; stop. CR track complete. Next when instructed: optional **B10** (atlas) or a named moisture/hypsometry follow-up — not a new CR-N unless registered.
+**Decision:** accept CR-5 hypsometry; landforms/hydro-km² reopened after Atlas 183716. Next when instructed: **CR-6** only.

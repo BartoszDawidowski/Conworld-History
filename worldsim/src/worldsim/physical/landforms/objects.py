@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -29,6 +29,7 @@ class MountainRange:
     provenance_mode: int
     confidence: float
     crosses_ew_seam: bool
+    ridge_line: list[list[float]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -47,6 +48,7 @@ class MountainRange:
             "provenance_mode": self.provenance_mode,
             "confidence": self.confidence,
             "crosses_ew_seam": self.crosses_ew_seam,
+            "ridge_line": list(self.ridge_line),
         }
 
 
@@ -160,6 +162,44 @@ def _components_sorted(
     return rows
 
 
+def _ridge_centerline(
+    mask: NDArray[np.bool_],
+    elevation_m: NDArray[np.floating],
+) -> list[list[float]]:
+    """Highest cells along the PCA long axis, as normalised (x, y) vertices."""
+    ys, xs = np.where(mask)
+    h, w = mask.shape
+    if ys.size < 2:
+        if ys.size == 1:
+            return [[(float(xs[0]) + 0.5) / w, 1.0 - 2.0 * (float(ys[0]) + 0.5) / h]]
+        return []
+    pts = np.column_stack([xs.astype(np.float64), ys.astype(np.float64)])
+    mean = pts.mean(axis=0)
+    cov = np.cov(pts.T)
+    if cov.size < 4 or not np.all(np.isfinite(cov)):
+        return []
+    axis = np.linalg.eigh(cov)[1][:, -1]
+    proj = (pts - mean) @ axis
+    n_bins = int(max(4, min(48, ys.size // 2)))
+    line: list[list[float]] = []
+    elev = np.asarray(elevation_m, dtype=np.float64)
+    for b in range(n_bins):
+        lo = float(np.quantile(proj, b / n_bins))
+        hi = float(np.quantile(proj, (b + 1) / n_bins))
+        sel = (proj >= lo) & (proj <= hi + 1e-12)
+        if not np.any(sel):
+            continue
+        idx = np.flatnonzero(sel)
+        best = int(idx[np.argmax(elev[ys[idx], xs[idx]])])
+        line.append(
+            [
+                (float(xs[best]) + 0.5) / float(w),
+                1.0 - 2.0 * (float(ys[best]) + 0.5) / float(h),
+            ]
+        )
+    return line
+
+
 def extract_mountain_ranges(
     *,
     mountain_score: NDArray[np.floating],
@@ -188,10 +228,13 @@ def extract_mountain_ranges(
     ranges: list[MountainRange] = []
     elev = np.asarray(elevation_m, dtype=np.float64)
     new_id = 1
-    min_cells = min_object_cells(
-        min_km2=params.min_range_km2,
-        min_cells=params.min_range_cells,
-        cell_area_km2=cell_area_km2,
+    min_cells = max(
+        min_object_cells(
+            min_km2=params.min_range_km2,
+            min_cells=params.min_range_cells,
+            cell_area_km2=cell_area_km2,
+        ),
+        int(params.min_component_cells),
     )
     for old, area, cj, ci in ordered:
         if area < min_cells:
@@ -231,6 +274,7 @@ def extract_mountain_ranges(
             provenance_mode=prov,
             confidence=float(np.mean(confidence[sel])),
             crosses_ew_seam=crosses,
+            ridge_line=_ridge_centerline(sel, elev),
         )
         ranges.append(rec)
         id_map[sel] = new_id
@@ -260,10 +304,13 @@ def extract_plateaus(
     plateaus: list[Plateau] = []
     elev = np.asarray(elevation_m, dtype=np.float64)
     new_id = 1
-    min_cells = min_object_cells(
-        min_km2=params.min_plateau_km2,
-        min_cells=params.min_plateau_cells,
-        cell_area_km2=cell_area_km2,
+    min_cells = max(
+        min_object_cells(
+            min_km2=params.min_plateau_km2,
+            min_cells=params.min_plateau_cells,
+            cell_area_km2=cell_area_km2,
+        ),
+        int(params.min_component_cells),
     )
     for old, area, cj, ci in ordered:
         if area < min_cells:
@@ -294,36 +341,71 @@ def extract_plateaus(
     return id_map, plateaus
 
 
+def _mask_contour_ring(mask: NDArray[np.bool_]) -> list[list[float]]:
+    """Cell-edge outer ring in normalised cylindrical coordinates (CR-9)."""
+    from worldsim.physical.vectorize.lakes import (
+        _directed_outline_rings,
+        _sanitize_ring,
+    )
+
+    h, w = mask.shape
+    rings = _directed_outline_rings(mask)
+    if not rings:
+        return []
+    verts = max(rings, key=len)
+    ring = [
+        [float(x) / float(w), 1.0 - 2.0 * float(y) / float(h)] for x, y in verts
+    ]
+    sanitized = _sanitize_ring([(p[0], p[1]) for p in ring])
+    return [[float(x), float(y)] for x, y in sanitized]
+
+
 def components_to_geojson_polygons(
     id_map: NDArray[np.int32],
     records: list[Any],
     *,
     kind: str,
 ) -> list[dict[str, Any]]:
-    """Axis-aligned bbox polygons per object (foundation; not full contour)."""
-    h, w = id_map.shape
+    """Cell-edge contours per object (not bbox / centroid hull)."""
     feats: list[dict[str, Any]] = []
     for rec in records:
         rid = int(rec.id)
-        ys, xs = np.where(id_map == rid)
-        if ys.size == 0:
+        sel = id_map == rid
+        if not np.any(sel):
             continue
-        # Normalised geographic-ish coords: x in [0,1), y in [-1,1]
-        j0, j1 = int(ys.min()), int(ys.max())
-        # Handle seam: if crosses, skip tight bbox and use multipoint centroid marker
         if getattr(rec, "crosses_ew_seam", False):
-            coords = [
-                [float(rec.centroid_i) / w, 1.0 - 2.0 * float(rec.centroid_j) / h]
-            ]
-            geom: dict[str, Any] = {"type": "Point", "coordinates": coords[0]}
+            h, w = id_map.shape
+            geom: dict[str, Any] = {
+                "type": "Point",
+                "coordinates": [
+                    float(rec.centroid_i) / w,
+                    1.0 - 2.0 * float(rec.centroid_j) / h,
+                ],
+            }
         else:
-            i0, i1 = int(xs.min()), int(xs.max())
-            x0, x1 = i0 / w, (i1 + 1) / w
-            y0 = 1.0 - 2.0 * (j1 + 1) / h
-            y1 = 1.0 - 2.0 * j0 / h
-            ring = [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]
+            ring = _mask_contour_ring(sel)
+            if len(ring) < 4:
+                continue
             geom = {"type": "Polygon", "coordinates": [ring]}
         props = rec.to_dict()
         props["kind"] = kind
         feats.append({"type": "Feature", "properties": props, "geometry": geom})
+    return feats
+
+
+def components_to_geojson_ridges(
+    records: list[MountainRange],
+) -> list[dict[str, Any]]:
+    feats: list[dict[str, Any]] = []
+    for rec in records:
+        line = list(rec.ridge_line)
+        if len(line) < 2:
+            continue
+        feats.append(
+            {
+                "type": "Feature",
+                "properties": {"id": rec.id, "kind": "ridge_centerline"},
+                "geometry": {"type": "LineString", "coordinates": line},
+            }
+        )
     return feats

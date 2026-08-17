@@ -325,6 +325,7 @@ erosion:
 climate:
   months: 12
   base_temp_c: %.4f
+  continentality_scale_km: 500.0
 
 ecology:
   precip_scale_mm: %.1f
@@ -356,6 +357,22 @@ moisture:
   monsoon_max_anomaly_ms: 3.5
   monsoon_coast_reach_km: 800.0
   monsoon_temp_scale_c: 8.0
+  monsoon_regional_mean_km: 500.0
+
+hydrology:
+  river_acc_fraction: 0.035
+  river_min_catchment_km2: 500.0
+  fill_max_depth_m: 25.0
+  transmission_rate: 0.45
+
+landforms:
+  mountain_score_threshold: 0.60
+  plateau_score_threshold: 0.40
+  fine_radius_km: 60.0
+  meso_radius_km: 150.0
+  macro_radius_km: 300.0
+  min_range_km2: 800.0
+  min_plateau_km2: 2500.0
 
 generation:
   quality: final

@@ -1446,6 +1446,9 @@ def _attach_ecology(state: PhysicalWorldState, ecology: EcologyResult) -> None:
     state.rasters["biotemperature_c"] = ecology.biotemperature_c
     state.rasters["pet_ratio"] = ecology.pet_ratio
     state.rasters["holdridge_zone_id"] = ecology.holdridge_zone_id
+    if ecology.biome_v2_class is not None:
+        state.rasters["biome_v2_class"] = ecology.biome_v2_class
+        state.rasters["frost_months"] = ecology.frost_months
     state.metadata["ecology_acceptance_ok"] = ecology.diagnostics.get("acceptance_ok")
 
 

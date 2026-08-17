@@ -10,8 +10,8 @@ from worldsim.spatial.metrics import GridMetrics, grid_metrics
 
 def _radius_cells(metrics: GridMetrics, radius_km: float) -> tuple[int, int]:
     mid = int(metrics.height // 2)
-    rx = int(max(1, round(metrics.cells_from_km_ew(radius_km, mid))))
-    ry = int(max(1, round(metrics.cells_from_km_ns(radius_km, mid))))
+    rx = int(max(2, round(metrics.cells_from_km_ew(radius_km, mid))))
+    ry = int(max(2, round(metrics.cells_from_km_ns(radius_km, mid))))
     # Cap so windows stay tractable on large grids.
     rx = min(rx, max(1, metrics.width // 4))
     ry = min(ry, max(1, metrics.height // 4))

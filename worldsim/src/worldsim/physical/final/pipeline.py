@@ -54,6 +54,8 @@ class FinalRecalcParams:
     landforms: LandformParams = field(default_factory=LandformParams)
     landform_analysis_width: int | None = None
     landform_analysis_height: int | None = None
+    # CR-8: one damped rebuild of hydrology from ecology moisture (0 = keep first hydro).
+    hydro_evap_blend: float = 0.5
 
 
 @dataclass
@@ -189,6 +191,10 @@ def build_final_recalculation(
         resistance=resistance,
         iterations=params.fluvial_iterations,
         stream_power_k=params.stream_power_k,
+        planet_radius_km=params.moisture.planet_radius_km,
+        micro_fill_max_depth_m=float(params.hydrology.fill_max_depth_m)
+        if float(params.hydrology.fill_max_depth_m) > 0.0
+        else 25.0,
     )
 
     if reporter is not None:
@@ -245,7 +251,7 @@ def build_final_recalculation(
     # rebuild a partial dataclass — that silently dropped plume/ITCZ/monsoon.
     moisture_params = replace(params.moisture, months=params.months)
     # First pass (ocean/land only) drives hydrology; lakes/rivers do not exist yet.
-    moisture = build_moisture(
+    moisture_hydro = build_moisture(
         climate=climate_c,
         atmosphere=atmosphere,
         ocean=ocean_circ,
@@ -263,7 +269,7 @@ def build_final_recalculation(
     )
     hydrology = build_hydrology(
         erosion=erosion_view,
-        moisture=moisture,
+        moisture=moisture_hydro,
         params=params.hydrology,
         temperature_c=climate_c.temperature_c,
     )
@@ -271,9 +277,10 @@ def build_final_recalculation(
     # Rebuild moisture with inland water sources so lakes/rivers humidify interiors
     # (ecology / Holdridge use this second pass).
     ch, cw = climate_c.ocean_mask.shape
-    lake_c = downsample_mean(
+    lake_frac = downsample_mean(
         hydrology.lake_mask.astype(np.float64), cw, ch
-    ) >= 0.15
+    )
+    lake_c = lake_frac >= 0.15
     river_c = downsample_mean(
         hydrology.river_mask.astype(np.float64), cw, ch
     ) >= 0.05
@@ -284,6 +291,34 @@ def build_final_recalculation(
         params=moisture_params,
         lake_mask=lake_c,
         river_mask=river_c,
+        lake_fraction=lake_frac,
+    )
+
+    # CR-8 / F-18: one damped hydrology rebuild from the inland-water moisture pass.
+    blend = float(np.clip(params.hydro_evap_blend, 0.0, 1.0))
+    precip_blend = (
+        (1.0 - blend) * moisture_hydro.precipitation + blend * moisture.precipitation
+    )
+    moisture_for_hydro = MoistureResult(
+        extent=moisture.extent,
+        atmospheric_moisture=moisture.atmospheric_moisture,
+        evaporation=moisture.evaporation,
+        precipitation=precip_blend,
+        humidity=moisture.humidity,
+        orographic_lift=moisture.orographic_lift,
+        convective_precip=moisture.convective_precip,
+        annual_precipitation=precip_blend.sum(axis=0),
+        diagnostics={
+            **dict(moisture.diagnostics),
+            "moisture_role": "moisture_hydrology_rebuild",
+            "hydro_evap_blend": blend,
+        },
+    )
+    hydrology = build_hydrology(
+        erosion=erosion_view,
+        moisture=moisture_for_hydro,
+        params=params.hydrology,
+        temperature_c=climate_c.temperature_c,
     )
 
     if reporter is not None:
@@ -368,6 +403,10 @@ def build_final_recalculation(
         "moisture_inland_water_sources": bool(
             moisture.diagnostics.get("inland_water_sources")
         ),
+        "hydro_evap_iteration": 1,
+        "hydro_evap_blend": blend,
+        "micro_depressions_conditioned": True,
+        "slope_algorithm": "metric_gridmetrics_v1",
         "acceptance_ok": bool(stable and no_catastrophe),
     }
 

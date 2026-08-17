@@ -57,7 +57,7 @@ def test_default_config_loads() -> None:
     assert config.hypsometry_tail_softness == pytest.approx(1.0)
     assert config.hydrology_river_min_catchment_km2 == pytest.approx(500.0)
     lf = config.to_landform_params()
-    assert lf.mountain_score_threshold == pytest.approx(0.50)
+    assert lf.mountain_score_threshold == pytest.approx(0.60)
     assert lf.fine_radius_km == pytest.approx(60.0)
     assert lf.min_range_km2 == pytest.approx(800.0)
 

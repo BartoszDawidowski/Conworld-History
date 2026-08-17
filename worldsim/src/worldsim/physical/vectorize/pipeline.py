@@ -190,7 +190,10 @@ def build_vector_geography(
     river_ok = river_raster_consistency(
         rivers, hydrology.river_mask, hydrology.flow_accumulation
     ) >= 0.7
-    lake_ok = lake_raster_consistency(lakes, hydrology.lake_mask) >= 0.7
+    lake_ok = lake_raster_consistency(
+        [lk for lk in lakes if lk.water_state in ("open", "endorheic")],
+        hydrology.lake_mask,
+    ) >= 0.7
     topo_ok = topology_valid(rivers)
     # Vectors are hex-independent by construction (no hex types in payloads).
     hex_independent = True

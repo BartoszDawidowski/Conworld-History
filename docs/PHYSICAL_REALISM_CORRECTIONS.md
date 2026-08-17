@@ -1,12 +1,12 @@
 # Physical Realism Corrections — post–PR-9 production hardening
 
-> **Status:** **CR-0–CR-5 accepted** (2026-08-17). CR track complete.  
+> **Status:** **CR-0–CR-9** accepted (Atlas regen leftovers remain). Hypsometry stays accepted.  
 > **Authority:** This document amends production acceptance of PR-0…PR-9 foundation where fixed-seed audit contradicts milestone notes.  
 > **Normative design:** [`WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md) remains primary for algorithms; where annex acceptance was marked done but production fails, **this corrections track takes precedence** until closed.  
 > **Tracker:** [`PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md).  
 > **Rule:** One **CR-N** milestone at a time. Validate → `docs/validation/physical_realism_crN.md` → stop.  
-> **Do not** retune hypsometry / climate / landform thresholds as a substitute for the defects below.  
-> **Next when instructed:** optional **B10** (atlas) or a named follow-up (moisture trial band / Full gate / score retune).
+> **Do not** retune precipitation, `folding_ratio`, SST, or `lake_min_depth_m` to hide the defects below.  
+> **Next when instructed:** optional atlas **B10**. CR track is complete.
 
 ---
 
@@ -19,7 +19,7 @@ This document:
 1. records the audit snapshot and why visuals understate the change;
 2. registers defects with **code/comment anchors** (not only symptoms);
 3. freezes **interim safe defaults** (compensate nothing);
-4. sequences **CR-0…CR-5** (then calibration), matching the recommended repair order.
+4. sequences **CR-0…CR-5** (foundation repair) then **CR-6…CR-9** (production Atlas 183716).
 
 Atlas presentation (**B10**) remains independent and must not block CR work.
 
@@ -59,7 +59,7 @@ Repo comments and defaults explain the camouflage:
 
 | Mechanism | Evidence |
 |---|---|
-| `power_tail_v2` still off | `default_planet.yaml`: `hypsometry_mode: legacy_max` — “Enable power_tail_v2 after calibration.” |
+| Hypsometry stretched per seed | `power_tail_v2` is on (CR-5); atlas climate DEM + p98 colour stretch still hide the numeric change |
 | River mask is quantile/fraction gated | Plan B7 UX keeps a similar blue-line density even when physical Q falls to ~20–30%. |
 | PR-7/PR-8 knobs dropped in final moisture rebuild | **Fixed CR-1** — was `physical/final/pipeline.py` partial `MoistureParams` |
 | Landforms unused in Godot / history | PR-9E + Godot display deferred (`physical_realism_pr9.md`). |
@@ -77,69 +77,76 @@ IDs are binding for CR milestones. Severity: **P0** blocks physical acceptance; 
 |---|---|---|---|
 | **F-01** | P0 | ~~CI / harness expectations drift; stale PR-0 probes; Windows `vendor\vendor` path~~ | **Closed CR-0** — see `docs/validation/physical_realism_cr0.md` |
 | **F-02** | P0 | ~~Final pass ignores YAML PR-7/PR-8 moisture knobs~~ | **Closed CR-1** — full `MoistureParams` through final |
-| **F-03** | P0 | Spin-up fails in production; ~~`acceptance_ok` ignores convergence~~ | **Closed CR-1/CR-3** — gate + `spinup_max_years=20` |
+| **F-03** | P0 | Spin-up fails in production; ~~`acceptance_ok` ignores convergence~~ | **Partial CR-8** — lee not a mass sink; CFL advection; hydro↔evap loop. Atlas 183716 `spinup_converged` not re-measured (regen leftover) |
 | **F-04** | P0 | ~~Land store not in spin-up / closure gate~~ | **Closed CR-3** — joint q+store closure |
 | **F-05** | P0 | ~~SST couples land toward absolute nearest SST~~ | **Closed CR-3** — `anomaly_zonal_v1` |
 | **F-06** | P0 | Inland decay ≈ whole continents | **Closed CR-2/CR-3** — km default + anomaly mix 0.28 |
-| **F-07** | P0 | ~~Monsoon always offshore / non-seasonal~~ | **Closed CR-3** — local coast contrast v2 |
-| **F-08** | P0 | ~~Endorheic / playa / frozen never appear in production~~ | **Closed CR-4** — finite `fill_max_depth_m=25`; typed outlets; closed basins kept |
-| **F-09** | P0 | ~~Monthly vs annual Q incoherent (80–91%)~~ | **Closed CR-4** — canonical = sum of monthly effective Q |
+| **F-07** | P0 | Monsoon always offshore / non-seasonal | **Partial CR-8** — `monsoon_anomaly_gate_v1` (anomalies vs own means, sea-level T, 500 km mean, sign gate). Atlas year-round offshore leftover until regen |
+| **F-08** | P0 | Endorheic / playa / frozen never appear → over-kept as liquid | **Closed CR-6** for liquid mask (playa/ice not product water); states still recorded |
+| **F-09** | P0 | ~~Monthly vs annual Q incoherent~~ | **Closed CR-6** — monthly PET × days/365; independent-annual rel_ind gated `< 0.35` |
 | **F-10** | P1 | ~~Subgrid elev/slope percentiles wrong columns~~ | **Closed CR-2** |
-| **F-11** | P1 | Physics still resolution-dependent | **Closed CR-2/CR-5** for monsoon/plume km + river catchment km²; leftovers: `advect_steps`, bathymetry shelf cells |
+| **F-11** | P1 | Physics still resolution-dependent | Leftovers: orography raw Δz not slope; Atlas `river_min_catchment_km2` still 1 cell (**F-17**). **`advect_steps` = CFL cap (CR-8)**; **erosion metric slope (CR-9)** |
 | **F-12** | P1 | ~~`hypsometry_tail_softness` reserved no-op~~ | **Closed CR-5** — `power_tail_v2_curve(..., tail_softness)`; `s=1` is PR-2 identity |
-| **F-13** | P1 | Landform mask/DEM mix coasts+bathymetry; plateaus absent; ~~`acceptance_ok` hardcoded~~ | **Closed CR-1/CR-2/CR-5** — land-only downsample; km scales + km² floors; threshold 0.50 (0.60–0.65 needs score retune) |
-| **F-14** | P2 | Full memory / dual work | Monthly hydro arrays can exceed ~6 GiB; moisture rebuilt twice in final (by design for lake/river sources) — confirm no accidental double hydrology; Full perf gate never closed |
+| **F-13** | P1 | Landforms uncalibrated | **Partial CR-9** — `landform_v2_cr9`, threshold 0.60, `calibrated` is a knob check, min 4-cell objects. Atlas 183716 53.7% leftover until regen |
+| **F-14** | P2 | Full memory / dual work | Atlas ~94 s OK; Full monthly cubes ≥6 GiB, likely 7.5–9 GiB with graph. Stream months, float32, cache topology, one final hydro pass |
+| **F-15** | P0 | ~~Fill-envelope treated as water surface~~ | **Closed CR-6** — product `lake_mask` = open + watered endorheic |
+| **F-16** | P0 | ~~`closed_basin` ignores land outlet~~ | **Closed CR-6** — closed requires `not has_land_outlet` |
+| **F-17** | P1 | `river_acc_fraction` vs 500 km² floor | **Partial CR-7** — quantile after km²; Atlas/Quick cell ≫ 500 km² so floor is 1 cell and 0.035 still dominates visuals |
+| **F-18** | P0 | Fake lakes humidify ecology; hydro not rebuilt | **Closed CR-8** — playa/ice out of evap (CR-6); one damped hydro rebuild from inland-water moisture. Atlas regen leftover |
+| **F-19** | P1 | ~~Godot YAML omits `continentality_scale_km`~~ | **Closed CR-6** — `Main.gd` writes 500 km + hydrology block |
+| **F-20** | P2 | ~~Star-shaped lake polygons~~ | **Closed CR-6** — cell-edge union outline |
+| **F-21** | P1 | Fluvial pass recreates pits; slope uses 1000 m cells | **Closed CR-9** — `GridMetrics.metric_slope` + metric Laplacian; `condition_micro_depressions` after fluvial. Atlas pit count leftover until regen |
 
 ### Reopened conflict-register items
 
 | Prior claim | Correction |
 |---|---|
-| C-06 / C-07 “Done (PR-5/PR-6)” endorheic semantics | **Closed CR-4.** Finite numerical fill; typed outlets; closed basins kept as endorheic/playa/frozen. |
-| PR-4 / PR-7 moisture “accepted” | **Closed CR-1/CR-3** for wire + joint q/store spin-up; land precip trial-band still leftover (not retuned in CR-5). |
-| PR-8 monsoon “accepted” | **Closed CR-3** for local coastal regime + seasonal flip; modest strength 0.35. |
-| PR-3 km scales “accepted” | **Closed CR-2/CR-3/CR-5** for km decay + SST anomaly + landform/hydro km². |
-| PR-9 foundation accepted | **9A–C prototype; 9D partial; 9E thresholds CR-5.** Godot landform mode leftover. |
+| C-06 / C-07 “Done (PR-5/PR-6)” endorheic semantics | **Partial CR-4.** States exist; over-kept dry playas as liquid (**F-15/F-16 / CR-6**). |
+| PR-4 / PR-7 moisture “accepted” | **Partial CR-8.** Lee is a condensation brake; CFL advection. Atlas spin-up leftover (**F-03**). Do not calibrate precip until Atlas regen. |
+| PR-8 monsoon “accepted” | **Partial CR-8 / F-07.** Anomaly + sign gate + `temperature_base_c`. Atlas year-round offshore leftover until regen. |
+| PR-3 km scales “accepted” | Godot omits `continentality_scale_km` (**F-19 / CR-6**). |
+| PR-9 / CR-5 landforms accepted | Hypsometry stays; landform score **CR-9** (Atlas fraction leftover). |
+| CR-4 F-09 “monthly Q coherent” | Identity by construction hid PET×12 (**F-09 / CR-6**). |
 
 ---
 
-## 4. Production defaults after CR-5
+## 4. Frozen knobs until CR-6+ (do not compensate)
 
-Do **not** retune `folding_ratio` / `ocean_evap_rate` to hide remaining Full-gate or moisture-band leftovers. CR-5 production defaults:
+Do **not** retune precipitation, `folding_ratio`, SST, lapse, `base_temp_c`, ocean evaporation, sea level, or `lake_min_depth_m` to hide lakes. `lake_min_depth_m=25` still left ~7.9% land as water on 183716.
 
-| Knob | Value | Rationale |
+| Knob | Until CR-6 code | After CR-6 (calibration, not this milestone) |
 |---|---|---|
-| `tectonics.folding_ratio` | `0.01` | Keep frozen (annex D-01) |
-| `moisture.monsoon_strength` | **`0.35`** | Local coastal regime (CR-3); still modest |
-| `moisture.ocean_evap_rate` | leave `1.4` | Raising 2.1–4.2 mostly wettened ocean/coast |
-| `ocean.sst_mix` | `0.28` | After anomaly coupling (CR-3) |
-| `climate.base_temp_c` | `25` | Hold |
-| `tau_land` / `tau_ocean` | `0.55` / `2.8` | Hold (PR-3) |
-| `moisture.spinup_max_years` | **`20`** | Joint q+store closure (CR-3) |
-| `hydrology.fill_max_depth_m` | **`25`** | Numerical pits only (CR-4); `-1` = legacy fill-all |
-| `hydrology.transmission_rate` | `0.45` | Hold; rate sweep is calibration, not CR-4 exit |
-| `terrain.hypsometry_mode` | **`power_tail_v2`** | Quantile 0.95, anchor 3000 m, body 1.5, `tail_softness` 1.0 |
-| `landforms.mountain_score_threshold` | **`0.50`** | 0.60–0.65 needs score-formula retune |
-| `landforms` scales / km² | 60 / 150 / 300 km; 800 / 2500 km² | PR-9E production floors |
-| `hydrology.river_min_catchment_km2` | **`500`** | Cell count via GridMetrics |
+| `tectonics.folding_ratio` | **`0.01` freeze** | freeze |
+| `climate.base_temp_c` / lapse / SST | freeze | freeze |
+| `moisture.ocean_evap_rate` | freeze `1.4` | freeze (not retuned in CR-8) |
+| `moisture.orographic_frac` | freeze `0.85` — **do not calibrate precip** | still freeze; CR-8 did **not** trial 0.35 / 0.50 / 0.65 |
+| `moisture.lee_dry` | production **0.12** as condensation brake (CR-8) | keep 0.12 |
+| `moisture.monsoon_strength` | **0.35** with sign-change gate (CR-8) | keep 0.35 |
+| `moisture.lake_evap_rate` | **`0.0` until playa/ice split** | restore after CR-6 liquid mask |
+| `hydrology.transmission_rate` | diagnostic `0.04` ≈ missing /12; `0.0` control | after PET fix: 0.15 / 0.30 / 0.45 |
+| `hydrology.river_acc_fraction` | diagnostic **0.035** (sweep 0.02 / 0.035 / 0.05) | CR-6/7 candidate policy |
+| `hydrology.river_discharge_candidate_quantile` | keep **0.50** | keep |
+| `climate.continentality_scale_km` | **500** (Godot must write it) | keep |
+| `terrain.hypsometry_mode` | keep `power_tail_v2` / anchor 3000 / exp 1.5 | keep |
+| `landforms.mountain_score_threshold` | **0.60** (CR-9 score retune) | keep 0.60 |
 
-River cosmetics (`river_acc_fraction`, discharge quantile) may densify blue lines but **are not** physical fixes.
+River cosmetics densify blue lines but **are not** a PET or lake-geometry fix.
 
 ---
 
 ## 5. Correction milestones (normative order)
 
 ```text
-CR-0  CI + harness honesty + Windows packaging
-  → CR-1  Parameter propagation + acceptance honesty
-  → CR-2  GridMetrics completion + subgrid transpose + cell→km leftovers
-  → CR-3  Moisture conservation/spin-up + SST anomaly coupling + monsoon regime
-  → CR-4  Monthly hydrology coherence + typed outlets / real endorheism
-  → CR-5  Joint calibration (hypsometry, climate, landforms) on Quick+Atlas (+ Full gate)
+CR-0 … CR-5   Foundation repair (notes stand; several defects reopened)
+  → CR-6  Hydrology hotfix (PET, outlets, water_state, liquid mask, Godot km)  ✅
+  → CR-7  Light hydrology v2 (soil bucket, m³/s, km losses, basin storage)  ✅
+  → CR-8  Atmosphere (conservative advect, lee as brake, monsoon, one hydro↔evap pass)  ✅
+  → CR-9  Erosion slopes, landform calibration, seasonal BiomeV2  ✅
 ```
 
-**Hard gate (historical):** CR-5 (PR-9E thresholds / default `power_tail_v2`) required green CR-3 and CR-4 notes. **Met 2026-08-17.**
+**Hard gate:** do not calibrate precipitation until Atlas spin-up leftover is measured. CR track is complete; start B10 only when instructed.
 
-**Parallel (optional):** B10 atlas Full land polys — presentation only.
+**Parallel (optional):** B10 atlas Full land polys — presentation only. Does not fix F-15…F-21.
 
 ### CR-0 — CI and harness honesty ✅
 
@@ -196,7 +203,7 @@ CR-0  CI + harness honesty + Windows packaging
 3. **Monsoon** — local coastal land–SST contrast; pre-SST land T; strength 0.35.
 4. Moisture trial band left as **post–CR-5 leftover** (not retuned without seed evidence).
 
-**Acceptance:** met on fixtures + suite. **Stop.** Next was **CR-4** only.
+**Acceptance:** met on fixtures + suite. **Reopened in production** by Atlas 183716 (F-03, F-07). Remainder → **CR-8** (accepted on fixtures; Atlas leftover).
 
 ### CR-4 — Monthly hydrology + typed outlets / endorheism ✅
 
@@ -210,25 +217,84 @@ CR-0  CI + harness honesty + Windows packaging
 - Canonical monthly effective Q; annual = sum. Sink on runoff, not raw precip.
 - `monthly_gross` not stored by default (Full memory).
 
-**Acceptance:** fixture endorheic/playa/frozen; monthly vs annual rel_diff = 0 by construction; hydro `acceptance_ok` requires typed outlets. **Met.**
+**Acceptance:** fixtures passed; **production identity hid PET×12 (F-09)** and over-kept dry closed basins (F-15/F-16). Remainder → **CR-6**.
 
-**Stop.** Next: **CR-5** only.
+### CR-5 — Joint calibration (hypsometry, climate, landforms) ⚠️ split
 
-### CR-5 — Joint calibration (hypsometry, climate, landforms) ✅
+**Status:** Hypsometry **accepted** — [`docs/validation/physical_realism_cr5.md`](validation/physical_realism_cr5.md) (2026-08-17). Landforms + hydro-km² **reopened** (F-13, F-17) after Atlas 183716.
 
-**Status:** Accepted — [`docs/validation/physical_realism_cr5.md`](validation/physical_realism_cr5.md) (2026-08-17).
+**Keep:** `power_tail_v2`, quantile 0.95, anchor 3000 m, body 1.5, `tail_softness=1.0`, `folding_ratio=0.01`.
 
-**Intent:** only after CR-0…CR-4.
+**Reopened:** mountain score 53.7% of land ≥0.5; `river_min_catchment_km2` inert under `river_acc_fraction=0.02`. → **CR-9** / **CR-6**.
 
-- Enable `power_tail_v2`: quantile 0.95, anchor 3000 m; body exponent **1.5** (middle of 1.2 / 1.5 / 1.8). Real `tail_softness` (`s=1` = PR-2 identity).
-- Landforms: scales 60 / 150 / 300 km; min object size in **km²**; mountain score **0.50** (0.60–0.65 blocked until score-formula retune).
-- Hydro river min catchment **500 km²** via GridMetrics.
-- Moisture trial band **not** retuned (no full Quick/Atlas seed evidence this milestone).
-- Godot landform mode skipped.
+**Stop.** Next was **CR-6** only.
 
-**Acceptance:** 3-seed hypsometry table (128×64); fixtures for softness / plateau / km²; `pytest -m "not slow"` green. Full Quick+Atlas regen and Full memory gate leftover. **Met** for code/config defaults.
+### CR-6 — Hydrology hotfix ✅
 
-**Stop.** CR track complete.
+**Status:** Accepted — [`docs/validation/physical_realism_cr6.md`](validation/physical_realism_cr6.md) (2026-08-17).
+
+**Intent:** stop treating fill envelopes and dry playas as liquid water; stop applying annual PET twelve times; make Godot write packaged climate km.
+
+- PET as `PET_annual × days_in_month / year_days` in `transmission_sink`; **real** monthly vs independent-annual Q check (not identity-by-construction).
+- `closed_basin` requires no land outlet (`has_land_outlet` must fail closed); export `water_state`; render by state.
+- Liquid water = open + watered endorheic only. Playa and ice **out of** liquid mask, lake evaporation, and Holdridge Lake override.
+- Pass **water-area fraction** into the second moisture pass, not a binary mask of all depressions.
+- Godot YAML: write `continentality_scale_km: 500` (and do not omit other packaged climate lengths).
+- Lake polygons: raster contour / marching squares, not angular sort around centroid (F-20).
+- Candidate rivers: `river_acc_fraction` must not nullify 500 km² (raise diagnostic 0.035 or derive from km²).
+
+**Not in CR-6:** soil bucket, Q in m³/s, monsoon retune, orographic_frac sweep, landform score formula, BiomeV2, Full memory rewrite.
+
+**Acceptance:** fixtures + suite. Atlas 183716 regen leftover (expected liquid ≪ 10.64%; PET/12). **Met.** Spin-up not required (CR-8).
+
+**Stop.** Next when instructed: **CR-7** only.
+
+### CR-7 — Light hydrology v2 ✅
+
+**Status:** Accepted — [`docs/validation/physical_realism_cr7.md`](validation/physical_realism_cr7.md) (2026-08-17).
+
+**Intent:** after CR-6, replace rain+melt-as-Q with a cheap basin/cell water cycle. No hydraulic solver, no groundwater.
+
+- Shared monthly soil bucket for ET and runoff (`soil_bucket_v1`).
+- Q in m³/s from cell area and month length (`mean_monthly_m3s`).
+- Transmission losses per km of path (`path_length / transmission_ref_km`).
+- Physical channel network (km² floor) then display quantile; perennial / seasonal / wadi states.
+- Area–volume–level curve and 12 scalar balance steps per closed basin.
+
+**Not in CR-7:** conservative advection / lee / monsoon / hydro↔evap iteration (**CR-8**, accepted). Landforms/erosion/BiomeV2 (CR-9); Full memory rewrite (F-14).
+
+**Acceptance:** fixtures + suite (continuity/seasonality unit tests; no Full default change). Atlas 183716 regen leftover. **Met.**
+
+**Stop.** Next when instructed: **CR-8** only.
+
+### CR-8 — Atmosphere (reopen CR-3 production) ✅
+
+**Status:** Accepted — [`docs/validation/physical_realism_cr8.md`](validation/physical_realism_cr8.md) (2026-08-17).
+
+**Intent:** only after real liquid masks (CR-6). Do not calibrate precip before this.
+
+- Conservative finite-volume advection with GridMetrics and adaptive CFL (`advect_steps` is the CFL cap).
+- `lee_dry` inhibits condensation; must not destroy water (~24.6% of precip as sink on 183716).
+- Monsoon from seasonal land/ocean anomalies vs their own annual means; sea-level or smoothed lowland T; 300–800 km regional mean; **gate off** when the sign does not flip.
+- One damped hydrology↔evaporation iteration after real water masks.
+
+**Acceptance:** fixtures + suite. Atlas 183716 `spinup_converged` **leftover** (not regenerated). Monsoon gate fires on fixtures; residual budget not a `lee_sink`. **Met.**
+
+**Stop.** Next when instructed: **CR-9** only.
+
+### CR-9 — Erosion, landforms, BiomeV2 ✅
+
+**Status:** Accepted — [`docs/validation/physical_realism_cr9.md`](validation/physical_realism_cr9.md) (2026-08-17).
+
+**Intent:** after water is honest.
+
+- Metric slopes and diffusion; micro-depression conditioning after fluvial (F-21).
+- Recalibrate mountain / escarpment; contours and ridge centerlines; `calibrated` not a constant True.
+- Holdridge remains an **annual diagnostic**. Add seasonal BiomeV2 (frost months, growing season, water deficit, soil state) on the climate grid.
+
+**Acceptance:** fixtures + suite. Hilly land fraction < 0.25 at threshold 0.60. Atlas 183716 mountain fraction / pit count **leftover**. **Met.**
+
+**Stop.** CR track complete. Next when instructed: optional **B10** only.
 
 ---
 
@@ -242,10 +308,10 @@ CR-0  CI + harness honesty + Windows packaging
 | PR-3 | Seasonal filter good; SST form + subgrid bug | CR-2, CR-3 |
 | PR-4 | Wind direction fixed; production closure/spin-up incomplete | CR-1, CR-3 |
 | PR-5 | Strongest (~70–80%) | CR-4 (outlet typing) |
-| PR-6 | ~35–45% in production | CR-4 |
-| PR-7 | Skeleton; knobs dropped + budget unfinished | CR-1, CR-3 |
-| PR-8 | Wired; wrong monsoon regime | CR-3 |
-| PR-9 | Prototype A–C; D partial; **9E thresholds CR-5** | CR-2 mask, CR-5 |
+| PR-6 | Over-kept dry closed basins as liquid | CR-4, **CR-6** |
+| PR-7 | Skeleton; ecology precip contaminated by fake lakes | CR-1, CR-3, **CR-6/CR-8** (F-18 closed) |
+| PR-8 | Wired; monsoon still year-round offshore in production | CR-3, **CR-8** (F-07 partial; Atlas leftover) |
+| PR-9 | Prototype; 9E thresholds uncalibrated on Atlas | CR-5 split, **CR-9** (Atlas leftover) |
 
 ---
 
@@ -259,13 +325,13 @@ Physical realism corrections: execute CR-0 only.
 Physical realism corrections: execute CR-1 only.
 ```
 
-After CR-5 (track complete):
+After CR-9:
 
 ```text
-Atlas Plan B: execute B10 only.
+Plan B presentation: B10 Full land polys when requested.
 ```
 
-Do **not** combine CR milestones. Moisture / score-formula follow-ups need a named instruction; do not retune `folding_ratio` or `ocean_evap_rate` to hide leftovers.
+Do **not** start a new CR. Atlas 183716 leftovers remain until regen. B10 remains optional presentation.
 
 ---
 
@@ -279,7 +345,7 @@ docs/validation/physical_realism_crN.md
 
 Required contents: code/config version; seeds/profiles; tests; defect IDs closed; absolute-metric deltas vs pre-CR baseline; explicit leftovers.
 
-Fixed seeds for regression: Quick **1, 42, 100** (extend with Atlas when touching SST/landforms).
+Fixed seeds: Quick **1, 42, 100**; Atlas **42, 183716**; one Full only after F-14 streaming. Check: moisture convergence + budget; permanent water vs playa vs ice fractions; river continuity/seasonality; Atlas–Full agreement; Godot/CLI config identity; time/memory.
 
 ---
 
@@ -287,7 +353,26 @@ Fixed seeds for regression: Quick **1, 42, 100** (extend with Atlas when touchin
 
 | Source | Role |
 |---|---|
-| User production audit 2026-08-17 (Quick 1/42/100 + Atlas notes) | Defect evidence |
+| User production audit 2026-08-17 (Quick 1/42/100 + Atlas notes) | Defect evidence (F-01…F-14) |
+| Production Atlas 183716 on commit **85ea366** | Defect evidence (F-03/F-07/F-09 reopen; F-15…F-21) |
 | Annex §10 / §11 / §16 | Correctness bar |
 | `PHYSICAL_REALISM_PLAN.md` | Living status |
 | Code comments cited in §3 | Implementation anchors |
+
+---
+
+## 10. Atlas 183716 / commit 85ea366 (production)
+
+Repo GitHub: no PRs, issues, or commit-review comments. CI pytest + packaging green. `world/manifest.json` `acceptance_ok=false`. Synthetic tests do not cover production Atlas.
+
+| Layer | Result | Verdict |
+|---|---|---|
+| Hypsometry | p50 567 m, p95 2986 m, max 6375 m | Keep CR-5 defaults |
+| Temperature | −37.4–27.7 °C, global mean 16.0 °C | Strongest layer; Godot missed 500 km continentality |
+| Moisture | spin-up false after 20 and 40 y | Do not calibrate precip |
+| Lakes | 16 184 cells, 10.64% land; 183 bodies; 76.9% playa/ice | F-15/F-16 |
+| Rivers | 782 cells, 0.514% land | F-09 PET×12 + F-17 |
+| Biomes | 11.72% land Holdridge Lake | F-18 |
+| Landforms | 53.7% land mountain score ≥0.5 | F-13 → CR-9 |
+
+Rendering only open + watered endorheic would drop visible water from 10.64% to ~2.46% land. Star-shaped lake = F-20. `lee_sink` ≈ 24.6% of precip. Fluvial erosion restored 938 pits (F-21). Atlas runtime ~94 s; Full memory still F-14.
