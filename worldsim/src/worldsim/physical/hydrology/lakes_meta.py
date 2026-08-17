@@ -66,18 +66,22 @@ def classify_lake_body(
 
     has_ocean_outlet = False
     has_land_outlet = False
+    has_inland_sink = False
     outlet_rc: tuple[int, int] | None = None
     for r, c in zip(*np.where(body), strict=False):
         i = flat_index(r, c, w)
         j = int(ds[i])
         if j < 0:
-            # Pit / edge: ocean neighbour ⇒ open to sea
-            for code, (dr, dc) in D8_DELTAS.items():
+            ocean_touch = False
+            for _code, (dr, dc) in D8_DELTAS.items():
                 nr, nc = r + dr, (c + dc) % w
                 if 0 <= nr < h and ocean[nr, nc]:
+                    ocean_touch = True
                     has_ocean_outlet = True
                     outlet_rc = (r, c)
                     break
+            if not ocean_touch and r not in (0, h - 1):
+                has_inland_sink = True
             continue
         nr, nc = unravel(j, w)
         if ocean[nr, nc]:
@@ -87,7 +91,10 @@ def classify_lake_body(
             has_land_outlet = True
             outlet_rc = (r, c)
 
-    closed_basin = not (has_ocean_outlet or has_land_outlet)
+    # CR-4: fill-all lake geometry can include spill-side cells that still
+    # drain outward in the unfilled routing graph. Closed iff an inland pit
+    # remains and the body does not reach the ocean.
+    closed_basin = bool(has_inland_sink and not has_ocean_outlet)
     mean_temp = float(np.mean(temp[body])) if np.any(body) else float("nan")
     mean_inflow = float(np.mean(q[body])) if np.any(body) else 0.0
     mean_precip = float(np.mean(precip[body])) if np.any(body) else 0.0

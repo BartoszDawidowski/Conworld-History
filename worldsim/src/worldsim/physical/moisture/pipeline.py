@@ -86,7 +86,7 @@ class MoistureParams:
     itcz_convective_scale: float = 1.2
     itcz_width_deg: float = 8.0
     # PR-8 / revised B9 — monsoon transport
-    monsoon_strength: float = 0.4
+    monsoon_strength: float = 0.35
     monsoon_lat_band_min_abs_deg: float = 5.0
     monsoon_lat_band_max_abs_deg: float = 32.0
     monsoon_max_anomaly_ms: float = 3.5
@@ -265,6 +265,8 @@ def build_moisture(
         planet_radius_km=params.planet_radius_km,
     )
     monsoon_diag: dict[str, Any] = {"b9_terms_active": False, "monsoon_strength": 0.0}
+    # CR-3: monsoon contrast uses climate (pre-SST) land temperatures when available.
+    monsoon_land_t = np.asarray(climate.temperature_c[:months], dtype=np.float64)
     if (
         ocean is not None
         and sst is not None
@@ -273,7 +275,7 @@ def build_moisture(
         wind_u, wind_v, monsoon_diag = apply_monsoon_wind_anomaly(
             wind_u,
             wind_v,
-            land_temperature_c=temp,
+            land_temperature_c=monsoon_land_t,
             sst_c=sst,
             ocean_mask=climate.ocean_mask,
             latitude_deg=climate.latitude_deg,
@@ -386,15 +388,15 @@ def build_moisture(
             **(fields["budget"] if isinstance(fields.get("budget"), dict) else {}),
         }
     )
-    # CR-1: hard gate is periodic spin-up convergence. Spatial heuristics remain
-    # reported (`heuristic_fields_ok`) but are not sufficient alone; land-store
-    # closure stays a CR-3 gate (F-04).
+    # CR-1/CR-3: acceptance requires periodic spin-up (q + land store when gated).
     spinup_ok = bool(diagnostics.get("spinup_converged", False))
     heuristic_ok = bool(diagnostics.get("heuristic_fields_ok", False))
     diagnostics["acceptance_ok"] = bool(spinup_ok)
     diagnostics["acceptance_requires_spinup"] = True
     diagnostics["heuristic_fields_ok"] = heuristic_ok
-    diagnostics["land_store_closure_gated"] = False
+    diagnostics["land_store_closure_gated"] = bool(
+        diagnostics.get("spinup_store_gated", False)
+    )
 
     if reporter is not None:
         reporter.progress("moisture", 1.0)

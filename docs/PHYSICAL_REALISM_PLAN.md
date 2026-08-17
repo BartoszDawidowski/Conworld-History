@@ -1,9 +1,9 @@
 # Physical Realism Plan — operational tracker
 
-> **Status:** **PR-0–PR-9 foundation delivered**; **CR-0–CR-2 accepted**; next **CR-3** — [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md).  
+> **Status:** **PR-0–PR-9 foundation delivered**; **CR-0–CR-5 accepted** — [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md).  
 > **Authority:** [`docs/WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md) (design) + corrections doc (production defects / repair order).  
 > **Rule:** One milestone at a time. Validate → `docs/validation/physical_realism_{pr|cr}N.md` → stop.  
-> **Next when instructed:** **CR-3** (moisture closure + SST anomaly + monsoon). Do not calibrate hypsometry/landforms until CR-3+CR-4. Optional atlas: **B10**.
+> **Next when instructed:** optional **B10** (atlas) or a named moisture/hypsometry follow-up.
 
 ---
 
@@ -42,12 +42,12 @@ Where the annex identifies a demonstrated correctness problem, its corrective re
 | C-03 | B9 optional light precip boost as peer mechanism | **Resolved (PR-8).** Monsoon is transport-first; regime bug **F-07** / **CR-3**. |
 | C-04 | Plan B §8: “fully physically conserved water budget” out of scope | **Superseded** for atmospheric moisture: budget closure is **P0** (annex §10). Production spin-up: **F-03/F-04** / **CR-3**. |
 | C-05 | Plan B: “prefer shallow hooks; do not reopen M0–19” | Softened: **scientific-hardening follow-ups** to M6/9/11/13 modules are in scope; **not** a full generator rewrite. |
-| C-06 | B7 + §6.3.1 transmission / flow layer = Nil/wadi done | **PR-5/PR-6 scaffolding done; production endorheism reopened (F-08 / CR-4).** |
-| C-07 | Every Lake `closed_basin=True`; fill-all depressions | **Types exist; fill-all still prevents real closed basins (F-08 / CR-4).** |
-| C-08 | Cell-based climate scales (`*_cells`) as permanent params | Migrate to **km** via GridMetrics (**PR-1** partial); leftovers **F-11** / **CR-2**. |
-| C-09 | Single max land normalisation / every seed hits `land_scale_m` | **power_tail_v2** (**PR-2**) implemented but **default off**; `tail_softness` no-op (**F-12**); calibrate in **CR-5**. |
+| C-06 | B7 + §6.3.1 transmission / flow layer = Nil/wadi done | **PR-5/PR-6 scaffolding; production endorheism ✅ CR-4.** |
+| C-07 | Every Lake `closed_basin=True`; fill-all depressions | **Closed CR-4** — finite fill; typed closed basins. |
+| C-08 | Cell-based climate scales (`*_cells`) as permanent params | Migrate to **km** via GridMetrics (**PR-1** / **CR-2** / **CR-5** hydro km²); leftovers `advect_steps`, bathymetry shelf cells. |
+| C-09 | Single max land normalisation / every seed hits `land_scale_m` | **power_tail_v2** production default (**CR-5**); `tail_softness` real (**F-12**). |
 | C-10 | Moisture #2 labeled as if it caused hydrology | Provenance split: `moisture_hydrology_input` vs `moisture_ecology` (D-13); diagnostics must not mislabel. |
-| C-11 | PR-0…PR-9 “complete” ⇒ production-ready climate | **Superseded 2026-08-17.** Foundation complete; production hardening = **CR track**. |
+| C-11 | PR-0…PR-9 “complete” ⇒ production-ready climate | **Superseded 2026-08-17.** Foundation complete; production repair **CR-0…CR-5 accepted**. Leftovers: moisture trial band, Full gate (**F-14**), mountain score 0.60–0.65. |
 
 ---
 
@@ -78,14 +78,14 @@ Corrected physical derivation order (annex §6) remains authoritative for pipeli
 |---|---|---|---|
 | PR-0 | Baseline and regression harness | ✅ Foundation | [`docs/validation/physical_realism_pr0.md`](validation/physical_realism_pr0.md) |
 | PR-1 | GridMetrics + analytical hex geometry | ⚠️ Partial | [`docs/validation/physical_realism_pr1.md`](validation/physical_realism_pr1.md) |
-| PR-2 | Hypsometry `power_tail_v2` | ⚠️ Option only | [`docs/validation/physical_realism_pr2.md`](validation/physical_realism_pr2.md) |
+| PR-2 | Hypsometry `power_tail_v2` | ✅ Production default (CR-5) | [`docs/validation/physical_realism_pr2.md`](validation/physical_realism_pr2.md) |
 | PR-3 | Temperature periodic response + km scales | ⚠️ Partial | [`docs/validation/physical_realism_pr3.md`](validation/physical_realism_pr3.md) |
 | PR-4 | Moisture correctness core | ⚠️ Partial in production | [`docs/validation/physical_realism_pr4.md`](validation/physical_realism_pr4.md) |
 | PR-5 | Canonical cylindrical hydrology graph | ✅ Strongest | [`docs/validation/physical_realism_pr5.md`](validation/physical_realism_pr5.md) |
 | PR-6 | Effective runoff, wadis, endorheic, lakes | ⚠️ Partial in production | [`docs/validation/physical_realism_pr6.md`](validation/physical_realism_pr6.md) |
 | PR-7 | Revised B8 (Plan B moisture v2) | ⚠️ Partial | [`docs/validation/physical_realism_pr7.md`](validation/physical_realism_pr7.md) |
 | PR-8 | Revised B9 (Plan B monsoon) | ⚠️ Partial | [`docs/validation/physical_realism_pr8.md`](validation/physical_realism_pr8.md) |
-| PR-9 | LandformAnalysis foundation | ⚠️ 9A–D partial; 9E deferred | [`docs/validation/physical_realism_pr9.md`](validation/physical_realism_pr9.md) |
+| PR-9 | LandformAnalysis foundation | ⚠️ 9A–D + 9E thresholds (CR-5); Godot leftover | [`docs/validation/physical_realism_pr9.md`](validation/physical_realism_pr9.md) |
 
 Detail: annex §§7–19. Production defects: corrections §3 (F-01…).
 
@@ -96,9 +96,9 @@ Detail: annex §§7–19. Production defects: corrections §3 (F-01…).
 | CR-0 | CI + harness honesty | ✅ Complete | [`docs/validation/physical_realism_cr0.md`](validation/physical_realism_cr0.md) |
 | CR-1 | Parameter propagation + acceptance honesty | ✅ Complete | [`docs/validation/physical_realism_cr1.md`](validation/physical_realism_cr1.md) |
 | CR-2 | GridMetrics / subgrid / km leftovers | ✅ Complete | [`docs/validation/physical_realism_cr2.md`](validation/physical_realism_cr2.md) |
-| CR-3 | Moisture + SST anomaly + monsoon | ⬜ Next | — |
-| CR-4 | Monthly hydro + endorheism | ⬜ | — |
-| CR-5 | Joint calibration (+ PR-9E) | ⬜ blocked on CR-3/4 | — |
+| CR-3 | Moisture + SST anomaly + monsoon | ✅ Complete | [`docs/validation/physical_realism_cr3.md`](validation/physical_realism_cr3.md) |
+| CR-4 | Monthly hydro + endorheism | ✅ Complete | [`docs/validation/physical_realism_cr4.md`](validation/physical_realism_cr4.md) |
+| CR-5 | Joint calibration (+ PR-9E) | ✅ Complete | [`docs/validation/physical_realism_cr5.md`](validation/physical_realism_cr5.md) |
 
 ---
 
@@ -108,7 +108,7 @@ Detail: annex §§7–19. Production defects: corrections §3 (F-01…).
 |---|---|---|
 | B1–B7 + hydro UX | Baseline delivered | Remains; does not prove annex invariants |
 | B8 | **= PR-7** after PR-4 | Production closure → **CR-1/CR-3** |
-| B9 | **= PR-8** after PR-7 | Regime fix → **CR-3**; interim `monsoon_strength=0` |
+| B9 | **= PR-8** after PR-7 | Regime fix ✅ **CR-3**; production `monsoon_strength=0.35` |
 | B10 | Independent | Atlas Full land polys; may run anytime when instructed |
 
 ---
@@ -123,11 +123,7 @@ Landforms (**PR-9** / **CR-5**) feed hex caches and `EnvironmentAdapter` later; 
 
 ## 7. Suggested human instructions
 
-```text
-Physical realism corrections: execute CR-3 only.
-```
-
-Interim (until CR-3): keep `monsoon_strength=0.0`; do not raise `ocean_evap_rate` to “fix” dryness; do not enable default `power_tail_v2`.
+CR track is complete. Moisture trial-band / Full gate / mountain score 0.60–0.65 need a named follow-up. Do not retune `folding_ratio` or `ocean_evap_rate` to hide leftovers.
 
 Optional atlas:
 

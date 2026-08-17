@@ -90,6 +90,7 @@ def test_sst_ocean_only_and_coupling(tmp_path: Path) -> None:
 
 
 def test_inland_sst_decay_stronger_at_coast() -> None:
+    """Warm coastal SST anomaly vs cooler open ocean — coast warms more than deep inland."""
     from worldsim.physical.ocean.sst import couple_temperature_with_sst_inland
 
     h, w = 24, 48
@@ -97,7 +98,9 @@ def test_inland_sst_decay_stronger_at_coast() -> None:
     ocean[:, :16] = True
     temp = np.full((3, h, w), 10.0)
     sst = np.full((3, h, w), np.nan)
-    sst[:, :, :16] = 20.0
+    # Cool open ocean + warm strip at the landward edge → positive coastal anomaly.
+    sst[:, :, :16] = 12.0
+    sst[:, :, 10:16] = 22.0
     coupled, diag = couple_temperature_with_sst_inland(
         temperature_c=temp,
         sst_c=sst,
@@ -105,13 +108,36 @@ def test_inland_sst_decay_stronger_at_coast() -> None:
         mix=0.35,
         inland_decay_cells=8.0,
     )
-    # Coast land column 16 warmer pull than far inland column 40
+    assert diag.get("sst_coupling_mode") == "anomaly_zonal_v1"
     coast_delta = float(coupled[0, h // 2, 16] - 10.0)
     deep_delta = float(coupled[0, h // 2, 40] - 10.0)
     assert coast_delta > deep_delta
-    assert coast_delta > 0.5
-    assert deep_delta < coast_delta * 0.5
+    assert coast_delta > 0.3
+    assert abs(deep_delta) < abs(coast_delta) * 0.5
     assert diag["coast_temp_delta_mean_abs"] >= diag["deep_inland_temp_delta_mean_abs"]
+
+
+def test_uniform_sst_does_not_pull_land_to_absolute_ocean_t() -> None:
+    """CR-3: uniform SST has ~zero anomaly — land stays near base T."""
+    from worldsim.physical.ocean.sst import couple_temperature_with_sst_inland
+
+    h, w = 16, 32
+    ocean = np.zeros((h, w), dtype=bool)
+    ocean[:, :10] = True
+    temp = np.full((2, h, w), 5.0)
+    sst = np.full((2, h, w), np.nan)
+    sst[:, ocean] = 25.0
+    coupled, diag = couple_temperature_with_sst_inland(
+        temperature_c=temp,
+        sst_c=sst,
+        ocean_mask=ocean,
+        mix=0.5,
+        inland_decay_cells=6.0,
+    )
+    land = ~ocean
+    # Absolute blend would warm land by many °C; anomaly mode must stay near 5°C.
+    assert float(np.mean(np.abs(coupled[:, land] - 5.0))) < 0.05
+    assert float(diag["land_temp_delta_mean_abs"]) < 0.05
 
 
 def test_basin_and_boundary_masks() -> None:

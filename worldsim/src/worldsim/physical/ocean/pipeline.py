@@ -26,7 +26,7 @@ from worldsim.spatial.units_migration import resolve_planet_lengths
 @dataclass(frozen=True)
 class OceanParams:
     months: int = 12
-    sst_mix: float = 0.4
+    sst_mix: float = 0.28
     inland_decay_cells: float = 60.0
     inland_decay_km: float | None = None
     western_boundary_width_km: float | None = None

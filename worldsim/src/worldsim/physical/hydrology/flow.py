@@ -1,4 +1,4 @@
-"""PyFlwDir DEM conditioning + canonical cylindrical graph products (PR-5)."""
+"""PyFlwDir DEM conditioning + canonical cylindrical graph products (PR-5 / CR-4)."""
 
 from __future__ import annotations
 
@@ -30,9 +30,16 @@ def run_pyflwdir_core(
     elevation_m: NDArray[np.floating],
     ocean_mask: NDArray[np.bool_],
     nodata: float = NODATA,
-    max_depth: float = -1.0,
+    max_depth: float = 25.0,
 ) -> dict[str, Any]:
     """Fill DEM on a padded domain, crop D8, then build the canonical graph.
+
+    ``max_depth`` is the maximum *numerical* pour-point fill (metres). Negative
+    restores legacy fill-all (every depression drains to an edge). Finite
+    values keep deeper sinks as pits so closed basins can exist (CR-4 / F-08).
+
+    Lake geometry uses a separate fill-all pass (``depression_depth_m``);
+    routing uses the limited fill.
 
     Accumulation / basins / stream order come from
     :class:`~worldsim.physical.hydrology.cylindrical_graph.CylindricalFlowGraph`
@@ -55,6 +62,17 @@ def run_pyflwdir_core(
     flow_dir = ew_crop(flw.to_array(ftype="d8"), pad, w).astype(np.uint8)
     filled = ew_crop(filled_p, pad, w)
 
+    if float(max_depth) < 0.0:
+        filled_all = filled
+    else:
+        filled_all_p, _ = pyflwdir_dem.fill_depressions(
+            dem_p, nodata=nodata, max_depth=-1.0, outlets="edge"
+        )
+        filled_all = ew_crop(filled_all_p, pad, w)
+
+    elev = np.asarray(elevation_m, dtype=np.float64)
+    depression_depth = np.where(ocean, 0.0, np.maximum(filled_all - elev, 0.0))
+
     graph = build_cylindrical_graph(flow_dir, ocean)
     products = graph_products(graph)
 
@@ -63,6 +81,8 @@ def run_pyflwdir_core(
         "flw": flw,
         "pad": pad,
         "dem_conditioned_m": filled,
+        "depression_depth_m": depression_depth,
+        "fill_max_depth_m": float(max_depth),
         "flow_direction": flow_dir,
         "flow_accumulation": products["flow_accumulation"],
         "basin_id": products["basin_id"],

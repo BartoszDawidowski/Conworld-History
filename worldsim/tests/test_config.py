@@ -28,8 +28,9 @@ def test_default_config_loads() -> None:
     assert config.to_pyplatec_params().folding_ratio == 0.01
     assert config.erosion_iterations == 5
     assert config.erosion_fluvial_k == 8.0
-    assert config.sst_mix == 0.4
+    assert config.sst_mix == 0.28
     assert config.inland_decay_cells == 60.0
+    assert config.sst_inland_decay_km == 1200.0
     assert config.western_warm_c == 2.2
     assert config.eastern_cool_c == 1.8
     assert config.moisture_advect_steps == 32
@@ -38,15 +39,27 @@ def test_default_config_loads() -> None:
     assert config.moisture_convective_scale == 2.0
     assert config.moisture_ocean_evap_rate == 1.4
     assert config.moisture_land_et_rate == 0.4
+    assert config.moisture_spinup_max_years == 20
+    assert config.moisture_monsoon_strength == 0.35
     assert config.moisture_continentality_dry == 0.4
     assert config.moisture_lake_evap_rate == 0.75
     assert config.moisture_river_evap_rate == 0.40
-    assert config.to_ocean_params().sst_mix == 0.4
+    assert config.to_ocean_params().sst_mix == 0.28
     assert config.to_moisture_params().advect_steps == 32
     assert config.to_moisture_params().lake_evap_rate == 0.75
     assert config.base_temp_c == 25.0
     assert config.precip_scale_mm == 200.0
-    assert config.to_ecology_params().precip_scale_mm == 200.0
+    assert config.hydrology_transmission_rate == 0.45
+    assert config.hydrology_fill_max_depth_m == 25.0
+    assert config.to_hydrology_params().fill_max_depth_m == 25.0
+    assert config.hypsometry_mode == "power_tail_v2"
+    assert config.hypsometry_body_exponent == pytest.approx(1.5)
+    assert config.hypsometry_tail_softness == pytest.approx(1.0)
+    assert config.hydrology_river_min_catchment_km2 == pytest.approx(500.0)
+    lf = config.to_landform_params()
+    assert lf.mountain_score_threshold == pytest.approx(0.50)
+    assert lf.fine_radius_km == pytest.approx(60.0)
+    assert lf.min_range_km2 == pytest.approx(800.0)
 
 
 def test_b5_knobs_from_yaml(tmp_path: Path) -> None:

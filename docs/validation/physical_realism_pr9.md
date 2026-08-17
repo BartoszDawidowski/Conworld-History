@@ -49,4 +49,4 @@
 - History `EnvironmentAdapter` mobility costs  
 
 **Decision:** accept PR-9 foundation; stop.  
-**Follow-up:** production defects (mask/coast mix, hardcoded `acceptance_ok`, plateaus absent) → [`PHYSICAL_REALISM_CORRECTIONS.md`](../PHYSICAL_REALISM_CORRECTIONS.md) **F-13** / **CR-5** (after CR-2…CR-4). Optional: **B10** (atlas) anytime.
+**Follow-up:** **F-13 / CR-5 accepted** (`physical_realism_cr5.md`). Leftover: Godot landform mode; score-formula retune for 0.60–0.65. Optional: **B10** (atlas) anytime.

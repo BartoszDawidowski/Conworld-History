@@ -16,16 +16,19 @@ def power_tail_v2_curve(
     *,
     body_exponent: float,
     asymptote_ratio: float,
+    tail_softness: float = 1.0,
 ) -> NDArray[np.float64]:
-    """Dimensionless land curve ``f(x)`` with C1 join at the anchor ``x=1``.
+    """Dimensionless land curve ``f(x)`` continuous at the anchor ``x=1``.
 
-    - ``x <= 1``: ``x ** body_exponent`` (compressive when exponent < 1)
-    - ``x > 1``: soft exponential approach to ``asymptote_ratio``
-      with matching derivative ``body_exponent`` at ``x = 1``
+    - ``x <= 1``: ``x ** body_exponent`` (body; ``p>1`` compresses mid-land)
+    - ``x > 1``: exponential approach to ``asymptote_ratio``
+    - ``tail_softness`` stretches the tail length scale (``1`` = PR-2 identity,
+      C1 join; ``>1`` softer / longer tail, C0 only)
     """
     xx = np.asarray(x, dtype=np.float64)
     p = float(body_exponent)
     m = float(asymptote_ratio)
+    s = max(float(tail_softness), 1e-6)
     if p <= 0.0:
         raise ValueError("body_exponent must be > 0")
     if m <= 1.0:
@@ -35,7 +38,8 @@ def power_tail_v2_curve(
     out[body] = np.power(np.maximum(xx[body], 0.0), p)
     span = m - 1.0
     t = xx[~body] - 1.0
-    out[~body] = 1.0 + span * (1.0 - np.exp(-t * p / span))
+    rate = p / (span * s)
+    out[~body] = 1.0 + span * (1.0 - np.exp(-t * rate))
     return out
 
 
@@ -46,8 +50,9 @@ def power_tail_v2_land_m(
     *,
     anchor_quantile: float = 0.95,
     anchor_elevation_m: float = 3000.0,
-    body_exponent: float = 0.70,
+    body_exponent: float = 1.5,
     max_elevation_m: float = 9000.0,
+    tail_softness: float = 1.0,
     epsilon: float = 1e-12,
 ) -> tuple[NDArray[np.float64], dict[str, Any]]:
     """Map land raw heights to metres via robust quantile + soft tail.
@@ -67,6 +72,7 @@ def power_tail_v2_land_m(
         "anchor_quantile": float(anchor_quantile),
         "anchor_elevation_m": float(anchor_elevation_m),
         "body_exponent": float(body_exponent),
+        "tail_softness": float(tail_softness),
         "max_elevation_m": float(max_elevation_m),
         "land_cells": int(land.sum()),
     }
@@ -87,7 +93,12 @@ def power_tail_v2_land_m(
     m = float(max_elevation_m) / max(float(anchor_elevation_m), epsilon)
     if m <= 1.0:
         m = 1.0 + 1e-6
-    curve = power_tail_v2_curve(x, body_exponent=body_exponent, asymptote_ratio=m)
+    curve = power_tail_v2_curve(
+        x,
+        body_exponent=body_exponent,
+        asymptote_ratio=m,
+        tail_softness=tail_softness,
+    )
     land_m = float(anchor_elevation_m) * curve
     out[land] = land_m
 
@@ -113,11 +124,12 @@ def raw_to_elevation_m_with_diagnostics(
     land_scale_m: float = 6000.0,
     ocean_scale_m: float = 5000.0,
     ocean_mask: NDArray[np.bool_] | None = None,
-    hypsometry_mode: str = "legacy_max",
+    hypsometry_mode: str = "power_tail_v2",
     hypsometry_anchor_quantile: float = 0.95,
     hypsometry_anchor_elevation_m: float = 3000.0,
-    hypsometry_body_exponent: float = 0.70,
+    hypsometry_body_exponent: float = 1.5,
     hypsometry_max_elevation_m: float | None = None,
+    hypsometry_tail_softness: float = 1.0,
 ) -> tuple[NDArray[np.float64], dict[str, Any]]:
     """Map raw elevation to metres; return diagnostics for the land transform."""
     elev = np.asarray(elevation_raw, dtype=np.float64)
@@ -149,6 +161,7 @@ def raw_to_elevation_m_with_diagnostics(
             anchor_elevation_m=hypsometry_anchor_elevation_m,
             body_exponent=hypsometry_body_exponent,
             max_elevation_m=max_guard,
+            tail_softness=hypsometry_tail_softness,
         )
         out[land] = land_m[land]
     else:
@@ -182,21 +195,19 @@ def raw_to_elevation_m(
     land_scale_m: float = 6000.0,
     ocean_scale_m: float = 5000.0,
     ocean_mask: NDArray[np.bool_] | None = None,
-    hypsometry_mode: str = "legacy_max",
+    hypsometry_mode: str = "power_tail_v2",
     hypsometry_anchor_quantile: float = 0.95,
     hypsometry_anchor_elevation_m: float = 3000.0,
-    hypsometry_body_exponent: float = 0.70,
+    hypsometry_body_exponent: float = 1.5,
     hypsometry_max_elevation_m: float | None = None,
+    hypsometry_tail_softness: float = 1.0,
 ) -> NDArray[np.float64]:
     """Map raw tectonic elevation to metres with sea level at 0.
 
     Modes:
 
     - ``legacy_max``: land normalised by the seed maximum to ``land_scale_m``
-    - ``power_tail_v2``: robust quantile body + soft tail (PR-2)
-
-    Default mode remains ``legacy_max`` until a separate calibration enables
-    ``power_tail_v2`` as the packaged default.
+    - ``power_tail_v2``: robust quantile body + soft tail (PR-2 / CR-5 default)
     """
     out, _diag = raw_to_elevation_m_with_diagnostics(
         elevation_raw,
@@ -209,5 +220,6 @@ def raw_to_elevation_m(
         hypsometry_anchor_elevation_m=hypsometry_anchor_elevation_m,
         hypsometry_body_exponent=hypsometry_body_exponent,
         hypsometry_max_elevation_m=hypsometry_max_elevation_m,
+        hypsometry_tail_softness=hypsometry_tail_softness,
     )
     return out

@@ -7,6 +7,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from worldsim.physical.hydrology.lakes_meta import classify_lake_body
+from worldsim.physical.hydrology.cylindrical_graph import CylindricalFlowGraph
 from worldsim.physical.terrain.waterbodies import label_water_bodies
 
 # ArcGIS D8 → (dr, dc); E–W wraps at caller.
@@ -207,10 +209,12 @@ def gate_lakes_by_water_supply(
     arid_precip_land_quantile: float = 0.45,
     lake_min_mean_temp_c: float = 1.0,
     inflow_land_quantile: float = 0.75,
+    graph: CylindricalFlowGraph | None = None,
 ) -> tuple[NDArray[np.bool_], NDArray[np.int32], int, dict[str, float | int]]:
     """Keep fill-depth lakes that are liquid and climate-plausible.
 
-    - Drop polar / ice-sheet depressions (mean annual T below ``lake_min_mean_temp_c``).
+    - Drop polar / ice-sheet *open* depressions (mean annual T below threshold).
+    - Closed basins are kept (endorheic / playa / frozen) even if arid (CR-4).
     - Rain-fed: local mean precip ≥ land precip quantile.
     - River-fed: touches gated ``river_mask`` and either local precip is not arid
       **or** effective discharge on the body is high (distant Nil-like feed).
@@ -251,6 +255,7 @@ def gate_lakes_by_water_supply(
         "lake_kept_rain": 0,
         "lake_kept_river": 0,
         "lake_kept_distant": 0,
+        "lake_kept_closed": 0,
     }
     if before_cells == 0 or not np.any(land):
         empty = np.zeros(lakes.shape, dtype=bool)
@@ -269,12 +274,30 @@ def gate_lakes_by_water_supply(
     kept_rain = 0
     kept_river = 0
     kept_distant = 0
+    kept_closed = 0
     for lid in np.unique(ids):
         lid_i = int(lid)
         if lid_i <= 0:
             continue
         body = ids == lid_i
         if not np.any(body):
+            continue
+        closed = False
+        if graph is not None:
+            rec = classify_lake_body(
+                graph=graph,
+                lake_mask=body,
+                lake_id_value=lid_i,
+                elevation_m=np.zeros(lakes.shape, dtype=np.float64),
+                discharge_effective=q_eff if q_eff is not None else np.zeros(lakes.shape),
+                temperature_annual_c=temp if temp is not None else np.zeros(lakes.shape),
+                precip_annual=precip,
+                frozen_temp_c=lake_min_mean_temp_c,
+            )
+            closed = bool(rec.get("closed_basin"))
+        if closed:
+            keep |= body
+            kept_closed += 1
             continue
         if temp is not None and float(np.mean(temp[body])) < lake_min_mean_temp_c:
             dropped_cold += 1
@@ -322,4 +345,5 @@ def gate_lakes_by_water_supply(
         "lake_kept_rain": kept_rain,
         "lake_kept_river": kept_river,
         "lake_kept_distant": kept_distant,
+        "lake_kept_closed": kept_closed,
     }

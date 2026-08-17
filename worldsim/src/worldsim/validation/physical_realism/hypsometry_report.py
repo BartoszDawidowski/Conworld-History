@@ -55,6 +55,7 @@ def _run_mode(
             hypsometry_body_exponent=config.hypsometry_body_exponent,
             hypsometry_max_elevation_m=config.hypsometry_max_elevation_m
             or config.land_scale_m,
+            hypsometry_tail_softness=config.hypsometry_tail_softness,
         ),
         detail_seed=seed * 17 + 3,
     )

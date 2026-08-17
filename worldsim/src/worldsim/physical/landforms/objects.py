@@ -9,7 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from worldsim.physical.landforms.classify import BroadContext
-from worldsim.physical.landforms.params import LandformParams
+from worldsim.physical.landforms.params import LandformParams, min_object_cells
 
 
 @dataclass
@@ -17,6 +17,7 @@ class MountainRange:
     id: int
     cell_count: int
     area_cells: int
+    area_km2: float
     centroid_j: float
     centroid_i: float
     mean_elev_m: float
@@ -34,6 +35,7 @@ class MountainRange:
             "id": self.id,
             "cell_count": self.cell_count,
             "area_cells": self.area_cells,
+            "area_km2": self.area_km2,
             "centroid_j": self.centroid_j,
             "centroid_i": self.centroid_i,
             "mean_elev_m": self.mean_elev_m,
@@ -53,6 +55,7 @@ class Plateau:
     id: int
     cell_count: int
     area_cells: int
+    area_km2: float
     centroid_j: float
     centroid_i: float
     mean_elev_m: float
@@ -68,6 +71,7 @@ class Plateau:
             "id": self.id,
             "cell_count": self.cell_count,
             "area_cells": self.area_cells,
+            "area_km2": self.area_km2,
             "centroid_j": self.centroid_j,
             "centroid_i": self.centroid_i,
             "mean_elev_m": self.mean_elev_m,
@@ -166,6 +170,7 @@ def extract_mountain_ranges(
     confidence: NDArray[np.floating],
     relief_meso: NDArray[np.floating],
     params: LandformParams,
+    cell_area_km2: float = 1.0,
 ) -> tuple[NDArray[np.int32], list[MountainRange]]:
     ocean = np.asarray(ocean_mask, dtype=bool)
     score = np.asarray(mountain_score, dtype=np.float64)
@@ -183,8 +188,13 @@ def extract_mountain_ranges(
     ranges: list[MountainRange] = []
     elev = np.asarray(elevation_m, dtype=np.float64)
     new_id = 1
+    min_cells = min_object_cells(
+        min_km2=params.min_range_km2,
+        min_cells=params.min_range_cells,
+        cell_area_km2=cell_area_km2,
+    )
     for old, area, cj, ci in ordered:
-        if area < params.min_range_cells:
+        if area < min_cells:
             continue
         sel = raw == old
         xs = np.where(sel)[1]
@@ -209,6 +219,7 @@ def extract_mountain_ranges(
             id=new_id,
             cell_count=area,
             area_cells=area,
+            area_km2=float(area) * float(cell_area_km2),
             centroid_j=cj,
             centroid_i=ci,
             mean_elev_m=float(np.mean(e)),
@@ -238,6 +249,7 @@ def extract_plateaus(
     relief_fine: NDArray[np.floating],
     mean_elev_macro: NDArray[np.floating],
     params: LandformParams,
+    cell_area_km2: float = 1.0,
 ) -> tuple[NDArray[np.int32], list[Plateau]]:
     ocean = np.asarray(ocean_mask, dtype=bool)
     mask = (~ocean) & (np.asarray(context_id) == int(BroadContext.PLATEAU))
@@ -248,8 +260,13 @@ def extract_plateaus(
     plateaus: list[Plateau] = []
     elev = np.asarray(elevation_m, dtype=np.float64)
     new_id = 1
+    min_cells = min_object_cells(
+        min_km2=params.min_plateau_km2,
+        min_cells=params.min_plateau_cells,
+        cell_area_km2=cell_area_km2,
+    )
     for old, area, cj, ci in ordered:
-        if area < params.min_plateau_cells:
+        if area < min_cells:
             continue
         sel = raw == old
         xs = np.where(sel)[1]
@@ -260,6 +277,7 @@ def extract_plateaus(
             id=new_id,
             cell_count=area,
             area_cells=area,
+            area_km2=float(area) * float(cell_area_km2),
             centroid_j=cj,
             centroid_i=ci,
             mean_elev_m=float(np.mean(e)),

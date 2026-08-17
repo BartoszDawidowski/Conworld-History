@@ -53,15 +53,15 @@ class PlanetConfig:
     orogeny_boost: float = 0.05
     activity_relief: float = 0.25
     boundary_relief: float = 0.35
-    # PR-2 — hypsometry (default legacy_max; enable power_tail_v2 via YAML)
-    hypsometry_mode: str = "legacy_max"
+    # PR-2 / CR-5 — hypsometry (packaged default power_tail_v2)
+    hypsometry_mode: str = "power_tail_v2"
     hypsometry_anchor_quantile: float = 0.95
     hypsometry_anchor_elevation_m: float = 3000.0
-    hypsometry_body_exponent: float = 0.70
+    hypsometry_body_exponent: float = 1.5
     hypsometry_max_elevation_m: float | None = None
     hypsometry_tail_softness: float = 1.0
-    # Plan B5 — ocean coupling (Atlas-tuned 2026-08-15)
-    sst_mix: float = 0.4
+    # Plan B5 / CR-3 — ocean coupling
+    sst_mix: float = 0.28
     inland_decay_cells: float = 60.0
     western_warm_c: float = 2.2
     eastern_cool_c: float = 1.8
@@ -78,7 +78,7 @@ class PlanetConfig:
     moisture_continentality_dry: float = 0.4
     moisture_lee_dry: float = 0.12
     moisture_diffusion_mix_per_month: float = 0.08
-    moisture_spinup_max_years: int = 4
+    moisture_spinup_max_years: int = 20
     moisture_spinup_tolerance_relative: float = 0.02
     moisture_spinup_tolerance_absolute: float = 1e-3
     # PR-7 / revised B8
@@ -87,7 +87,7 @@ class PlanetConfig:
     moisture_land_store_capacity: float = 8.0
     moisture_itcz_convective_scale: float = 1.2
     moisture_itcz_width_deg: float = 8.0
-    moisture_monsoon_strength: float = 0.4
+    moisture_monsoon_strength: float = 0.35
     moisture_monsoon_lat_band_min_abs_deg: float = 5.0
     moisture_monsoon_lat_band_max_abs_deg: float = 32.0
     moisture_monsoon_max_anomaly_ms: float = 3.5
@@ -103,6 +103,16 @@ class PlanetConfig:
     hydrology_lake_min_mean_temp_c: float = 1.0
     hydrology_lake_inflow_land_quantile: float = 0.75
     hydrology_transmission_rate: float = 0.45
+    hydrology_fill_max_depth_m: float = 25.0
+    hydrology_river_min_catchment_km2: float | None = 500.0
+    # CR-5 landforms
+    landform_mountain_score_threshold: float = 0.50
+    landform_plateau_score_threshold: float = 0.40
+    landform_fine_radius_km: float = 60.0
+    landform_meso_radius_km: float = 150.0
+    landform_macro_radius_km: float = 300.0
+    landform_min_range_km2: float = 800.0
+    landform_min_plateau_km2: float = 2500.0
     # Plan B5 — climate mean / Holdridge precip scaling
     base_temp_c: float = 25.0
     precip_scale_mm: float = 200.0
@@ -209,6 +219,23 @@ class PlanetConfig:
             lake_inflow_land_quantile=self.hydrology_lake_inflow_land_quantile,
             transmission_rate=self.hydrology_transmission_rate,
             precip_scale_mm=self.precip_scale_mm,
+            fill_max_depth_m=self.hydrology_fill_max_depth_m,
+            planet_radius_km=self.planet_radius_km,
+            river_min_catchment_km2=self.hydrology_river_min_catchment_km2,
+        )
+
+    def to_landform_params(self) -> "LandformParams":
+        from worldsim.physical.landforms import LandformParams
+
+        return LandformParams(
+            mountain_score_threshold=self.landform_mountain_score_threshold,
+            plateau_score_threshold=self.landform_plateau_score_threshold,
+            fine_radius_km=self.landform_fine_radius_km,
+            meso_radius_km=self.landform_meso_radius_km,
+            macro_radius_km=self.landform_macro_radius_km,
+            min_range_km2=self.landform_min_range_km2,
+            min_plateau_km2=self.landform_min_plateau_km2,
+            planet_radius_km=self.planet_radius_km,
         )
 
     def to_pyplatec_params(self) -> "PyPlatecParams":
@@ -344,7 +371,7 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     boundary_relief = float(terrain_cfg.get("boundary_relief", 0.35))
     if boundary_relief < 0.0:
         raise ConfigError("terrain.boundary_relief must be >= 0")
-    hypsometry_mode = str(terrain_cfg.get("hypsometry_mode", "legacy_max"))
+    hypsometry_mode = str(terrain_cfg.get("hypsometry_mode", "power_tail_v2"))
     if hypsometry_mode not in ("legacy_max", "power_tail_v2"):
         raise ConfigError(
             "terrain.hypsometry_mode must be 'legacy_max' or 'power_tail_v2'"
@@ -359,7 +386,7 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     )
     if hypsometry_anchor_elevation_m <= 0.0:
         raise ConfigError("terrain.hypsometry_anchor_elevation_m must be > 0")
-    hypsometry_body_exponent = float(terrain_cfg.get("hypsometry_body_exponent", 0.70))
+    hypsometry_body_exponent = float(terrain_cfg.get("hypsometry_body_exponent", 1.5))
     if hypsometry_body_exponent <= 0.0:
         raise ConfigError("terrain.hypsometry_body_exponent must be > 0")
     hyp_max_raw = terrain_cfg.get("hypsometry_max_elevation_m")
@@ -389,7 +416,7 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     if erosion_fluvial_k < 0.0:
         raise ConfigError("erosion.fluvial_k must be >= 0")
 
-    sst_mix = float(ocean_cfg.get("sst_mix", 0.4))
+    sst_mix = float(ocean_cfg.get("sst_mix", 0.28))
     if not 0.0 <= sst_mix <= 1.0:
         raise ConfigError("ocean.sst_mix must be in [0, 1]")
     inland_decay_cells = float(ocean_cfg.get("inland_decay_cells", 60.0))
@@ -454,7 +481,7 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     )
     if not 0.0 <= moisture_diffusion_mix_per_month < 1.0:
         raise ConfigError("moisture.diffusion_mix_per_month must be in [0, 1)")
-    moisture_spinup_max_years = int(moisture_cfg.get("spinup_max_years", 4))
+    moisture_spinup_max_years = int(moisture_cfg.get("spinup_max_years", 20))
     if moisture_spinup_max_years < 1:
         raise ConfigError("moisture.spinup_max_years must be >= 1")
     moisture_spinup_tolerance_relative = float(
@@ -489,7 +516,7 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     moisture_itcz_width_deg = float(moisture_cfg.get("itcz_width_deg", 8.0))
     if moisture_itcz_width_deg <= 0.0:
         raise ConfigError("moisture.itcz_width_deg must be > 0")
-    moisture_monsoon_strength = float(moisture_cfg.get("monsoon_strength", 0.4))
+    moisture_monsoon_strength = float(moisture_cfg.get("monsoon_strength", 0.35))
     if moisture_monsoon_strength < 0.0:
         raise ConfigError("moisture.monsoon_strength must be >= 0")
     moisture_monsoon_lat_band_min_abs_deg = float(
@@ -577,6 +604,33 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     hydrology_transmission_rate = float(hydro_cfg.get("transmission_rate", 0.45))
     if hydrology_transmission_rate < 0.0:
         raise ConfigError("hydrology.transmission_rate must be >= 0")
+    hydrology_fill_max_depth_m = float(hydro_cfg.get("fill_max_depth_m", 25.0))
+    catch_raw = hydro_cfg.get("river_min_catchment_km2", 500.0)
+    hydrology_river_min_catchment_km2 = (
+        None if catch_raw is None else float(catch_raw)
+    )
+    if (
+        hydrology_river_min_catchment_km2 is not None
+        and hydrology_river_min_catchment_km2 < 0.0
+    ):
+        raise ConfigError("hydrology.river_min_catchment_km2 must be >= 0")
+
+    land_cfg = data.get("landforms") or {}
+    if land_cfg is None:
+        land_cfg = {}
+    if not isinstance(land_cfg, dict):
+        raise ConfigError("landforms must be a mapping when provided")
+    landform_mountain_score_threshold = float(
+        land_cfg.get("mountain_score_threshold", 0.50)
+    )
+    landform_plateau_score_threshold = float(
+        land_cfg.get("plateau_score_threshold", 0.40)
+    )
+    landform_fine_radius_km = float(land_cfg.get("fine_radius_km", 60.0))
+    landform_meso_radius_km = float(land_cfg.get("meso_radius_km", 150.0))
+    landform_macro_radius_km = float(land_cfg.get("macro_radius_km", 300.0))
+    landform_min_range_km2 = float(land_cfg.get("min_range_km2", 800.0))
+    landform_min_plateau_km2 = float(land_cfg.get("min_plateau_km2", 2500.0))
 
     return PlanetConfig(
         schema_version=schema_version,
@@ -661,6 +715,15 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
         hydrology_lake_min_mean_temp_c=hydrology_lake_min_mean_temp_c,
         hydrology_lake_inflow_land_quantile=hydrology_lake_inflow_land_quantile,
         hydrology_transmission_rate=hydrology_transmission_rate,
+        hydrology_fill_max_depth_m=hydrology_fill_max_depth_m,
+        hydrology_river_min_catchment_km2=hydrology_river_min_catchment_km2,
+        landform_mountain_score_threshold=landform_mountain_score_threshold,
+        landform_plateau_score_threshold=landform_plateau_score_threshold,
+        landform_fine_radius_km=landform_fine_radius_km,
+        landform_meso_radius_km=landform_meso_radius_km,
+        landform_macro_radius_km=landform_macro_radius_km,
+        landform_min_range_km2=landform_min_range_km2,
+        landform_min_plateau_km2=landform_min_plateau_km2,
         base_temp_c=base_temp_c,
         precip_scale_mm=precip_scale_mm,
         planet_radius_km=planet_radius_km,

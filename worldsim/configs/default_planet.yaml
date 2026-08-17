@@ -30,9 +30,8 @@ resolution:
 
 ocean:
   fraction_target: 0.71
-  # CR-2: explicit physical inland decay (do not treat legacy cell→km ≈4691 as truth).
-  # Interim until CR-3 SST anomaly retune (trial band 800–1500 km).
-  sst_mix: 0.4
+  # CR-3: anomaly coupling + modest mix; decay in physical km (trial 800–1500).
+  sst_mix: 0.28
   sst_inland_decay_km: 1200.0
   inland_decay_cells: 60.0  # legacy UI / migration only; ignored when km set
   western_boundary_width_km: 250.0
@@ -54,11 +53,11 @@ terrain:
   orogeny_boost: 0.05
   activity_relief: 0.25
   boundary_relief: 0.35
-  # PR-2: default legacy_max (identity vs M5). Enable power_tail_v2 after calibration.
-  hypsometry_mode: legacy_max
+  # CR-5: calibrated power_tail_v2 (body exponent from 1.2/1.5/1.8 trial band).
+  hypsometry_mode: power_tail_v2
   hypsometry_anchor_quantile: 0.95
   hypsometry_anchor_elevation_m: 3000.0
-  hypsometry_body_exponent: 0.70
+  hypsometry_body_exponent: 1.5
   # hypsometry_max_elevation_m: 9000.0  # defaults to land_scale_m when omitted
   hypsometry_tail_softness: 1.0
 
@@ -92,7 +91,8 @@ moisture:
   lee_dry: 0.12
   # PR-4 — physical diffusion + periodic climatology spin-up
   diffusion_mix_per_month: 0.08
-  spinup_max_years: 4
+  # CR-3: production default — joint q+store closure; audit seeds needed ~16–20.
+  spinup_max_years: 20
   spinup_tolerance_relative: 0.02
   spinup_tolerance_absolute: 0.001
   # PR-7 / revised B8 — inside moisture budget (no post-hoc rain)
@@ -102,8 +102,8 @@ moisture:
   land_store_capacity: 8.0
   itcz_convective_scale: 1.2
   itcz_width_deg: 8.0
-  # PR-8 / revised B9 — transport-first monsoon (wind anomaly into moisture)
-  monsoon_strength: 0.4
+  # PR-8 / CR-3 — local-coast monsoon (re-enabled modestly after regime fix)
+  monsoon_strength: 0.35
   monsoon_lat_band_min_abs_deg: 5.0
   monsoon_lat_band_max_abs_deg: 32.0
   monsoon_max_anomaly_ms: 3.5
@@ -125,7 +125,22 @@ hydrology:
   lake_inflow_land_quantile: 0.75
   # Channel transmission losses (Nil OK / wadi dies); 0 = gross accuflux only.
   transmission_rate: 0.45
+  # CR-4: fill only numerical pits shallower than this pour depth (m).
+  # Negative = legacy fill-all (no closed basins).
+  fill_max_depth_m: 25.0
+  # CR-5: physical river catchment floor (km²); cell count derived via GridMetrics.
+  river_min_catchment_km2: 500.0
   # PR-6 — snow/runoff (defaults); optional river_min_effective_discharge for absolute Q floor
+
+# CR-5 / PR-9E — landform thresholds (km scales + km² object floors)
+landforms:
+  mountain_score_threshold: 0.50
+  plateau_score_threshold: 0.40
+  fine_radius_km: 60.0
+  meso_radius_km: 150.0
+  macro_radius_km: 300.0
+  min_range_km2: 800.0
+  min_plateau_km2: 2500.0
 
 generation:
   quality: final

@@ -141,6 +141,26 @@ def inland_sst_blend_weight(
     return weight, dist_out, nearest_i, nearest_j
 
 
+def _zonal_mean_sst(
+    sst_m: NDArray[np.floating],
+    ocean: NDArray[np.bool_],
+) -> NDArray[np.float64]:
+    """Per-row ocean mean SST; rows without ocean fall back to global ocean mean."""
+    h, w = ocean.shape
+    out = np.full(h, np.nan, dtype=np.float64)
+    global_vals = sst_m[ocean]
+    global_vals = global_vals[np.isfinite(global_vals)]
+    global_mean = float(np.mean(global_vals)) if global_vals.size else 0.0
+    for j in range(h):
+        row = sst_m[j]
+        mask = ocean[j] & np.isfinite(row)
+        if np.any(mask):
+            out[j] = float(np.mean(row[mask]))
+        else:
+            out[j] = global_mean
+    return out
+
+
 def couple_temperature_with_sst_inland(
     *,
     temperature_c: NDArray[np.floating],
@@ -151,7 +171,12 @@ def couple_temperature_with_sst_inland(
     inland_decay_km: float | None = None,
     metrics: GridMetrics | None = None,
 ) -> tuple[NDArray[np.float64], dict[str, float | None]]:
-    """Ocean ← SST; land ← base T blended toward nearest SST with inland decay."""
+    """Ocean ← SST; land ← base T + inland-weighted **SST anomaly** (CR-3).
+
+    Anomaly is nearest-ocean SST minus the zonal (per-row) ocean mean for that
+    month. Land is not pulled toward absolute SST, so cold interiors stay
+    continentality-driven while western/eastern SST anomalies still affect coasts.
+    """
     ocean = np.asarray(ocean_mask, dtype=np.bool_)
     temp = np.asarray(temperature_c, dtype=np.float64)
     sst = np.asarray(sst_c, dtype=np.float64)
@@ -171,16 +196,16 @@ def couple_temperature_with_sst_inland(
     valid_land = land & (ni >= 0) & (nj >= 0)
 
     for m in range(n):
+        zonal = _zonal_mean_sst(sst[m], ocean)
         nearest_sst = np.full(ocean.shape, np.nan, dtype=np.float64)
+        anomaly = np.zeros(ocean.shape, dtype=np.float64)
         if np.any(valid_land):
             nearest_sst[valid_land] = sst[m, nj[valid_land], ni[valid_land]]
+            baseline = zonal[nj[valid_land]]
+            anomaly[valid_land] = nearest_sst[valid_land] - baseline
         blend = valid_land & np.isfinite(nearest_sst) & (weight > 0.0)
         w = weight
-        out[m] = np.where(
-            blend,
-            (1.0 - w) * temp[m] + w * nearest_sst,
-            out[m],
-        )
+        out[m] = np.where(blend, temp[m] + w * anomaly, out[m])
         out[m] = np.where(
             ocean,
             np.where(np.isfinite(sst[m]), sst[m], temp[m]),
@@ -205,6 +230,7 @@ def couple_temperature_with_sst_inland(
             float(inland_decay_km) if inland_decay_km is not None else None
         ),
         "sst_owner": "ocean_coupling",
+        "sst_coupling_mode": "anomaly_zonal_v1",
         "land_temp_delta_mean_abs": float(np.mean(np.abs(delta[:, land])))
         if np.any(land)
         else 0.0,

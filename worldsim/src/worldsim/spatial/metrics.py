@@ -67,6 +67,10 @@ class GridMetrics:
         sphere = 4.0 * math.pi * float(self.radius_km) ** 2
         return sphere / float(self.width * self.height)
 
+    def cells_for_area_km2(self, area_km2: float) -> int:
+        """Minimum cell count whose equal-area coverage is ≥ ``area_km2``."""
+        return max(1, int(math.ceil(float(area_km2) / max(self.cell_area_km2, 1e-12))))
+
     def row_y_centers(self) -> NDArray[np.float64]:
         """Normalised ``y`` at cell centres; ``j=0`` is north."""
         j = np.arange(self.height, dtype=np.float64)

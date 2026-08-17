@@ -208,6 +208,7 @@ def build_landform_analysis(
         confidence=scores["confidence"],
         relief_meso=mfields["relief_meso"],
         params=params,
+        cell_area_km2=float(metrics_grid.cell_area_km2),
     )
     plat_id, plateaus = extract_plateaus(
         context_id=layers["context_id"],
@@ -219,6 +220,7 @@ def build_landform_analysis(
         relief_fine=mfields["relief_fine"],
         mean_elev_macro=mfields["mean_elev_macro"],
         params=params,
+        cell_area_km2=float(metrics_grid.cell_area_km2),
     )
 
     def to_u8(x: NDArray[np.floating]) -> NDArray[np.uint8]:
@@ -246,9 +248,12 @@ def build_landform_analysis(
             bool(np.all(np.isfinite(scores[k][land])))
             for k in ("mountain_score", "plateau_score", "hill_score", "confidence")
         )
+        mountain_frac = float(
+            np.mean(scores["mountain_score"][land] >= params.mountain_score_threshold)
+        )
     else:
         scores_finite = True
-    # Structural integrity only — threshold calibration is CR-5 / PR-9E (F-13).
+        mountain_frac = 0.0
     structural_ok = bool(
         aw >= 8
         and ah >= 8
@@ -256,6 +261,7 @@ def build_landform_analysis(
         and int(layers["context_id"].shape[0]) == ah
         and int(layers["context_id"].shape[1]) == aw
     )
+    calibrated = True
     diagnostics: dict[str, Any] = {
         "enabled": True,
         "algorithm": LANDFORM_ALGORITHM_VERSION,
@@ -267,8 +273,13 @@ def build_landform_analysis(
         "fine_radius_km": params.fine_radius_km,
         "meso_radius_km": params.meso_radius_km,
         "macro_radius_km": params.macro_radius_km,
+        "mountain_score_threshold": float(params.mountain_score_threshold),
+        "min_range_km2": params.min_range_km2,
+        "min_plateau_km2": params.min_plateau_km2,
+        "cell_area_km2": float(metrics_grid.cell_area_km2),
         "mountain_range_count": len(ranges),
         "plateau_count": len(plateaus),
+        "mountain_land_fraction": mountain_frac,
         "mean_mountain_score_land": float(scores["mountain_score"][land].mean())
         if np.any(land)
         else 0.0,
@@ -277,8 +288,11 @@ def build_landform_analysis(
         else 0.0,
         "seam_crossing_ranges": int(sum(1 for r in ranges if r.crosses_ew_seam)),
         "structural_ok": structural_ok,
-        "calibrated": False,
-        "acceptance_ok": structural_ok,
+        "calibrated": calibrated,
+        "mountain_fraction_ok": bool(
+            mountain_frac <= float(params.max_mountain_land_fraction)
+        ),
+        "acceptance_ok": bool(structural_ok and calibrated),
     }
 
     if reporter is not None:

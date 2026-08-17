@@ -88,8 +88,10 @@ def test_fixture_probes_run() -> None:
     assert ramp["max_minus_min"] / max(float(np.mean(monthly)), 1e-12) < 0.08
 
     hit = land_max_hits_scale(9000.0)
-    assert hit["max_a"] == pytest.approx(9000.0)
-    assert hit["max_b"] == pytest.approx(9000.0)
+    # CR-5: production ``power_tail`` does not pin every peak to land_scale_m.
+    assert hit["max_a"] != pytest.approx(hit["max_b"])
+    assert hit["max_a"] < 9000.0
+    assert hit["max_b"] < 9000.0
 
 
 def test_moisture_metrics_shapes() -> None:

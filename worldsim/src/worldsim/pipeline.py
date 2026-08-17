@@ -1358,6 +1358,7 @@ def _pipeline_through_final(
             ocean=config.to_ocean_params(),
             moisture=config.to_moisture_params(),
             hydrology=config.to_hydrology_params(),
+            landforms=config.to_landform_params(),
         ),
         reporter=reporter,
     )

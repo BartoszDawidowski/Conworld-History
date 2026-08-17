@@ -1,0 +1,37 @@
+{
+  "seeds": [
+    {
+      "seed": 1,
+      "p50_m": 583.6359840295956,
+      "mean_m": 922.5020283018591,
+      "max_m": 5994.145277282431,
+      "hypsometry_mode": "power_tail_v2",
+      "mountain_frac": 0.6746632996632996,
+      "ranges": 21,
+      "plateaus": 2,
+      "acceptance_ok": true
+    },
+    {
+      "seed": 42,
+      "p50_m": 580.033320443442,
+      "mean_m": 950.7399924589881,
+      "max_m": 4694.534018018368,
+      "hypsometry_mode": "power_tail_v2",
+      "mountain_frac": 0.718013468013468,
+      "ranges": 15,
+      "plateaus": 0,
+      "acceptance_ok": true
+    },
+    {
+      "seed": 100,
+      "p50_m": 484.37972727888535,
+      "mean_m": 834.6226587089126,
+      "max_m": 5747.746999576693,
+      "hypsometry_mode": "power_tail_v2",
+      "mountain_frac": 0.7159090909090909,
+      "ranges": 11,
+      "plateaus": 2,
+      "acceptance_ok": true
+    }
+  ]
+}

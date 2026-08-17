@@ -28,6 +28,13 @@ D8_DELTAS: dict[int, tuple[int, int]] = {
 
 SINK = -1  # ocean contact, N–S edge, pit, or broken cycle
 
+# CR-4 outlet types (annex §11.6) — every land sink must be one of these.
+OUTLET_OCEAN = "ocean_outlet"
+OUTLET_CLOSED = "closed_basin"
+OUTLET_LOCAL_PIT = "local_pit"
+OUTLET_CYCLE = "broken_cycle"
+OUTLET_NS_EDGE = "ns_edge"
+
 
 def flat_index(row: int, col: int, width: int) -> int:
     return int(row) * int(width) + int(col)
@@ -315,6 +322,91 @@ def outlet_points(graph: CylindricalFlowGraph) -> list[tuple[int, int]]:
         if int(ds[i]) < 0:
             pts.append(unravel(i, w))
     return pts
+
+
+def _touches_ocean(row: int, col: int, ocean: NDArray[np.bool_]) -> bool:
+    h, w = ocean.shape
+    for dr, dc in D8_DELTAS.values():
+        nr = int(row) + int(dr)
+        if nr < 0 or nr >= h:
+            continue
+        nc = (int(col) + int(dc)) % w
+        if ocean[nr, nc]:
+            return True
+    return False
+
+
+def classify_outlets(
+    graph: CylindricalFlowGraph,
+    *,
+    accumulation: NDArray[np.floating] | None = None,
+    depression_depth_m: NDArray[np.floating] | None = None,
+    min_closed_cells: int = 8,
+    min_closed_depth_m: float = 2.0,
+) -> dict[str, Any]:
+    """Type every land sink: ocean, closed basin, local pit, cycle, N–S edge."""
+    h, w = graph.height, graph.width
+    ds = graph.downstream_flat
+    ocean = graph.ocean_mask
+    d8 = graph.flow_direction
+    acc = (
+        np.asarray(accumulation, dtype=np.float64)
+        if accumulation is not None
+        else np.ones((h, w), dtype=np.float64)
+    )
+    depth = (
+        np.asarray(depression_depth_m, dtype=np.float64)
+        if depression_depth_m is not None
+        else np.zeros((h, w), dtype=np.float64)
+    )
+    types: dict[str, int] = {
+        OUTLET_OCEAN: 0,
+        OUTLET_CLOSED: 0,
+        OUTLET_LOCAL_PIT: 0,
+        OUTLET_CYCLE: 0,
+        OUTLET_NS_EDGE: 0,
+    }
+    labels: list[dict[str, Any]] = []
+    untyped = 0
+    for i in range(graph.size):
+        r, c = unravel(i, w)
+        if ocean[r, c] or int(ds[i]) >= 0:
+            continue
+        if _touches_ocean(r, c, ocean):
+            kind = OUTLET_OCEAN
+        elif r == 0 or r == h - 1:
+            kind = OUTLET_NS_EDGE
+        else:
+            code = int(d8[r, c])
+            nxt = neighbor_from_d8(r, c, code, height=h, width=w)
+            if nxt is not None and ocean[nxt]:
+                kind = OUTLET_OCEAN
+            elif nxt is not None and code != 0:
+                # D8 pointed at land but the graph sank the cell (cycle break).
+                kind = OUTLET_CYCLE
+            elif (
+                float(acc[r, c]) >= float(min_closed_cells)
+                and float(depth[r, c]) >= float(min_closed_depth_m)
+            ):
+                kind = OUTLET_CLOSED
+            else:
+                kind = OUTLET_LOCAL_PIT
+        if kind not in types:
+            untyped += 1
+            continue
+        types[kind] += 1
+        labels.append({"row": r, "col": c, "outlet_type": kind})
+    return {
+        "outlet_type_counts": types,
+        "outlet_labels": labels,
+        "untyped_outlet_count": untyped,
+        "outlets_typed": untyped == 0,
+        "closed_basin_outlet_count": types[OUTLET_CLOSED],
+        "ocean_outlet_count": types[OUTLET_OCEAN],
+        "local_pit_outlet_count": types[OUTLET_LOCAL_PIT],
+        "broken_cycle_outlet_count": types[OUTLET_CYCLE],
+        "ns_edge_outlet_count": types[OUTLET_NS_EDGE],
+    }
 
 
 def effective_discharge(

@@ -48,13 +48,13 @@ class TerrainParams:
     orogeny_boost: float = 0.05
     activity_relief: float = 0.25
     boundary_relief: float = 0.35
-    # PR-2 hypsometry (default legacy until calibration enables power_tail_v2)
-    hypsometry_mode: str = "legacy_max"
+    # PR-2 / CR-5 hypsometry (packaged default: power_tail_v2)
+    hypsometry_mode: str = "power_tail_v2"
     hypsometry_anchor_quantile: float = 0.95
     hypsometry_anchor_elevation_m: float = 3000.0
-    hypsometry_body_exponent: float = 0.70
+    hypsometry_body_exponent: float = 1.5
     hypsometry_max_elevation_m: float | None = None
-    hypsometry_tail_softness: float = 1.0  # reserved / documented; asymptote uses max/anchor
+    hypsometry_tail_softness: float = 1.0
 
 
 @dataclass
@@ -147,6 +147,7 @@ def build_terrain_ocean(
         hypsometry_anchor_elevation_m=params.hypsometry_anchor_elevation_m,
         hypsometry_body_exponent=params.hypsometry_body_exponent,
         hypsometry_max_elevation_m=params.hypsometry_max_elevation_m,
+        hypsometry_tail_softness=params.hypsometry_tail_softness,
     )
 
     # Land transform must not alter ocean_mask / land components.

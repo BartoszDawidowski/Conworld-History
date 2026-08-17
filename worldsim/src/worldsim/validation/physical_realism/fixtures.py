@@ -140,7 +140,11 @@ def january_dry_start_ramp(
 def land_max_hits_scale(
     land_scale_m: float = 9000.0,
 ) -> dict[str, float]:
-    """Two different raw peaks both map to exactly ``land_scale_m``."""
+    """Two different raw peaks under the production hypsometry curve.
+
+    ``legacy_max`` would pin both maxima to ``land_scale_m``. ``power_tail``
+    (CR-5 default) maps them to different elevations below the scale.
+    """
     from worldsim.physical.terrain.elevation import raw_to_elevation_m
 
     raw_a = np.array([[0.4, 0.8], [0.5, 0.9]], dtype=np.float64)

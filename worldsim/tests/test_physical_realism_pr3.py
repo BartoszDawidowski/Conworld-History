@@ -139,7 +139,9 @@ def test_sst_inland_decay_physical_km() -> None:
     ocean[:, :20] = True
     temp = np.full((3, h, w), 10.0)
     sst = np.full((3, h, w), np.nan)
-    sst[:, :, :20] = 22.0
+    # Spatial SST anomaly near the coast (not a uniform absolute pull).
+    sst[:, :, :20] = 12.0
+    sst[:, :, 12:20] = 24.0
     decay_km = 800.0
     coupled, diag = couple_temperature_with_sst_inland(
         temperature_c=temp,
@@ -149,7 +151,6 @@ def test_sst_inland_decay_physical_km() -> None:
         inland_decay_km=decay_km,
         metrics=metrics,
     )
-    # Physical distance inland along equator-ish mid row
     j = h // 2
     coast_i = 20
     far_i = min(w - 1, coast_i + int(round(metrics.cells_from_km_ew(decay_km, j))))
@@ -157,6 +158,7 @@ def test_sst_inland_decay_physical_km() -> None:
     far_d = float(coupled[0, j, far_i] - 10.0)
     assert coast_d > far_d
     assert diag["inland_decay_km"] == decay_km
+    assert diag.get("sst_coupling_mode") == "anomaly_zonal_v1"
 
 
 def test_same_km_reach_atlas_vs_full_cell_count_differs() -> None:

@@ -3,7 +3,7 @@
 > **Status:** Milestone **19 complete** (2026-08-15). Physical World v1 plan milestones 0–19 are complete.  
 > **Follow-up atlas:** A1–A8 done; Plan B **B1–B7** done (`docs/ATLAS_PLAN_B.md`). Optional presentation: **B10**.  
 > **Follow-up physics:** [`docs/PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md) (**PR-0…PR-9** foundation + **CR** track). Design: [`docs/WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md). Production defects/repair: [`docs/PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md).  
-> **Next when instructed:** **CR-3** (realism corrections) or **B10** (atlas).  
+> **Next when instructed:** optional **B10** (atlas) or a named physics follow-up.  
 > **Date:** 2026-08-17  
 > **Authority:** Derived from `docs/WORLDGEN_ARCHITECTURE.md` (v0.2) §62–§65 and local repository inspection; realism amendments from the Physical Realism Annex  
 > **Rule:** Do **not** implement the full project in one pass. Execute **one milestone at a time**.
@@ -396,7 +396,7 @@ Physical World plan milestones **0–19** are complete (baseline delivered).
 **Scientific hardening** is specified in [`docs/WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md), tracked in [`docs/PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md), with production repair order in [`docs/PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md).  
 Execute **one PR-N at a time**, starting with **PR-0** when named.
 
-**Atlas:** Plan B B1–B7 done; revised B8/B9 = PR-7/PR-8 after PR-4; production climate hardening = **CR-0…CR-5**; **B10** may run independently when named.
+**Atlas:** Plan B B1–B7 done; revised B8/B9 = PR-7/PR-8 after PR-4; production climate hardening = **CR-0…CR-5 ✅**; **B10** may run independently when named.
 
 Example:
 

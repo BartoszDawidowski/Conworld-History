@@ -591,8 +591,11 @@ def build_monthly_moisture(
 
     years = max(int(spinup_max_years), 1)
     closure = float("inf")
+    closure_q = float("inf")
+    closure_s = 0.0
     converged = False
     year_used = 0
+    store_gated = cap_store > 0.0
 
     evaporation = np.empty((n, h, w), dtype=np.float64)
     moisture = np.empty((n, h, w), dtype=np.float64)
@@ -614,6 +617,7 @@ def build_monthly_moisture(
 
     for year in range(years):
         q_year_start = q.copy()
+        store_year_start = land_store.copy()
         monthly_residuals = []
         for m in range(n):
             sst_m = sst_c[m] if sst_c is not None else None
@@ -668,13 +672,30 @@ def build_monthly_moisture(
             monthly_residuals.append(float(budget["numerical_residual"]))
 
         year_used = year + 1
-        delta = np.abs(q - q_year_start)
-        mean_scale = float(np.mean(q_year_start) + np.mean(q)) * 0.5 + 1e-9
-        closure = float(np.max(delta))
-        rel = closure / mean_scale
-        if closure <= float(spinup_tolerance_absolute) or rel <= float(
+        # CR-3: close on atmospheric q and land store jointly when store is active.
+        delta_q = np.abs(q - q_year_start)
+        closure_q = float(np.max(delta_q))
+        mean_q = float(np.mean(q_year_start) + np.mean(q)) * 0.5 + 1e-9
+        rel_q = closure_q / mean_q
+        if cap_store > 0.0:
+            delta_s = np.abs(land_store - store_year_start)
+            # Mean |Δ| for store — cell-wise max stays noisy under seasonal ET.
+            closure_s = float(np.mean(delta_s))
+            mean_s = float(np.mean(store_year_start) + np.mean(land_store)) * 0.5 + 1e-9
+            rel_s = closure_s / mean_s
+        else:
+            closure_s = 0.0
+            rel_s = 0.0
+        closure = max(closure_q, closure_s)
+        q_ok = closure_q <= float(spinup_tolerance_absolute) or rel_q <= float(
             spinup_tolerance_relative
-        ):
+        )
+        store_ok = (
+            cap_store <= 0.0
+            or closure_s <= float(spinup_tolerance_absolute)
+            or rel_s <= float(spinup_tolerance_relative)
+        )
+        if q_ok and store_ok:
             converged = True
             break
 
@@ -710,7 +731,7 @@ def build_monthly_moisture(
             itcz_off_ratio = float(precipitation[june][in_band].mean()) / off_m
 
     budget_diag: dict[str, Any] = {
-        "algorithm": "moisture_budget_spinup_v2_pr7",
+        "algorithm": "moisture_budget_spinup_v3_cr3",
         "b8_terms_active": bool(
             float(plume_strength) > 0.0
             or cap_store > 0.0
@@ -725,6 +746,9 @@ def build_monthly_moisture(
         "spinup_years_used": year_used,
         "spinup_converged": converged,
         "spinup_closure_max_abs": closure,
+        "spinup_closure_q_max_abs": closure_q,
+        "spinup_closure_store_max_abs": closure_s,
+        "spinup_store_gated": store_gated,
         "spinup_tolerance_relative": float(spinup_tolerance_relative),
         "spinup_tolerance_absolute": float(spinup_tolerance_absolute),
         "diffusion_mix_per_month": float(diffusion_mix_per_month),

@@ -21,7 +21,11 @@ def transmission_sink(
     transmission_rate: float = 0.45,
     precip_scale_mm: float = 200.0,
 ) -> NDArray[np.float64]:
-    """Local channel loss in precip-proxy units: rate × max(0, PET − P).
+    """Local channel loss in runoff-proxy units: rate × max(0, PET − water).
+
+    ``precip`` is the water available to the channel this step (monthly runoff
+    or annual runoff), not raw precipitation — snow held in store is not yet
+    in the river (CR-4 / F-09).
 
     PET ≈ 58.93 × biotemp (Holdridge); avoid importing ecology (circular).
     """

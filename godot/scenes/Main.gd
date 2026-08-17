@@ -342,7 +342,7 @@ moisture:
   continentality_dry: %.4f
   lee_dry: %.4f
   diffusion_mix_per_month: 0.08
-  spinup_max_years: 4
+  spinup_max_years: 20
   spinup_tolerance_relative: 0.02
   spinup_tolerance_absolute: 0.001
   plume_strength: %.4f

@@ -11,6 +11,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from worldsim.physical.erosion.pipeline import ErosionResult
+from worldsim.physical.hydrology.cylindrical_graph import classify_outlets
 from worldsim.physical.hydrology.flow import accuflux_on_land, run_pyflwdir_core
 from worldsim.physical.hydrology.lakes_meta import build_lake_records
 from worldsim.physical.hydrology.rivers import (
@@ -27,6 +28,7 @@ from worldsim.physical.hydrology.transmission import (
 from worldsim.physical.moisture.pipeline import MoistureResult
 from worldsim.progress import ProgressReporter
 from worldsim.spatial.extent import SpatialExtent
+from worldsim.spatial.metrics import grid_metrics
 from worldsim.spatial.resample import upsample_bilinear_cylindrical
 
 
@@ -51,6 +53,12 @@ class HydrologyParams:
     snow_band_c: float = 2.0
     melt_factor_per_c: float = 0.08
     max_snow_store: float = 40.0
+    # CR-4 — numerical fill only; negative = legacy fill-all (no closed basins)
+    fill_max_depth_m: float = 25.0
+    store_monthly_gross: bool = False
+    planet_radius_km: float = 6371.0
+    # CR-5: physical catchment floor (None → river_min_accumulation_cells only)
+    river_min_catchment_km2: float | None = 500.0
 
 
 @dataclass
@@ -130,7 +138,11 @@ def build_hydrology(
     ocean = erosion.ocean_mask
     h, w = elev.shape
 
-    core = run_pyflwdir_core(elevation_m=elev, ocean_mask=ocean)
+    core = run_pyflwdir_core(
+        elevation_m=elev,
+        ocean_mask=ocean,
+        max_depth=params.fill_max_depth_m,
+    )
     flw = core.pop("flw")
     pad = int(core.pop("pad"))
     graph = core.pop("graph")
@@ -177,15 +189,20 @@ def build_hydrology(
     if reporter is not None:
         reporter.progress("hydrology", 0.5)
 
+    gm = grid_metrics(w, h, radius_km=params.planet_radius_km)
+    if params.river_min_catchment_km2 is not None and params.river_min_catchment_km2 > 0:
+        river_min_cells = gm.cells_for_area_km2(params.river_min_catchment_km2)
+    else:
+        river_min_cells = int(params.river_min_accumulation_cells)
     river_candidates = river_mask_from_accumulation(
         core["flow_accumulation"],
         ocean,
         fraction=params.river_acc_fraction,
-        min_cells=params.river_min_accumulation_cells,
+        min_cells=river_min_cells,
     )
     lake_raw, lake_id_raw, _lake_count_raw = lake_mask_from_fill(
         elev,
-        core["dem_conditioned_m"],
+        elev + np.asarray(core["depression_depth_m"], dtype=np.float64),
         ocean,
         min_depth_m=params.lake_min_depth_m,
     )
@@ -194,13 +211,13 @@ def build_hydrology(
         flw, pad=pad, width=w, ocean_mask=ocean, weights=annual_runoff, graph=graph
     )
     sink_annual = transmission_sink(
-        annual_precip,
+        annual_runoff,
         annual_temp,
         ocean,
         transmission_rate=params.transmission_rate,
         precip_scale_mm=params.precip_scale_mm,
     )
-    discharge_eff = effective_discharge_with_transmission(
+    discharge_eff_independent = effective_discharge_with_transmission(
         flw,
         pad=pad,
         width=w,
@@ -209,6 +226,40 @@ def build_hydrology(
         sink=sink_annual,
         graph=graph,
     )
+
+    monthly_gross = np.zeros((0,), dtype=np.float64)
+    monthly_eff = np.zeros((months, h, w), dtype=np.float64)
+    for m in range(months):
+        sink_m = transmission_sink(
+            monthly_runoff[m],
+            temp_m[m],
+            ocean,
+            transmission_rate=params.transmission_rate,
+            precip_scale_mm=params.precip_scale_mm,
+        )
+        monthly_eff[m] = effective_discharge_with_transmission(
+            flw,
+            pad=pad,
+            width=w,
+            ocean_mask=ocean,
+            precip=monthly_runoff[m],
+            sink=sink_m,
+            graph=graph,
+        )
+        if params.store_monthly_gross:
+            if monthly_gross.size == 0:
+                monthly_gross = np.zeros((months, h, w), dtype=np.float64)
+            monthly_gross[m] = accuflux_on_land(
+                flw,
+                pad=pad,
+                width=w,
+                ocean_mask=ocean,
+                weights=monthly_runoff[m],
+                graph=graph,
+            )
+
+    # CR-4 / F-09: monthly effective Q is canonical; annual products are the sum.
+    discharge_eff = monthly_eff.sum(axis=0)
 
     river_mask, river_gate_diag = gate_river_mask_by_discharge(
         river_candidates,
@@ -231,6 +282,7 @@ def build_hydrology(
         arid_precip_land_quantile=params.lake_arid_precip_land_quantile,
         lake_min_mean_temp_c=params.lake_min_mean_temp_c,
         inflow_land_quantile=params.lake_inflow_land_quantile,
+        graph=graph,
     )
 
     lake_records = build_lake_records(
@@ -244,34 +296,6 @@ def build_hydrology(
         precip_annual=annual_precip,
         frozen_temp_c=params.lake_min_mean_temp_c,
     )
-
-    monthly_gross = np.zeros((months, h, w), dtype=np.float64)
-    monthly_eff = np.zeros((months, h, w), dtype=np.float64)
-    for m in range(months):
-        monthly_gross[m] = accuflux_on_land(
-            flw,
-            pad=pad,
-            width=w,
-            ocean_mask=ocean,
-            weights=monthly_runoff[m],
-            graph=graph,
-        )
-        sink_m = transmission_sink(
-            precip_m[m],
-            temp_m[m],
-            ocean,
-            transmission_rate=params.transmission_rate,
-            precip_scale_mm=params.precip_scale_mm,
-        )
-        monthly_eff[m] = effective_discharge_with_transmission(
-            flw,
-            pad=pad,
-            width=w,
-            ocean_mask=ocean,
-            precip=monthly_runoff[m],
-            sink=sink_m,
-            graph=graph,
-        )
 
     if reporter is not None:
         reporter.progress("hydrology", 0.85)
@@ -288,15 +312,25 @@ def build_hydrology(
         riv_mean = land_mean = float("nan")
         sensible_acc = False
 
-    # Annual vs monthly effective consistency (nonlinear routing → relative tolerance)
-    sum_monthly_eff = monthly_eff.sum(axis=0)
-    if np.any(land) and float(np.mean(discharge_eff[land])) > 1e-9:
-        rel_diff = float(
-            np.mean(np.abs(sum_monthly_eff[land] - discharge_eff[land]))
-            / max(float(np.mean(discharge_eff[land])), 1e-9)
+    # Canonical monthly vs annual is identity. Independent annual routing is
+    # diagnosed (nonlinear PET/max) but does not define Q products.
+    rel_diff = 0.0
+    if np.any(land) and float(np.mean(discharge_eff_independent[land])) > 1e-9:
+        rel_independent = float(
+            np.mean(np.abs(discharge_eff[land] - discharge_eff_independent[land]))
+            / max(float(np.mean(discharge_eff_independent[land])), 1e-9)
         )
     else:
-        rel_diff = 0.0
+        rel_independent = 0.0
+
+    outlet_types = classify_outlets(
+        graph,
+        accumulation=core["flow_accumulation"],
+        depression_depth_m=core["depression_depth_m"],
+        min_closed_cells=max(int(river_min_cells), 4),
+        min_closed_depth_m=params.lake_min_depth_m,
+    )
+    typed_ok = bool(outlet_types["outlets_typed"])
 
     open_lakes = sum(1 for r in lake_records if r.get("water_state") == "open")
     endorheic_lakes = sum(
@@ -332,9 +366,15 @@ def build_hydrology(
         "flow_acc_max": float(core["flow_accumulation"].max()),
         "river_acc_mean": riv_mean,
         "land_acc_mean": land_mean,
-        "acceptance_ok": bool(drainage_valid and downstream_ok and sensible_acc),
+        "acceptance_ok": bool(
+            drainage_valid and downstream_ok and sensible_acc and typed_ok
+        ),
         "precip_gate": True,
         "transmission_rate": float(params.transmission_rate),
+        "fill_max_depth_m": float(params.fill_max_depth_m),
+        "river_min_catchment_km2": params.river_min_catchment_km2,
+        "river_min_accumulation_cells_effective": int(river_min_cells),
+        "cell_area_km2": float(gm.cell_area_km2),
         "discharge_gross_max": float(discharge_gross.max()),
         "discharge_effective_max": float(discharge_eff.max()),
         "discharge_effective_mean_land": float(discharge_eff[land].mean())
@@ -344,16 +384,23 @@ def build_hydrology(
         if np.any(land)
         else 0.0,
         "monthly_vs_annual_eff_rel_diff": rel_diff,
-        "monthly_annual_consistent": rel_diff < 0.35,
+        "monthly_annual_consistent": True,
+        "q_canonical": "sum_monthly_effective",
+        "monthly_vs_independent_annual_rel_diff": rel_independent,
         "lake_open_count": open_lakes,
         "lake_endorheic_count": endorheic_lakes,
         "lake_playa_count": playa_lakes,
         "lake_frozen_count": frozen_lakes,
-        "hydrology_algorithm": "pr6_runoff_wadi_lakes_v1",
+        "hydrology_algorithm": "cr4_typed_outlets_canonical_monthly_q_v1",
         **runoff_diag,
         **graph_diag,
         **river_gate_diag,
         **lake_gate_diag,
+        **{
+            k: v
+            for k, v in outlet_types.items()
+            if k != "outlet_labels"
+        },
     }
 
     if reporter is not None:

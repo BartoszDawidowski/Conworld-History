@@ -43,6 +43,6 @@
 | Hydro thresholds still partly cell/quantile based | **CR-4** |
 | SST still blends toward **absolute** nearest SST | **CR-3** (F-05); 1200 km is interim only |
 | Monsoon regime still wrong | **CR-3** (F-07); keep strength modest / off until then |
-| Landform threshold calibration | **CR-5** / 9E |
+| Landform threshold calibration | **CR-5** / 9E — accepted (`physical_realism_cr5.md`) |
 
 **Decision:** accept CR-2; stop. Next when instructed: **CR-3** only.

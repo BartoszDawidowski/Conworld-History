@@ -2,7 +2,7 @@
 
 ## Hypsometry, temperature, moisture, hydrology, and landform semantics
 
-> **Status:** Accepted design guidance; **PR-0…PR-9 foundation implemented**; production hardening continues in [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md)  
+> **Status:** Accepted design guidance; **PR-0…PR-9 foundation implemented**; **CR-0…CR-5 production repair accepted** — [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md)  
 > **Date:** 2026-08-16 (header amended 2026-08-17)  
 > **Repository:** BartoszDawidowski/Conworld-History  
 > **Audited commit:** 6a961161c2a10d322de0990e6cbec8317ea80a5c  

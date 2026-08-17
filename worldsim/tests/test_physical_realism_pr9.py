@@ -14,6 +14,14 @@ from worldsim.physical.landforms.objects import _label_components_cylindrical
 from worldsim.spatial.extent import SpatialExtent
 
 
+def _lp(**kwargs) -> LandformParams:
+    """PR-9 fixtures use cell floors and foundation score threshold."""
+    kwargs.setdefault("min_range_km2", None)
+    kwargs.setdefault("min_plateau_km2", None)
+    kwargs.setdefault("mountain_score_threshold", 0.42)
+    return LandformParams(**kwargs)
+
+
 def _ocean_frame(h: int, w: int, margin: int = 2) -> np.ndarray:
     ocean = np.ones((h, w), dtype=bool)
     ocean[margin : h - margin, margin : w - margin] = False
@@ -31,7 +39,7 @@ def test_isolated_cone_is_mountain_not_plateau() -> None:
         elevation_m=elev,
         ocean_mask=ocean,
         extent=SpatialExtent(width=w, height=h),
-        params=LandformParams(
+        params=_lp(
             fine_radius_km=20.0,
             meso_radius_km=50.0,
             macro_radius_km=120.0,
@@ -53,7 +61,7 @@ def test_elevated_flat_block_is_plateau_with_escarpment() -> None:
     res = build_landform_analysis(
         elevation_m=elev,
         ocean_mask=ocean,
-        params=LandformParams(
+        params=_lp(
             fine_radius_km=15.0,
             meso_radius_km=40.0,
             macro_radius_km=100.0,
@@ -78,7 +86,7 @@ def test_mountain_on_plateau_keeps_both_semantics() -> None:
     res = build_landform_analysis(
         elevation_m=elev,
         ocean_mask=ocean,
-        params=LandformParams(min_range_cells=6, min_plateau_cells=16),
+        params=_lp(min_range_cells=6, min_plateau_cells=16),
     )
     # Peak cell mountain-ish; plateau cells elsewhere on the block
     peak = (24, 32)
@@ -97,7 +105,7 @@ def test_rolling_high_plain_not_mountain_range() -> None:
     res = build_landform_analysis(
         elevation_m=elev,
         ocean_mask=ocean,
-        params=LandformParams(
+        params=_lp(
             mountain_score_threshold=0.55,
             min_range_cells=40,
         ),
@@ -115,7 +123,7 @@ def test_connected_ridge_one_range_two_ridges_two_objects() -> None:
     res = build_landform_analysis(
         elevation_m=elev,
         ocean_mask=ocean,
-        params=LandformParams(min_range_cells=10, mountain_score_threshold=0.35),
+        params=_lp(min_range_cells=10, mountain_score_threshold=0.35),
     )
     assert len(res.mountain_ranges) >= 2
 
@@ -126,7 +134,7 @@ def test_connected_ridge_one_range_two_ridges_two_objects() -> None:
     res2 = build_landform_analysis(
         elevation_m=elev2,
         ocean_mask=ocean,
-        params=LandformParams(min_range_cells=10, mountain_score_threshold=0.35),
+        params=_lp(min_range_cells=10, mountain_score_threshold=0.35),
     )
     assert len(res2.mountain_ranges) >= 1
 
@@ -148,7 +156,7 @@ def test_range_crossing_ew_seam_single_id() -> None:
     res = build_landform_analysis(
         elevation_m=elev,
         ocean_mask=ocean,
-        params=LandformParams(min_range_cells=8, mountain_score_threshold=0.3),
+        params=_lp(min_range_cells=8, mountain_score_threshold=0.3),
     )
     if res.mountain_ranges:
         assert any(r.crosses_ew_seam for r in res.mountain_ranges) or len(
@@ -164,7 +172,7 @@ def test_ns_mirror_scores_within_tolerance() -> None:
     elev = elev + 1500.0 * np.exp(-((ii - 24) ** 2 + (jj - 12) ** 2) / 12.0)
     elev = np.where(ocean, -200.0, elev)
     mirrored = elev[::-1, :].copy()
-    params = LandformParams(fine_radius_km=18.0, meso_radius_km=45.0, macro_radius_km=110.0)
+    params = _lp(fine_radius_km=18.0, meso_radius_km=45.0, macro_radius_km=110.0)
     a = build_landform_analysis(elevation_m=elev, ocean_mask=ocean, params=params)
     b = build_landform_analysis(
         elevation_m=mirrored, ocean_mask=ocean[::-1, :], params=params
@@ -183,7 +191,7 @@ def test_disabled_path_is_identity() -> None:
     res = build_landform_analysis(
         elevation_m=elev,
         ocean_mask=ocean,
-        params=LandformParams(enabled=False),
+        params=_lp(enabled=False),
     )
     assert res.diagnostics["enabled"] is False
     assert int(res.mountain_range_id.max()) == 0
@@ -195,7 +203,7 @@ def test_deterministic_ids() -> None:
     ocean = _ocean_frame(h, w)
     elev[10:26, 10:20] = 1300.0
     elev = np.where(ocean, -150.0, elev)
-    p = LandformParams(min_range_cells=8)
+    p = _lp(min_range_cells=8)
     a = build_landform_analysis(elevation_m=elev, ocean_mask=ocean, params=p)
     b = build_landform_analysis(elevation_m=elev, ocean_mask=ocean, params=p)
     assert [r.to_dict() for r in a.mountain_ranges] == [

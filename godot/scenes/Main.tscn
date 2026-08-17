@@ -485,9 +485,9 @@ layout_mode = 2
 min_value = 0.0
 max_value = 1.0
 step = 0.05
-value = 0.4
+value = 0.28
 prefix = "sst mix "
-tooltip_text = "How strongly nearest SST blends into land temperature (coast weight)."
+tooltip_text = "How strongly nearest SST anomaly blends into land temperature (CR-3)."
 
 [node name="InlandDecaySpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
 unique_name_in_owner = true
@@ -662,9 +662,9 @@ layout_mode = 2
 min_value = 0.0
 max_value = 1.5
 step = 0.05
-value = 0.4
+value = 0.35
 prefix = "monsoon "
-tooltip_text = "PR-8 monsoon wind anomaly strength (0 = off). Transport-first; no precip belt."
+tooltip_text = "CR-3 local coastal monsoon wind anomaly (0 = off). Transport-first; no precip belt."
 
 [node name="MoistMonsoonBandMaxSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
 unique_name_in_owner = true
