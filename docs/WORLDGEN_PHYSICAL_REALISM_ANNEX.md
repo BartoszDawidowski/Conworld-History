@@ -2,13 +2,14 @@
 
 ## Hypsometry, temperature, moisture, hydrology, and landform semantics
 
-> **Status:** Accepted design and implementation guidance; **planning integrated** into `PHYSICAL_REALISM_PLAN.md` + amended Plan B / IMPLEMENTATION_PLAN / architecture headers; **implementation not started**  
-> **Date:** 2026-08-16  
+> **Status:** Accepted design guidance; **PR-0…PR-9 foundation implemented**; production hardening continues in [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md)  
+> **Date:** 2026-08-16 (header amended 2026-08-17)  
 > **Repository:** BartoszDawidowski/Conworld-History  
 > **Audited commit:** 6a961161c2a10d322de0990e6cbec8317ea80a5c  
 > **Primary objective:** Improve the physical credibility of generated worlds without materially exceeding the demonstrated capabilities of the target Apple M2 / 8 GB machine.  
 > **Execution rule:** Convert this annex into small implementation milestones. Complete, validate, document, and stop after each milestone before starting the next one.  
-> **Operational tracker:** [`docs/PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md) (PR-0…PR-9 status, conflict register).
+> **Operational tracker:** [`docs/PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md) (PR + CR status, conflict register).  
+> **Production defects / CR-0…CR-5:** [`docs/PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md).
 
 ---
 
@@ -1638,6 +1639,14 @@ Static climatological lake states and a snow store are sufficient. Dynamic shore
 Status: **PLANNED AFTER BASE LANDFORMS AND STABLE HYDROLOGY**.
 
 They may combine ridge topology with the river/valley graph without changing the base mountain/plateau classification.
+
+---
+
+## 18.7 Post–PR-9 production hardening (CR track)
+
+Status: **OPEN** — see [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md).
+
+Reopen / continue when fixed-seed production metrics contradict a PR acceptance note (spin-up, SST form, monsoon regime, endorheism, subgrid layout, resolution-invariant scales). Do not substitute parameter retuning for those defects.
 
 ---
 

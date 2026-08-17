@@ -59,14 +59,18 @@ Note: final DEM maxima sit slightly below `land_scale_m=9000` after fluvial eros
 
 ---
 
-## Fixture probes (current buggy behaviour)
+## Fixture probes (post–PR-4 / CR-0)
 
-| Probe | Observation |
+Harness probes in `test_fixture_probes_run` assert **corrected** physics (not the original audit bugs):
+
+| Probe | Expected (current) |
 |---|---|
-| Northward impulse (`wind_v>0`) | Mass moves **south** (larger j) — MOIST-01 |
-| Precip vs available `q` | `max_overshoot ≈ 2.4` — MOIST-02 |
-| Constant climate year | Strong Jan→Dec ramp (`jan/jul ≈ 0.014`) — MOIST-03 |
-| Two raw peaks → metres | Both maxima = 9000 m — HYP-01 |
+| Northward impulse (`wind_v>0`) | Mass moves **north** (smaller j) |
+| Precip vs available `q` | `max_overshoot ≤ 1e-9` |
+| Constant climate year | Flat after spin-up (relative month span &lt; 8%) |
+| Two raw peaks → metres (legacy path) | Both maxima = 9000 m — still documents HYP-01 / `legacy_max` |
+
+Historical audit observations (southward mass, overshoot ≈ 2.4, Jan ramp) lived only until PR-4; do not restore them as required asserts.
 
 ---
 
@@ -74,20 +78,18 @@ Note: final DEM maxima sit slightly below `land_scale_m=9000` after fluvial eros
 
 | Test | Fix milestone |
 |---|---|
-| `test_audit_northward_wind_moves_moisture_to_smaller_j` | PR-4 |
-| `test_audit_precip_never_exceeds_available_moisture` | PR-4 |
-| `test_audit_constant_climate_has_no_january_startup_ramp` | PR-4 |
+| `test_audit_northward_wind_moves_moisture_to_smaller_j` | PR-4 (now required) |
+| `test_audit_precip_never_exceeds_available_moisture` | PR-4 (now required) |
+| `test_audit_constant_climate_has_no_january_startup_ramp` | PR-4 (now required) |
 | `test_audit_hex_latitudes_mirror_and_mean_near_zero` | PR-1 |
 | `test_audit_land_max_not_mechanically_identical_across_peaks` | PR-2 |
 
-When a later PR fixes an invariant, the unexpected pass under `strict=True` will fail CI until the `xfail` marker is removed.
+See also CR-0: [`physical_realism_cr0.md`](physical_realism_cr0.md).
 
 ---
 
 ## Explicitly not done
 
-- PR-1+ physics fixes  
-- Atlas / Full seed baseline capture (suites defined; run when needed)  
-- Hydrology seam / cylindrical-graph audit xfails (deferred to PR-5 fixtures)
+- Atlas / Full seed baseline capture (suites defined; run when needed)
 
-**Decision:** accept PR-0; stop.
+**Decision:** accept PR-0 (foundation); harness honesty restored in CR-0.

@@ -48,4 +48,5 @@
 - Full contour polygons (bbox/point foundation only)  
 - History `EnvironmentAdapter` mobility costs  
 
-**Decision:** accept PR-9 foundation; stop. Next when instructed: **B10** (atlas) or 9E calibration / Godot display.
+**Decision:** accept PR-9 foundation; stop.  
+**Follow-up:** production defects (mask/coast mix, hardcoded `acceptance_ok`, plateaus absent) → [`PHYSICAL_REALISM_CORRECTIONS.md`](../PHYSICAL_REALISM_CORRECTIONS.md) **F-13** / **CR-5** (after CR-2…CR-4). Optional: **B10** (atlas) anytime.

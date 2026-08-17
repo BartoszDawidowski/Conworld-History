@@ -2,7 +2,7 @@
 
 > **Status:** **B1–B7 complete** (B7: 2026-08-16). Climate/geography defaults **user-retuned** (see §6 / `milestone_b5.md`).  
 > **Next Plan B presentation when instructed:** **B10** (Full land polys) may run independently.  
-> **Next climate physics:** Realism **PR-0–PR-9 foundation complete**. Optional: PR-9E calibration / Godot landforms; atlas **B10** anytime. Tracker: [`PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md).  
+> **Next climate physics:** **CR-0 ✅**; next **CR-1** — [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md). Tracker: [`PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md). Do not retune B8/B9 knobs to hide CR defects.  
 > **Hydro UX follow-up:** ✅ flow-direction **layer** + channel transmission losses — §6.3.1 / `docs/validation/hydro_flow_and_transmission.md` (2026-08-16). Annex still requires cylindrical graph + lake/wadi semantics (PR-5/PR-6).  
 > **Date:** 2026-08-16  
 > **Authority:** Post-A8 discussion + 2026-08-15 climate/hydro/moisture planning; **amended 2026-08-16** by Physical Realism Annex.  
@@ -536,13 +536,16 @@ When B1–B10 are complete (or a subset explicitly accepted as “B done”):
 ## 10. Suggested human instructions
 
 ```text
-Plan B presentation: B10 Full land polys when requested (independent of PR track).
+Plan B presentation: B10 Full land polys when requested (independent of PR/CR track).
 
-Climate physics: do NOT start B8/B9 from Plan B alone.
-Use PHYSICAL_REALISM_PLAN.md: PR-0 → … → PR-4 gate → PR-7 (B8) → PR-8 (B9).
+Climate physics: foundation PR-0…PR-9 is not production-complete.
+Use PHYSICAL_REALISM_PLAN.md + PHYSICAL_REALISM_CORRECTIONS.md: CR-0 → … → CR-5.
+Do not retune B8/B9 knobs to hide F-02…F-09.
 ```
 
-Recommended climate order: **B7 ✅ → (PR-0…PR-6) → B8/PR-7 → B9/PR-8 → B10 anytime**.
+Recommended climate order: **B7 ✅ → PR-0…PR-9 foundation → CR-0…CR-5 → B10 anytime**.
+
+Interim until CR-3: `monsoon_strength=0.0`; keep `folding_ratio=0.01`; do not raise `ocean_evap_rate` to “fix” inland dryness.
 
 ---
 
