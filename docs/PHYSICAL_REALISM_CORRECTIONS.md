@@ -1,12 +1,12 @@
 # Physical Realism Corrections — post–PR-9 production hardening
 
-> **Status:** **CR-0–CR-1 accepted** (2026-08-17). Open: **CR-2…CR-5**.  
+> **Status:** **CR-0–CR-2 accepted** (2026-08-17). Open: **CR-3…CR-5**.  
 > **Authority:** This document amends production acceptance of PR-0…PR-9 foundation where fixed-seed audit contradicts milestone notes.  
 > **Normative design:** [`WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md) remains primary for algorithms; where annex acceptance was marked done but production fails, **this corrections track takes precedence** until closed.  
 > **Tracker:** [`PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md).  
 > **Rule:** One **CR-N** milestone at a time. Validate → `docs/validation/physical_realism_crN.md` → stop.  
 > **Do not** retune hypsometry / climate / landform thresholds as a substitute for the defects below.  
-> **Next when instructed:** **CR-2** (GridMetrics / subgrid / km leftovers).
+> **Next when instructed:** **CR-3** (moisture closure + SST anomaly + monsoon regime).
 
 ---
 
@@ -80,14 +80,14 @@ IDs are binding for CR milestones. Severity: **P0** blocks physical acceptance; 
 | **F-03** | P0 | Spin-up fails in production; ~~`acceptance_ok` ignores convergence~~ | **Partial CR-1** — acceptance requires `spinup_converged`; default years still short → **CR-3** |
 | **F-04** | P0 | Land store not in spin-up / closure gate | PR-7 land store vs PR-4 budget identity; annex MOIST-03 |
 | **F-05** | P0 | SST couples land toward **absolute** nearest SST | `couple_temperature_with_sst_inland`: `(1-w)*temp + w*nearest_sst` (`ocean/sst.py`); docstring “blended toward nearest SST” |
-| **F-06** | P0 | Inland decay ≈ whole continents | YAML comment + PR-1 validation: cells→km ≈ **4691 km**; not a physical retune |
-| **F-07** | P0 | Monsoon always offshore / non-seasonal | `atmosphere/monsoon.py`: hemispheric `land_mean - ocean_mean` on **post-SST** land T; `coast_reach_cells` still cell-based |
+| **F-06** | P0 | Inland decay ≈ whole continents | **Partial CR-2** — default `sst_inland_decay_km=1200` (not 4691); anomaly form → **CR-3** |
+| **F-07** | P0 | Monsoon always offshore / non-seasonal | `atmosphere/monsoon.py`: hemispheric contrast; coast reach now km (**CR-2**); regime → **CR-3** |
 | **F-08** | P0 | Endorheic / playa / frozen never appear in production | `flow.py`: `max_depth=-1` fill-all + `outlets="edge"`; lake classes in `lakes_meta.py` exist but graph never leaves closed basins |
 | **F-09** | P0 | Monthly vs annual Q incoherent (80–91%) | PR-6 monthly effective Q vs annual routing path — production divergence |
-| **F-10** | P1 | Subgrid elev/slope percentiles wrong columns | `downsample_elevation_subgrid_stats`: `reshape(out_h, by, out_w, bx)` then flatten **without** `transpose(0,2,1,3)` |
-| **F-11** | P1 | Physics still resolution-dependent | Advect steps, plume steps, monsoon `coast_reach_cells`, several hydro thresholds remain **cells**; annex C-08 / PR-1 incomplete |
+| **F-10** | P1 | ~~Subgrid elev/slope percentiles wrong columns~~ | **Closed CR-2** |
+| **F-11** | P1 | Physics still resolution-dependent | **Partial CR-2** — monsoon/plume reaches in km; `advect_steps` still numerical; hydro cells → **CR-4** |
 | **F-12** | P1 | `hypsometry_tail_softness` reserved no-op | `terrain/pipeline.py`: “reserved / documented; asymptote uses max/anchor” |
-| **F-13** | P1 | Landform mask/DEM mix coasts+bathymetry; plateaus absent; ~~`acceptance_ok` hardcoded~~ | **Partial CR-1** — structural/`calibrated` flags; mask quality → **CR-2/CR-5** |
+| **F-13** | P1 | Landform mask/DEM mix coasts+bathymetry; plateaus absent; ~~`acceptance_ok` hardcoded~~ | **Partial CR-1/CR-2** — land-only downsample + structural flags; calibration → **CR-5** |
 | **F-14** | P2 | Full memory / dual work | Monthly hydro arrays can exceed ~6 GiB; moisture rebuilt twice in final (by design for lake/river sources) — confirm no accidental double hydrology; Full perf gate never closed |
 
 ### Reopened conflict-register items
@@ -164,7 +164,9 @@ CR-0  CI + harness honesty + Windows packaging
 
 **Stop.** Next: **CR-2** only.
 
-### CR-2 — GridMetrics / subgrid / resolution invariance
+### CR-2 — GridMetrics / subgrid / resolution invariance ✅
+
+**Status:** Accepted — [`docs/validation/physical_realism_cr2.md`](validation/physical_realism_cr2.md) (2026-08-17).
 
 **Intent:** same planet parameters ⇒ comparable physics across Quick / Atlas / Full (annex §16.3).
 
@@ -173,9 +175,9 @@ CR-0  CI + harness honesty + Windows packaging
 - Migrate remaining cell knobs that change physical reach with resolution, at least: monsoon coast reach, any fixed advect/plume **step counts** that encode distance, hydro thresholds documented as length/area.
 - Prefer explicit `sst_inland_decay_km` in defaults over giant cell migration accidents; **do not** silently reinterpret old cell values as “correct km”.
 
-**Acceptance:** synthetic subgrid fixture (known ridge in one fine cell) places p90/ridge/RMS in the correct coarse cell; length knobs documented in km; Quick vs Atlas large-scale precip/T patterns closer under identical km params.
+**Acceptance:** synthetic subgrid fixture (known ridge in one fine cell) places p90/ridge/RMS in the correct coarse cell; length knobs documented in km; Quick vs Atlas large-scale precip/T patterns closer under identical km params. **Met** (advect_steps leftover noted).
 
-**Stop.**
+**Stop.** Next: **CR-3** only.
 
 ### CR-3 — Moisture closure, SST anomaly, monsoon regime
 

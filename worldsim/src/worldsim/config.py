@@ -83,6 +83,7 @@ class PlanetConfig:
     moisture_spinup_tolerance_absolute: float = 1e-3
     # PR-7 / revised B8
     moisture_plume_strength: float = 0.18
+    moisture_plume_mix_reach_km: float | None = 500.0
     moisture_land_store_capacity: float = 8.0
     moisture_itcz_convective_scale: float = 1.2
     moisture_itcz_width_deg: float = 8.0
@@ -90,6 +91,7 @@ class PlanetConfig:
     moisture_monsoon_lat_band_min_abs_deg: float = 5.0
     moisture_monsoon_lat_band_max_abs_deg: float = 32.0
     moisture_monsoon_max_anomaly_ms: float = 3.5
+    moisture_monsoon_coast_reach_km: float | None = 800.0
     moisture_monsoon_coast_reach_cells: float = 10.0
     moisture_monsoon_temp_scale_c: float = 8.0
     # Plan B7 — precip-aware hydro gates
@@ -174,6 +176,7 @@ class PlanetConfig:
             spinup_tolerance_relative=self.moisture_spinup_tolerance_relative,
             spinup_tolerance_absolute=self.moisture_spinup_tolerance_absolute,
             plume_strength=self.moisture_plume_strength,
+            plume_mix_reach_km=self.moisture_plume_mix_reach_km,
             land_store_capacity=self.moisture_land_store_capacity,
             itcz_convective_scale=self.moisture_itcz_convective_scale,
             itcz_width_deg=self.moisture_itcz_width_deg,
@@ -181,8 +184,10 @@ class PlanetConfig:
             monsoon_lat_band_min_abs_deg=self.moisture_monsoon_lat_band_min_abs_deg,
             monsoon_lat_band_max_abs_deg=self.moisture_monsoon_lat_band_max_abs_deg,
             monsoon_max_anomaly_ms=self.moisture_monsoon_max_anomaly_ms,
+            monsoon_coast_reach_km=self.moisture_monsoon_coast_reach_km,
             monsoon_coast_reach_cells=self.moisture_monsoon_coast_reach_cells,
             monsoon_temp_scale_c=self.moisture_monsoon_temp_scale_c,
+            planet_radius_km=self.planet_radius_km,
         )
 
     def to_ecology_params(self) -> "EcologyParams":
@@ -465,6 +470,12 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     moisture_plume_strength = float(moisture_cfg.get("plume_strength", 0.18))
     if not 0.0 <= moisture_plume_strength < 1.0:
         raise ConfigError("moisture.plume_strength must be in [0, 1)")
+    plume_reach_raw = moisture_cfg.get("plume_mix_reach_km")
+    moisture_plume_mix_reach_km = (
+        float(plume_reach_raw) if plume_reach_raw is not None else 500.0
+    )
+    if moisture_plume_mix_reach_km is not None and moisture_plume_mix_reach_km <= 0.0:
+        raise ConfigError("moisture.plume_mix_reach_km must be > 0")
     moisture_land_store_capacity = float(
         moisture_cfg.get("land_store_capacity", 8.0)
     )
@@ -501,6 +512,15 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     )
     if moisture_monsoon_max_anomaly_ms < 0.0:
         raise ConfigError("moisture.monsoon_max_anomaly_ms must be >= 0")
+    monsoon_reach_raw = moisture_cfg.get("monsoon_coast_reach_km")
+    moisture_monsoon_coast_reach_km = (
+        float(monsoon_reach_raw) if monsoon_reach_raw is not None else 800.0
+    )
+    if (
+        moisture_monsoon_coast_reach_km is not None
+        and moisture_monsoon_coast_reach_km <= 0.0
+    ):
+        raise ConfigError("moisture.monsoon_coast_reach_km must be > 0")
     moisture_monsoon_coast_reach_cells = float(
         moisture_cfg.get("monsoon_coast_reach_cells", 10.0)
     )
@@ -622,6 +642,7 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
         moisture_spinup_tolerance_relative=moisture_spinup_tolerance_relative,
         moisture_spinup_tolerance_absolute=moisture_spinup_tolerance_absolute,
         moisture_plume_strength=moisture_plume_strength,
+        moisture_plume_mix_reach_km=moisture_plume_mix_reach_km,
         moisture_land_store_capacity=moisture_land_store_capacity,
         moisture_itcz_convective_scale=moisture_itcz_convective_scale,
         moisture_itcz_width_deg=moisture_itcz_width_deg,
@@ -629,6 +650,7 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
         moisture_monsoon_lat_band_min_abs_deg=moisture_monsoon_lat_band_min_abs_deg,
         moisture_monsoon_lat_band_max_abs_deg=moisture_monsoon_lat_band_max_abs_deg,
         moisture_monsoon_max_anomaly_ms=moisture_monsoon_max_anomaly_ms,
+        moisture_monsoon_coast_reach_km=moisture_monsoon_coast_reach_km,
         moisture_monsoon_coast_reach_cells=moisture_monsoon_coast_reach_cells,
         moisture_monsoon_temp_scale_c=moisture_monsoon_temp_scale_c,
         hydrology_river_acc_fraction=hydrology_river_acc_fraction,

@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from worldsim.physical.climate.pipeline import downsample_mean
+from worldsim.physical.climate.pipeline import downsample_land_elevation_mean
 from worldsim.physical.landforms.classify import (
     classify_layers,
     compute_scores,
@@ -154,8 +154,7 @@ def build_landform_analysis(
     ah = min(ah, th)
 
     if (ah, aw) != (th, tw):
-        elev = downsample_mean(elev_full, aw, ah)
-        ocean = downsample_mean(ocean_full.astype(np.float64), aw, ah) >= 0.5
+        elev, ocean = downsample_land_elevation_mean(elev_full, ocean_full, aw, ah)
     else:
         elev = elev_full
         ocean = ocean_full

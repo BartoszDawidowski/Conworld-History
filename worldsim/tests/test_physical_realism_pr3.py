@@ -198,7 +198,7 @@ def test_boundary_width_km_scales_with_resolution() -> None:
 def test_config_ocean_params_include_km() -> None:
     config = load_planet_config(default_config_path())
     o = config.to_ocean_params()
-    assert o.inland_decay_km is not None and o.inland_decay_km > 1000.0
+    assert o.inland_decay_km == pytest.approx(1200.0)
     assert o.western_boundary_width_km is not None and o.western_boundary_width_km > 0.0
     assert o.inland_decay_cells == 60.0
 

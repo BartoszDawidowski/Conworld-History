@@ -361,6 +361,7 @@ def _month_step(
     continentality_dry: float,
     lee_dry: float,
     plume_strength: float,
+    plume_mix_steps: int,
     land_store_capacity: float,
     itcz_latitude_deg: float | None,
     itcz_convective_scale: float,
@@ -407,7 +408,9 @@ def _month_step(
             q, dt=dt, mix_per_month=diffusion_mix_per_month
         )
     # Once-per-month soft plume (existing q only; mass-conserving).
-    q = soft_plume_mix(q, wind_u, wind_v, strength=plume_strength)
+    q = soft_plume_mix(
+        q, wind_u, wind_v, strength=plume_strength, steps=plume_mix_steps
+    )
 
     capacity = saturation_capacity(temperature_c)
     land_dry = 1.0 - float(continentality_dry) * continentality * (~ocean).astype(
@@ -527,6 +530,7 @@ def build_monthly_moisture(
     # PR-7 defaults off here so PR-4 fixtures stay calendar-invariant;
     # MoistureParams / YAML enable them for production.
     plume_strength: float = 0.0,
+    plume_mix_steps: int = 6,
     land_store_capacity: float = 0.0,
     itcz_latitude_deg: NDArray[np.floating] | None = None,
     itcz_convective_scale: float = 0.0,
@@ -639,6 +643,7 @@ def build_monthly_moisture(
                 continentality_dry=continentality_dry,
                 lee_dry=lee_dry,
                 plume_strength=plume_strength,
+                plume_mix_steps=plume_mix_steps,
                 land_store_capacity=cap_store,
                 itcz_latitude_deg=float(itcz[m % len(itcz)]),
                 itcz_convective_scale=itcz_convective_scale,
@@ -712,6 +717,7 @@ def build_monthly_moisture(
             or float(itcz_convective_scale) > 0.0
         ),
         "plume_strength": float(plume_strength),
+        "plume_mix_steps": int(plume_mix_steps),
         "land_store_capacity": cap_store,
         "itcz_convective_scale": float(itcz_convective_scale),
         "itcz_width_deg": float(itcz_width_deg),

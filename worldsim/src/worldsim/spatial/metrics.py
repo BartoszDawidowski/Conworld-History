@@ -150,8 +150,8 @@ class GridMetrics:
             elif j == self.height - 1:
                 d_south[j] = (arr[j] - arr[j - 1]) / ns[j - 1]
             else:
-                # Central difference using adjacent NS spacings
-                step = 0.5 * (ns[j - 1] + ns[j])
+                # Centre of row j-1 → centre of j+1 spans ns[j-1] + ns[j].
+                step = float(ns[j - 1] + ns[j])
                 d_south[j] = (arr[j + 1] - arr[j - 1]) / max(step, 1e-12)
         return d_east, d_south
 

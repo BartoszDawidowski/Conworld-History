@@ -147,8 +147,8 @@ def test_godot_project_skeleton_exists() -> None:
     assert "world_seed" in main_gd
     assert "_write_planet_config" in main_gd
     assert "sst_mix" in main_gd
+    assert "sst_inland_decay_km" in main_gd
     assert "moisture_advect_steps" in main_gd
-    assert "inland_decay_cells" in main_gd
     assert "folding_ratio" in main_gd
     assert "land_scale_m" in main_gd
     assert "orogeny_boost" in main_gd

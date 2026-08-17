@@ -234,7 +234,7 @@ func _generation_knobs() -> Dictionary:
 		"boundary_relief": float(boundary_relief_spin.value),
 		"base_temp_c": float(base_temp_spin.value),
 		"sst_mix": float(sst_mix_spin.value),
-		"inland_decay_cells": float(inland_decay_spin.value),
+		"sst_inland_decay_km": float(inland_decay_spin.value),
 		"western_warm_c": float(western_warm_spin.value),
 		"eastern_cool_c": float(eastern_cool_spin.value),
 		"moisture_advect_steps": int(moist_advect_steps_spin.value),
@@ -299,7 +299,7 @@ resolution:
 ocean:
   fraction_target: %.4f
   sst_mix: %.4f
-  inland_decay_cells: %.4f
+  sst_inland_decay_km: %.4f
   western_warm_c: %.4f
   eastern_cool_c: %.4f
 
@@ -346,6 +346,7 @@ moisture:
   spinup_tolerance_relative: 0.02
   spinup_tolerance_absolute: 0.001
   plume_strength: %.4f
+  plume_mix_reach_km: 500.0
   land_store_capacity: %.4f
   itcz_convective_scale: %.4f
   itcz_width_deg: %.4f
@@ -353,7 +354,7 @@ moisture:
   monsoon_lat_band_min_abs_deg: 5.0
   monsoon_lat_band_max_abs_deg: %.4f
   monsoon_max_anomaly_ms: 3.5
-  monsoon_coast_reach_cells: 10.0
+  monsoon_coast_reach_km: 800.0
   monsoon_temp_scale_c: 8.0
 
 generation:
@@ -363,7 +364,7 @@ generation:
 		analysis.y,
 		float(knobs["ocean_fraction"]),
 		float(knobs["sst_mix"]),
-		float(knobs["inland_decay_cells"]),
+		float(knobs["sst_inland_decay_km"]),
 		float(knobs["western_warm_c"]),
 		float(knobs["eastern_cool_c"]),
 		int(knobs["num_plates"]),

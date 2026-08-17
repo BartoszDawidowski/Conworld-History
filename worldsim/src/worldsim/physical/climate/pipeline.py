@@ -124,6 +124,59 @@ def downsample_mean(
     return out
 
 
+def downsample_land_elevation_mean(
+    elevation_m: NDArray[np.floating],
+    ocean_mask: NDArray[np.bool_],
+    out_width: int,
+    out_height: int,
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Downsample DEM using land-only means so coasts are not mixed with bathymetry.
+
+    Ocean coarse cells keep the mean of fine ocean elevations. Land coarse cells
+    average only fine land elevations (CR-2 / F-13 mask hygiene).
+    """
+    elev = np.asarray(elevation_m, dtype=np.float64)
+    ocean = np.asarray(ocean_mask, dtype=bool)
+    in_h, in_w = elev.shape
+    ocean_out = downsample_mean(ocean.astype(np.float64), out_width, out_height) >= 0.5
+    out = np.empty((out_height, out_width), dtype=np.float64)
+
+    if in_h % out_height == 0 and in_w % out_width == 0:
+        by = in_h // out_height
+        bx = in_w // out_width
+        e_blocks = elev.reshape(out_height, by, out_width, bx).transpose(0, 2, 1, 3)
+        o_blocks = ocean.reshape(out_height, by, out_width, bx).transpose(0, 2, 1, 3)
+        flat_e = e_blocks.reshape(out_height, out_width, by * bx)
+        flat_o = o_blocks.reshape(out_height, out_width, by * bx)
+        for j in range(out_height):
+            for i in range(out_width):
+                land_f = ~flat_o[j, i]
+                if ocean_out[j, i] or not np.any(land_f):
+                    out[j, i] = float(np.mean(flat_e[j, i]))
+                else:
+                    out[j, i] = float(np.mean(flat_e[j, i][land_f]))
+        return out, ocean_out
+
+    # Non-divisible fallback: windowed land-only mean around each sample.
+    ys = ((np.arange(out_height) + 0.5) * in_h / out_height).astype(np.int64)
+    xs = ((np.arange(out_width) + 0.5) * in_w / out_width).astype(np.int64)
+    ys = np.clip(ys, 0, in_h - 1)
+    xs = np.clip(xs, 0, in_w - 1)
+    ry = max(1, in_h // out_height // 2)
+    rx = max(1, in_w // out_width // 2)
+    for j, y in enumerate(ys):
+        y0, y1 = max(0, y - ry), min(in_h, y + ry + 1)
+        for i, x in enumerate(xs):
+            x0, x1 = max(0, x - rx), min(in_w, x + rx + 1)
+            block = elev[y0:y1, x0:x1]
+            oblock = ocean[y0:y1, x0:x1]
+            if ocean_out[j, i] or not np.any(~oblock):
+                out[j, i] = float(np.mean(block))
+            else:
+                out[j, i] = float(np.mean(block[~oblock]))
+    return out, ocean_out
+
+
 def downsample_mode_bool(
     source: NDArray[np.bool_],
     out_width: int,
@@ -161,8 +214,12 @@ def downsample_elevation_subgrid_stats(
     if in_h % out_height == 0 and in_w % out_width == 0:
         by = in_h // out_height
         bx = in_w // out_width
-        blocks = src.reshape(out_height, by, out_width, bx)
-        slope_blocks = slope.reshape(out_height, by, out_width, bx)
+        # reshape → (out_h, by, out_w, bx); transpose so each coarse cell's
+        # fine block is contiguous before flattening (CR-2 / F-10).
+        blocks = src.reshape(out_height, by, out_width, bx).transpose(0, 2, 1, 3)
+        slope_blocks = slope.reshape(out_height, by, out_width, bx).transpose(
+            0, 2, 1, 3
+        )
         flat_e = blocks.reshape(out_height, out_width, by * bx)
         flat_s = slope_blocks.reshape(out_height, out_width, by * bx)
         p10 = np.percentile(flat_e, 10, axis=2)

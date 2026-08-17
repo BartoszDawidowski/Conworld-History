@@ -492,13 +492,13 @@ tooltip_text = "How strongly nearest SST blends into land temperature (coast wei
 [node name="InlandDecaySpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
 unique_name_in_owner = true
 layout_mode = 2
-min_value = 1.0
-max_value = 96.0
-step = 1.0
-value = 60.0
+min_value = 100.0
+max_value = 3000.0
+step = 50.0
+value = 1200.0
 prefix = "inland decay "
-suffix = " cells"
-tooltip_text = "SST→T inland decay length scale in climate cells."
+suffix = " km"
+tooltip_text = "SST→T inland decay length scale in kilometres (CR-2 physical default)."
 
 [node name="WesternWarmSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
 unique_name_in_owner = true

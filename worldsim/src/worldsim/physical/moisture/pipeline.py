@@ -17,6 +17,47 @@ from worldsim.physical.moisture.transport import build_monthly_moisture
 from worldsim.physical.ocean.pipeline import OceanResult
 from worldsim.progress import ProgressReporter
 from worldsim.spatial.extent import SpatialExtent
+from worldsim.spatial.metrics import grid_metrics
+
+
+def _midlat_cells_from_km(
+    *,
+    width: int,
+    height: int,
+    reach_km: float,
+    planet_radius_km: float,
+) -> float:
+    metrics = grid_metrics(width, height, radius_km=planet_radius_km)
+    return float(
+        max(1.0, metrics.cells_from_km_ew(float(reach_km), metrics.height // 2))
+    )
+
+
+def _plume_steps_for_grid(
+    *,
+    width: int,
+    height: int,
+    reach_km: float | None,
+    legacy_steps: int | None,
+    planet_radius_km: float,
+) -> int:
+    if reach_km is not None and float(reach_km) > 0.0:
+        return int(
+            max(
+                1,
+                round(
+                    _midlat_cells_from_km(
+                        width=width,
+                        height=height,
+                        reach_km=float(reach_km),
+                        planet_radius_km=planet_radius_km,
+                    )
+                ),
+            )
+        )
+    if legacy_steps is not None:
+        return max(1, int(legacy_steps))
+    return 6
 
 
 @dataclass(frozen=True)
@@ -39,6 +80,8 @@ class MoistureParams:
     spinup_tolerance_absolute: float = 1e-3
     # PR-7 / revised B8
     plume_strength: float = 0.18
+    plume_mix_reach_km: float | None = 500.0
+    plume_mix_steps: int | None = None  # legacy fixed steps; prefer reach_km
     land_store_capacity: float = 8.0
     itcz_convective_scale: float = 1.2
     itcz_width_deg: float = 8.0
@@ -47,8 +90,10 @@ class MoistureParams:
     monsoon_lat_band_min_abs_deg: float = 5.0
     monsoon_lat_band_max_abs_deg: float = 32.0
     monsoon_max_anomaly_ms: float = 3.5
+    monsoon_coast_reach_km: float | None = 800.0
     monsoon_coast_reach_cells: float = 10.0
     monsoon_temp_scale_c: float = 8.0
+    planet_radius_km: float = 6371.0
 
 
 @dataclass
@@ -200,6 +245,25 @@ def build_moisture(
 
     wind_u = np.asarray(atmosphere.wind_u[:months], dtype=np.float64)
     wind_v = np.asarray(atmosphere.wind_v[:months], dtype=np.float64)
+    h, w = climate.ocean_mask.shape
+    if params.monsoon_coast_reach_km is not None and float(params.monsoon_coast_reach_km) > 0.0:
+        coast_reach_cells = _midlat_cells_from_km(
+            width=w,
+            height=h,
+            reach_km=float(params.monsoon_coast_reach_km),
+            planet_radius_km=params.planet_radius_km,
+        )
+        coast_reach_source = "km"
+    else:
+        coast_reach_cells = float(params.monsoon_coast_reach_cells)
+        coast_reach_source = "cells"
+    plume_steps = _plume_steps_for_grid(
+        width=w,
+        height=h,
+        reach_km=params.plume_mix_reach_km,
+        legacy_steps=params.plume_mix_steps,
+        planet_radius_km=params.planet_radius_km,
+    )
     monsoon_diag: dict[str, Any] = {"b9_terms_active": False, "monsoon_strength": 0.0}
     if (
         ocean is not None
@@ -217,7 +281,7 @@ def build_moisture(
             lat_band_min_abs_deg=params.monsoon_lat_band_min_abs_deg,
             lat_band_max_abs_deg=params.monsoon_lat_band_max_abs_deg,
             max_anomaly_ms=params.monsoon_max_anomaly_ms,
-            coast_reach_cells=params.monsoon_coast_reach_cells,
+            coast_reach_cells=coast_reach_cells,
             temp_scale_c=params.monsoon_temp_scale_c,
         )
 
@@ -249,6 +313,7 @@ def build_moisture(
         spinup_tolerance_relative=params.spinup_tolerance_relative,
         spinup_tolerance_absolute=params.spinup_tolerance_absolute,
         plume_strength=params.plume_strength,
+        plume_mix_steps=plume_steps,
         land_store_capacity=params.land_store_capacity,
         itcz_latitude_deg=atmosphere.itcz_latitude_deg[:months],
         itcz_convective_scale=params.itcz_convective_scale,
@@ -288,6 +353,8 @@ def build_moisture(
             "diffusion_mix_per_month": params.diffusion_mix_per_month,
             "spinup_max_years": params.spinup_max_years,
             "plume_strength": params.plume_strength,
+            "plume_mix_reach_km": params.plume_mix_reach_km,
+            "plume_mix_steps": plume_steps,
             "land_store_capacity": params.land_store_capacity,
             "itcz_convective_scale": params.itcz_convective_scale,
             "itcz_width_deg": params.itcz_width_deg,
@@ -299,6 +366,9 @@ def build_moisture(
             "monsoon_strength": params.monsoon_strength,
             "monsoon_lat_band_min_abs_deg": params.monsoon_lat_band_min_abs_deg,
             "monsoon_lat_band_max_abs_deg": params.monsoon_lat_band_max_abs_deg,
+            "monsoon_coast_reach_km": params.monsoon_coast_reach_km,
+            "monsoon_coast_reach_cells_effective": coast_reach_cells,
+            "monsoon_coast_reach_source": coast_reach_source,
             **monsoon_diag,
             "inland_water_sources": bool(
                 lake_mask is not None or river_mask is not None
