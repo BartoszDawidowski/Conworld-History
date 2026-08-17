@@ -138,7 +138,9 @@ def build_landform_analysis(
             diagnostics={
                 "enabled": False,
                 "algorithm": LANDFORM_ALGORITHM_VERSION,
-                "acceptance_ok": True,
+                "structural_ok": False,
+                "calibrated": False,
+                "acceptance_ok": False,
             },
         )
 
@@ -240,6 +242,21 @@ def build_landform_analysis(
         return arr[y_idx][:, x_idx]
 
     land = ~ocean
+    if np.any(land):
+        scores_finite = all(
+            bool(np.all(np.isfinite(scores[k][land])))
+            for k in ("mountain_score", "plateau_score", "hill_score", "confidence")
+        )
+    else:
+        scores_finite = True
+    # Structural integrity only — threshold calibration is CR-5 / PR-9E (F-13).
+    structural_ok = bool(
+        aw >= 8
+        and ah >= 8
+        and scores_finite
+        and int(layers["context_id"].shape[0]) == ah
+        and int(layers["context_id"].shape[1]) == aw
+    )
     diagnostics: dict[str, Any] = {
         "enabled": True,
         "algorithm": LANDFORM_ALGORITHM_VERSION,
@@ -260,7 +277,9 @@ def build_landform_analysis(
         if np.any(land)
         else 0.0,
         "seam_crossing_ranges": int(sum(1 for r in ranges if r.crosses_ew_seam)),
-        "acceptance_ok": True,
+        "structural_ok": structural_ok,
+        "calibrated": False,
+        "acceptance_ok": structural_ok,
     }
 
     if reporter is not None:

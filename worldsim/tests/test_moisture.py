@@ -83,12 +83,13 @@ def test_moisture_from_small_world(tmp_path: Path) -> None:
         climate=climate,
         atmosphere=atmosphere,
         ocean=ocean,
-        params=MoistureParams(),
+        params=MoistureParams(spinup_max_years=12),
     )
     assert moisture.precipitation.shape[0] == 12
     assert moisture.precipitation.shape[1:] == climate.ocean_mask.shape
     assert moisture.diagnostics["downwind_moisture_transport_ok"] is True
     assert moisture.diagnostics["earth_like_wet_dry_ok"] is True
+    assert moisture.diagnostics["spinup_converged"] is True
     assert moisture.diagnostics["acceptance_ok"] is True
     moisture.save(tmp_path / "moisture")
     assert (tmp_path / "moisture" / "moisture.npz").is_file()

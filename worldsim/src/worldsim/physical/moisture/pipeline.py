@@ -147,6 +147,9 @@ def _moisture_diagnostics(
     lon_std = float(np.mean(np.std(precipitation[june], axis=1)))
     coherent = lon_std < float(np.mean(precipitation[june]) + 1.0) * 3.0
 
+    heuristic_ok = bool(
+        downwind_ok and windward_leeward_ok and wet_dry_ok and coherent
+    )
     return {
         "downwind_moisture_transport_ok": downwind_ok,
         "evaporation_ocean_june": evap_ocean,
@@ -162,9 +165,9 @@ def _moisture_diagnostics(
         "precipitation_max": float(np.max(precipitation)),
         "annual_precip_mean": float(np.mean(annual)),
         "coherent_fields": coherent,
-        "acceptance_ok": bool(
-            downwind_ok and windward_leeward_ok and wet_dry_ok and coherent
-        ),
+        "heuristic_fields_ok": heuristic_ok,
+        # CR-1: acceptance_ok filled after budget merge (requires spinup_converged).
+        "acceptance_ok": heuristic_ok,
     }
 
 
@@ -313,6 +316,15 @@ def build_moisture(
             **(fields["budget"] if isinstance(fields.get("budget"), dict) else {}),
         }
     )
+    # CR-1: hard gate is periodic spin-up convergence. Spatial heuristics remain
+    # reported (`heuristic_fields_ok`) but are not sufficient alone; land-store
+    # closure stays a CR-3 gate (F-04).
+    spinup_ok = bool(diagnostics.get("spinup_converged", False))
+    heuristic_ok = bool(diagnostics.get("heuristic_fields_ok", False))
+    diagnostics["acceptance_ok"] = bool(spinup_ok)
+    diagnostics["acceptance_requires_spinup"] = True
+    diagnostics["heuristic_fields_ok"] = heuristic_ok
+    diagnostics["land_store_closure_gated"] = False
 
     if reporter is not None:
         reporter.progress("moisture", 1.0)

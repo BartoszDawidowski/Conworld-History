@@ -90,7 +90,10 @@ def test_final_recalculation(tmp_path: Path) -> None:
         climate_v1=climate,
         terrain=terrain,
         interpretation=interpretation,
-        params=FinalRecalcParams(fluvial_iterations=3),
+        params=FinalRecalcParams(
+            fluvial_iterations=3,
+            moisture=MoistureParams(spinup_max_years=12),
+        ),
     )
     assert final.elevation_v2_m.shape == erosion.elevation_m.shape
     assert final.diagnostics["stable_final_geography"] is True

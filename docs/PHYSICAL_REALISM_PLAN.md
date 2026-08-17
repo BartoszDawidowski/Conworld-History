@@ -1,9 +1,9 @@
 # Physical Realism Plan — operational tracker
 
-> **Status:** **PR-0–PR-9 foundation delivered**; **CR-0 accepted**; next **CR-1** — [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md).  
+> **Status:** **PR-0–PR-9 foundation delivered**; **CR-0–CR-1 accepted**; next **CR-2** — [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md).  
 > **Authority:** [`docs/WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md) (design) + corrections doc (production defects / repair order).  
 > **Rule:** One milestone at a time. Validate → `docs/validation/physical_realism_{pr|cr}N.md` → stop.  
-> **Next when instructed:** **CR-1** (parameter propagation + acceptance honesty). Do not calibrate hypsometry/landforms until CR-3+CR-4. Optional atlas: **B10**.
+> **Next when instructed:** **CR-2** (GridMetrics / subgrid / km leftovers). Do not calibrate hypsometry/landforms until CR-3+CR-4. Optional atlas: **B10**.
 
 ---
 
@@ -94,8 +94,8 @@ Detail: annex §§7–19. Production defects: corrections §3 (F-01…).
 | ID | Title | Status | Validation note |
 |---|---|---|---|
 | CR-0 | CI + harness honesty | ✅ Complete | [`docs/validation/physical_realism_cr0.md`](validation/physical_realism_cr0.md) |
-| CR-1 | Parameter propagation + acceptance honesty | ⬜ Next | — |
-| CR-2 | GridMetrics / subgrid / km leftovers | ⬜ | — |
+| CR-1 | Parameter propagation + acceptance honesty | ✅ Complete | [`docs/validation/physical_realism_cr1.md`](validation/physical_realism_cr1.md) |
+| CR-2 | GridMetrics / subgrid / km leftovers | ⬜ Next | — |
 | CR-3 | Moisture + SST anomaly + monsoon | ⬜ | — |
 | CR-4 | Monthly hydro + endorheism | ⬜ | — |
 | CR-5 | Joint calibration (+ PR-9E) | ⬜ blocked on CR-3/4 | — |
@@ -124,7 +124,7 @@ Landforms (**PR-9** / **CR-5**) feed hex caches and `EnvironmentAdapter` later; 
 ## 7. Suggested human instructions
 
 ```text
-Physical realism corrections: execute CR-1 only.
+Physical realism corrections: execute CR-2 only.
 ```
 
 Interim (until CR-3): keep `monsoon_strength=0.0`; do not raise `ocean_evap_rate` to “fix” dryness; do not enable default `power_tail_v2`.

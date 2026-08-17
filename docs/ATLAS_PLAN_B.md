@@ -2,7 +2,7 @@
 
 > **Status:** **B1–B7 complete** (B7: 2026-08-16). Climate/geography defaults **user-retuned** (see §6 / `milestone_b5.md`).  
 > **Next Plan B presentation when instructed:** **B10** (Full land polys) may run independently.  
-> **Next climate physics:** **CR-0 ✅**; next **CR-1** — [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md). Tracker: [`PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md). Do not retune B8/B9 knobs to hide CR defects.  
+> **Next climate physics:** **CR-0–CR-1 ✅**; next **CR-2** — [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md). Tracker: [`PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md). Do not retune B8/B9 knobs to hide CR defects.  
 > **Hydro UX follow-up:** ✅ flow-direction **layer** + channel transmission losses — §6.3.1 / `docs/validation/hydro_flow_and_transmission.md` (2026-08-16). Annex still requires cylindrical graph + lake/wadi semantics (PR-5/PR-6).  
 > **Date:** 2026-08-16  
 > **Authority:** Post-A8 discussion + 2026-08-15 climate/hydro/moisture planning; **amended 2026-08-16** by Physical Realism Annex.  

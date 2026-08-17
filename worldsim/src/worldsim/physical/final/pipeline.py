@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -241,24 +241,9 @@ def build_final_recalculation(
     climate_c = apply_ocean_temperature_to_climate(climate_c, ocean_circ)
     climate_c.diagnostics["temperature_state"] = "temperature_final_c"
     climate_c.diagnostics["provenance_lapse_then_sst"] = True
-    moisture_params = MoistureParams(
-        months=params.months,
-        advect_steps=params.moisture.advect_steps,
-        advect_wind_scale=params.moisture.advect_wind_scale,
-        large_scale_frac=params.moisture.large_scale_frac,
-        orographic_frac=params.moisture.orographic_frac,
-        convective_scale=params.moisture.convective_scale,
-        ocean_evap_rate=params.moisture.ocean_evap_rate,
-        lake_evap_rate=params.moisture.lake_evap_rate,
-        river_evap_rate=params.moisture.river_evap_rate,
-        land_et_rate=params.moisture.land_et_rate,
-        continentality_dry=params.moisture.continentality_dry,
-        lee_dry=params.moisture.lee_dry,
-        diffusion_mix_per_month=params.moisture.diffusion_mix_per_month,
-        spinup_max_years=params.moisture.spinup_max_years,
-        spinup_tolerance_relative=params.moisture.spinup_tolerance_relative,
-        spinup_tolerance_absolute=params.moisture.spinup_tolerance_absolute,
-    )
+    # CR-1: pass the full MoistureParams (PR-7/PR-8 knobs included). Do not
+    # rebuild a partial dataclass — that silently dropped plume/ITCZ/monsoon.
+    moisture_params = replace(params.moisture, months=params.months)
     # First pass (ocean/land only) drives hydrology; lakes/rivers do not exist yet.
     moisture = build_moisture(
         climate=climate_c,
@@ -335,9 +320,12 @@ def build_final_recalculation(
         and mean_drop_frac < 0.20
         and mean_abs < 0.15 * elev_range + 25.0
     )
+    moisture_ok = bool(moisture.diagnostics.get("acceptance_ok"))
+    landforms_ok = bool(landforms.diagnostics.get("acceptance_ok"))
     no_catastrophe = (
         bool(hydrology.diagnostics.get("acceptance_ok"))
         and bool(vectors.diagnostics.get("acceptance_ok"))
+        and moisture_ok
         and stable
         and float(np.min(elev_v2[land])) >= -1.0
         if np.any(land)
@@ -360,7 +348,11 @@ def build_final_recalculation(
         "no_catastrophic_feedback": no_catastrophe,
         "hydrology_final_ok": bool(hydrology.diagnostics.get("acceptance_ok")),
         "vectors_final_ok": bool(vectors.diagnostics.get("acceptance_ok")),
-        "landforms_ok": bool(landforms.diagnostics.get("acceptance_ok")),
+        "moisture_ok": moisture_ok,
+        "moisture_spinup_converged": bool(
+            moisture.diagnostics.get("spinup_converged")
+        ),
+        "landforms_ok": landforms_ok,
         "landform_algorithm": landforms.diagnostics.get("algorithm"),
         "mountain_range_count": landforms.diagnostics.get("mountain_range_count"),
         "plateau_count": landforms.diagnostics.get("plateau_count"),

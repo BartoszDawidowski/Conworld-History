@@ -341,12 +341,20 @@ moisture:
   land_et_rate: %.4f
   continentality_dry: %.4f
   lee_dry: %.4f
+  diffusion_mix_per_month: 0.08
+  spinup_max_years: 4
+  spinup_tolerance_relative: 0.02
+  spinup_tolerance_absolute: 0.001
   plume_strength: %.4f
   land_store_capacity: %.4f
   itcz_convective_scale: %.4f
   itcz_width_deg: %.4f
   monsoon_strength: %.4f
+  monsoon_lat_band_min_abs_deg: 5.0
   monsoon_lat_band_max_abs_deg: %.4f
+  monsoon_max_anomaly_ms: 3.5
+  monsoon_coast_reach_cells: 10.0
+  monsoon_temp_scale_c: 8.0
 
 generation:
   quality: final
