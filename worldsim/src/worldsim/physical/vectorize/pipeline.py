@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from worldsim.physical.hydrology.pipeline import HydrologyResult
 from worldsim.physical.terrain.pipeline import TerrainOceanResult
 from worldsim.physical.vectorize.basins import BasinMeta, build_basin_metadata
@@ -27,6 +29,7 @@ from worldsim.physical.vectorize.rivers import (
 )
 from worldsim.progress import ProgressReporter
 from worldsim.spatial.extent import SpatialExtent
+from worldsim.spatial.metrics import grid_metrics
 
 
 def _save_geojson_features(path: Path, features: list[dict[str, Any]]) -> None:
@@ -64,6 +67,14 @@ class VectorGeographyResult:
                     "length": s.length,
                     "from_lake_id": s.from_lake_id,
                     "to_lake_id": s.to_lake_id,
+                    "channel_state": s.channel_state,
+                    "catchment_km2": s.catchment_km2,
+                    "channel_length_km": s.channel_length_km,
+                    "monthly_discharge": list(s.monthly_discharge),
+                    "monthly_bed_loss": list(s.monthly_bed_loss),
+                    "bed_loss_mean": s.bed_loss_mean,
+                    "loss_limited": s.loss_limited,
+                    "estimated_width_m": s.estimated_width_m,
                 },
                 "geometry": {
                     "type": "LineString",
@@ -143,6 +154,14 @@ def build_vector_geography(
     if reporter is not None:
         reporter.progress("vectors", 0.3)
 
+    h, w = hydrology.flow_direction.shape
+    radius_km = float(hydrology.diagnostics.get("planet_radius_km") or 6371.0)
+    gm = grid_metrics(w, h, radius_km=radius_km)
+    cell_len_km = float(np.sqrt(max(gm.cell_area_km2, 0.0)))
+    path_length_km = np.maximum(
+        gm.d8_step_length_km_field(hydrology.flow_direction),
+        cell_len_km,
+    )
     rivers = build_river_network(
         flow_direction=hydrology.flow_direction,
         river_mask=hydrology.river_mask,
@@ -154,6 +173,12 @@ def build_vector_geography(
         discharge_proxy=hydrology.river_discharge_proxy,
         monthly_discharge=hydrology.monthly_discharge,
         extent=extent,
+        channel_state=getattr(hydrology, "channel_state", None),
+        flow_accumulation=hydrology.flow_accumulation,
+        cell_area_km2=float(hydrology.diagnostics.get("cell_area_km2") or 0.0) or None,
+        path_length_km=path_length_km,
+        monthly_bed_loss=getattr(hydrology, "monthly_bed_loss", None),
+        bed_loss_potential_m3s=getattr(hydrology, "bed_loss_potential_m3s", None),
     )
 
     if reporter is not None:

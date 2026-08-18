@@ -1,12 +1,12 @@
 # Physical Realism Corrections — post–PR-9 production hardening
 
-> **Status:** **CR-0–CR-9** accepted (Atlas regen leftovers remain). Hypsometry stays accepted.  
-> **Authority:** This document amends production acceptance of PR-0…PR-9 foundation where fixed-seed audit contradicts milestone notes.  
-> **Normative design:** [`WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md) remains primary for algorithms; where annex acceptance was marked done but production fails, **this corrections track takes precedence** until closed.  
+> **Status:** **CR-0–CR-9** baseline implemented — **correction required** ([`WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md`](WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md)). Hypsometry stays accepted.  
+> **Authority:** This document amends production acceptance of PR-0…PR-9 foundation where fixed-seed audit contradicts milestone notes. The addendum takes precedence where CR-6…CR-9 production gates still fail.  
+> **Normative design:** [`WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md) remains primary for algorithms; where annex acceptance was marked done but production fails, **this corrections track + addendum** take precedence until closed.  
 > **Tracker:** [`PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md).  
-> **Rule:** One **CR-N** milestone at a time. Validate → `docs/validation/physical_realism_crN.md` → stop.  
+> **Rule:** One **CR-N** / **C-N** milestone at a time. Validate → stop.  
 > **Do not** retune precipitation, `folding_ratio`, SST, or `lake_min_depth_m` to hide the defects below.  
-> **Next when instructed:** optional atlas **B10**. CR track is complete.
+> **Next when instructed:** **C10** (C9 delivered; landform threshold 0.60 unchanged; Atlas 183716 leftover).
 
 ---
 
@@ -138,13 +138,25 @@ River cosmetics densify blue lines but **are not** a PET or lake-geometry fix.
 
 ```text
 CR-0 … CR-5   Foundation repair (notes stand; several defects reopened)
-  → CR-6  Hydrology hotfix (PET, outlets, water_state, liquid mask, Godot km)  ✅
-  → CR-7  Light hydrology v2 (soil bucket, m³/s, km losses, basin storage)  ✅
-  → CR-8  Atmosphere (conservative advect, lee as brake, monsoon, one hydro↔evap pass)  ✅
-  → CR-9  Erosion slopes, landform calibration, seasonal BiomeV2  ✅
+  → CR-6  Hydrology hotfix  BASELINE — CORRECTION REQUIRED (C0–C2)
+  → CR-7  Light hydrology v2  BASELINE — CORRECTION REQUIRED (C1–C2)
+  → CR-8  Atmosphere  BASELINE — CORRECTION REQUIRED (C4)
+  → CR-9  Erosion / landforms / BiomeV2  BASELINE — CORRECTION REQUIRED (C3/C6/C7)
+  → C0    Product-contract hotfixes  ✅
+  → C1    Lake geometry from storage  ✅
+  → C2    Rivers, channel losses, bounded coupling ✅
+  → C3    Metric erosion recalibration ✅ (defaults not retuned)
+  → C3T   Temperature-state integrity ✅ (gain default 0)
+  → C4    Conservative moisture transport ✅ (Atlas spin-up leftover)
+  → C5    Precipitation / monsoon ✅ (YAML knobs not retuned)
+  → C6    BiomeV2 ✅ (climatology + canonical rasters/hex)
+  → C7    Landforms ✅ (scales / classes / objects; threshold 0.60)
+  → C8    WorldSpatialModel / hex / query ✅
+  → C9    Godot BiomeV2 / landform modes ✅
+  → C10   Multi-seed calibration / Full RSS (next)
 ```
 
-**Hard gate:** do not calibrate precipitation until Atlas spin-up leftover is measured. CR track is complete; start B10 only when instructed.
+**Hard gate:** do not calibrate precipitation until conservative transport (C4) is in place. Atlas seed `183716` spin-up is an honest leftover until regen.
 
 **Parallel (optional):** B10 atlas Full land polys — presentation only. Does not fix F-15…F-21.
 
@@ -231,7 +243,7 @@ CR-0 … CR-5   Foundation repair (notes stand; several defects reopened)
 
 ### CR-6 — Hydrology hotfix ✅
 
-**Status:** Accepted — [`docs/validation/physical_realism_cr6.md`](validation/physical_realism_cr6.md) (2026-08-17).
+**Status:** BASELINE IMPLEMENTED — CORRECTION REQUIRED — [`docs/validation/physical_realism_cr6.md`](validation/physical_realism_cr6.md). Skipped Atlas 183716 is not production Accepted.
 
 **Intent:** stop treating fill envelopes and dry playas as liquid water; stop applying annual PET twelve times; make Godot write packaged climate km.
 
@@ -245,13 +257,13 @@ CR-0 … CR-5   Foundation repair (notes stand; several defects reopened)
 
 **Not in CR-6:** soil bucket, Q in m³/s, monsoon retune, orographic_frac sweep, landform score formula, BiomeV2, Full memory rewrite.
 
-**Acceptance:** fixtures + suite. Atlas 183716 regen leftover (expected liquid ≪ 10.64%; PET/12). **Met.** Spin-up not required (CR-8).
+**Acceptance:** fixtures + suite. Atlas 183716 regen leftover. **Not production Accepted.** Remainder → addendum C0–C2.
 
-**Stop.** Next when instructed: **CR-7** only.
+**Stop.** Next was **CR-7** only. Reopened by addendum.
 
 ### CR-7 — Light hydrology v2 ✅
 
-**Status:** Accepted — [`docs/validation/physical_realism_cr7.md`](validation/physical_realism_cr7.md) (2026-08-17).
+**Status:** BASELINE IMPLEMENTED — CORRECTION REQUIRED — [`docs/validation/physical_realism_cr7.md`](validation/physical_realism_cr7.md). Skipped Atlas 183716 is not production Accepted.
 
 **Intent:** after CR-6, replace rain+melt-as-Q with a cheap basin/cell water cycle. No hydraulic solver, no groundwater.
 
@@ -263,13 +275,13 @@ CR-0 … CR-5   Foundation repair (notes stand; several defects reopened)
 
 **Not in CR-7:** conservative advection / lee / monsoon / hydro↔evap iteration (**CR-8**, accepted). Landforms/erosion/BiomeV2 (CR-9); Full memory rewrite (F-14).
 
-**Acceptance:** fixtures + suite (continuity/seasonality unit tests; no Full default change). Atlas 183716 regen leftover. **Met.**
+**Acceptance:** fixtures + suite. Atlas 183716 regen leftover. **Not production Accepted.** Remainder → addendum C1–C2.
 
-**Stop.** Next when instructed: **CR-8** only.
+**Stop.** Next was **CR-8** only. Reopened by addendum.
 
 ### CR-8 — Atmosphere (reopen CR-3 production) ✅
 
-**Status:** Accepted — [`docs/validation/physical_realism_cr8.md`](validation/physical_realism_cr8.md) (2026-08-17).
+**Status:** BASELINE IMPLEMENTED — CORRECTION REQUIRED — [`docs/validation/physical_realism_cr8.md`](validation/physical_realism_cr8.md). Skipped Atlas 183716 is not production Accepted.
 
 **Intent:** only after real liquid masks (CR-6). Do not calibrate precip before this.
 
@@ -278,13 +290,13 @@ CR-0 … CR-5   Foundation repair (notes stand; several defects reopened)
 - Monsoon from seasonal land/ocean anomalies vs their own annual means; sea-level or smoothed lowland T; 300–800 km regional mean; **gate off** when the sign does not flip.
 - One damped hydrology↔evaporation iteration after real water masks.
 
-**Acceptance:** fixtures + suite. Atlas 183716 `spinup_converged` **leftover** (not regenerated). Monsoon gate fires on fixtures; residual budget not a `lee_sink`. **Met.**
+**Acceptance:** fixtures + suite. Atlas 183716 `spinup_converged` leftover. **Not production Accepted.** Remainder → addendum C4.
 
-**Stop.** Next when instructed: **CR-9** only.
+**Stop.** Next was **CR-9** only. Reopened by addendum.
 
 ### CR-9 — Erosion, landforms, BiomeV2 ✅
 
-**Status:** Accepted — [`docs/validation/physical_realism_cr9.md`](validation/physical_realism_cr9.md) (2026-08-17).
+**Status:** BASELINE IMPLEMENTED — CORRECTION REQUIRED — [`docs/validation/physical_realism_cr9.md`](validation/physical_realism_cr9.md). Skipped Atlas 183716 is not production Accepted.
 
 **Intent:** after water is honest.
 
@@ -292,9 +304,81 @@ CR-0 … CR-5   Foundation repair (notes stand; several defects reopened)
 - Recalibrate mountain / escarpment; contours and ridge centerlines; `calibrated` not a constant True.
 - Holdridge remains an **annual diagnostic**. Add seasonal BiomeV2 (frost months, growing season, water deficit, soil state) on the climate grid.
 
-**Acceptance:** fixtures + suite. Hilly land fraction < 0.25 at threshold 0.60. Atlas 183716 mountain fraction / pit count **leftover**. **Met.**
+**Acceptance:** fixtures + suite. Atlas 183716 mountain fraction / pit count leftover. **Not production Accepted.** Remainder → addendum C3 / C6 / C7.
 
-**Stop.** CR track complete. Next when instructed: optional **B10** only.
+**Stop.** CR baseline complete. Corrective track starts at **C0**.
+
+### C0 — Product-contract hotfixes ✅
+
+**Status:** Delivered — [`docs/validation/worldgen_corrective_c0.md`](validation/worldgen_corrective_c0.md) (2026-08-17).
+
+**Intent:** stop visibly false atlas water and BiomeV2 units; tests must fail for the demonstrated reasons; skipped Atlas cannot read as Accepted.
+
+**Stop.** Next was **C1** only.
+
+### C1 — Lake geometry from storage ✅
+
+**Status:** Delivered — [`docs/validation/worldgen_corrective_c1.md`](validation/worldgen_corrective_c1.md) (2026-08-17).
+
+**Intent:** liquid area comes from monthly storage on a discrete A–V–h curve, not from the fill envelope. Open lakes are not auto-filled to spill.
+
+**Stop.** Next was **C2** only.
+
+### C2 — Rivers, channel losses, bounded coupling ✅
+
+**Status:** Delivered — [`docs/validation/worldgen_corrective_c2.md`](validation/worldgen_corrective_c2.md) (2026-08-17).
+
+**Intent:** physical channel network from catchment + effective Q; display LOD after; PET-over-cell transmission replaced by flow-limited channel-bed loss; river state/catchment/Q/loss exported; fractional river evap; bounded moisture–hydrology coupling with Jaccard / ΔQ.
+
+**Stop.** Next was **C3** only.
+
+### C3 — Metric erosion recalibration and land-only coastal aggregation ✅
+
+**Status:** Delivered — [`docs/validation/worldgen_corrective_c3.md`](validation/worldgen_corrective_c3.md) (2026-08-17). Defaults **not** retuned.
+
+**Intent:** keep metric slope/Laplacian; expose pass-1 `thermal_kappa` / `fluvial_k` separately from final `stream_power_k`; fail a corr-only no-op via a 1 m land-mean lower bound; never average bathymetry into climate-land elevation.
+
+**Stop.** Next was **C3T** only.
+
+### C3T — Temperature-state integrity and optional continental seasonality ✅
+
+**Status:** Delivered — [`docs/validation/worldgen_corrective_c3t.md`](validation/worldgen_corrective_c3t.md) (2026-08-17). `continental_seasonality_gain` default **0**.
+
+**Intent:** DEM and SST corrections update the declared temperature states once; diagnostics are recomputed from the named array; monsoon reads DEM-corrected pre-SST base. Optional inland amplitude gain is tested, not retuned.
+
+**Stop.** Next when instructed: **C4** only.
+
+### C4 — Conservative atmospheric moisture transport ✅
+
+**Status:** Delivered — [`docs/validation/worldgen_corrective_c4.md`](validation/worldgen_corrective_c4.md) (2026-08-18). Face-flux CFL advection; production `spinup_max_years=48`; precip knobs **not** retuned. Atlas `183716` spin-up **leftover**.
+
+**Intent:** Shared face-flux transport with fail-closed CFL, an accounted monthly budget, and field spin-up gates. Do not treat `advect_max_substeps` as physical reach.
+
+**Stop.** Next when instructed: **C5** only.
+
+### C5 — Precipitation mechanisms and regional monsoon ✅
+
+**Status:** Delivered — [`docs/validation/worldgen_corrective_c5.md`](validation/worldgen_corrective_c5.md) (2026-08-18). Metric smoothed orography, humidity stratiform, sector monsoon. Production precip YAML **not** retuned. Atlas `183716` leftover.
+
+**Intent:** large-scale and orographic precipitation are both operational; lee is efficiency not a sink; monsoon gates by local seasonal contrast.
+
+**Stop.** Next when instructed: **C6** only.
+
+### C6 — BiomeV2 correctness and canonical integration ✅
+
+**Status:** Delivered — [`docs/validation/worldgen_corrective_c6.md`](validation/worldgen_corrective_c6.md) (2026-08-18). Growing-season soil climatology, inspectable thermal/moisture axes, liquid-fraction lake override, RasterStore/hex/query round-trip. Holdridge remains a separate annual view. Atlas `183716` leftover.
+
+**Intent:** wetland and soil state are climatological, not a wet December from a one-year zero soil bucket; display class does not erase seasonal frost on the axes.
+
+**Stop.** Next when instructed: **C7** only.
+
+### C7 — Landform scales, classes, masks, and objects ✅
+
+**Status:** Delivered — [`docs/validation/worldgen_corrective_c7.md`](validation/worldgen_corrective_c7.md) (2026-08-18). One-cell minimum radius, land-fraction coastal stats, mask reapply, geodesic ridges, plateau rims, local-form coverage. `mountain_score_threshold` **0.60** not retuned. Atlas `183716` leftover.
+
+**Intent:** scales are honest about collapsing windows; escarpment is a rim/step not a continent paint; object geometry stays inside the mask.
+
+**Stop.** Next when instructed: **C8** only.
 
 ---
 
@@ -325,13 +409,11 @@ Physical realism corrections: execute CR-0 only.
 Physical realism corrections: execute CR-1 only.
 ```
 
-After CR-9:
+After C9:
 
 ```text
-Plan B presentation: B10 Full land polys when requested.
+Worldgen corrective addendum: execute C10 only.
 ```
-
-Do **not** start a new CR. Atlas 183716 leftovers remain until regen. B10 remains optional presentation.
 
 ---
 

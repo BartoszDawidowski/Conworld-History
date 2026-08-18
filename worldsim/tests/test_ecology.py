@@ -10,6 +10,8 @@ from worldsim.physical.ecology import EcologyParams, HoldridgeOverride, build_ec
 from worldsim.physical.ecology.biotemperature import annual_biotemperature_c, pet_ratio
 from worldsim.physical.ecology.holdridge import (
     classify_holdridge,
+    holdridge_display_legend,
+    holdridge_zone_color_hex,
     humanize_zone_label,
     zone_label_for_id,
 )
@@ -107,3 +109,16 @@ def test_pet_ratio_wetter_lower() -> None:
     wet = pet_ratio(biotemperature_c=bio, annual_precipitation=np.full((4, 4), 10.0))
     dry = pet_ratio(biotemperature_c=bio, annual_precipitation=np.full((4, 4), 1.0))
     assert float(wet.mean()) < float(dry.mean())
+
+
+def test_holdridge_display_legend_has_class_colors() -> None:
+    legend = holdridge_display_legend()
+    assert legend["0"] == "Ocean"
+    assert legend["classes"]["0"]["label"] == "Ocean"
+    assert legend["classes"]["0"]["color"] == holdridge_zone_color_hex(0)
+    assert legend["classes"]["0"]["color"].startswith("#")
+    assert all(
+        isinstance(spec, dict) and "label" in spec and "color" in spec
+        for key, spec in legend["classes"].items()
+        if str(key).isdigit()
+    )

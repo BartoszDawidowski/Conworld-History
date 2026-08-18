@@ -99,6 +99,11 @@ class MoistureParams:
     monsoon_regional_mean_km: float = 500.0
     planet_radius_km: float = 6371.0
 
+    @property
+    def advect_max_substeps(self) -> int:
+        """Numerical CFL safety cap. Legacy YAML/API name is ``advect_steps``."""
+        return int(self.advect_steps)
+
 
 @dataclass
 class MoistureResult:
@@ -111,6 +116,7 @@ class MoistureResult:
     convective_precip: NDArray[np.float64]
     annual_precipitation: NDArray[np.float64]
     diagnostics: dict[str, Any]
+    land_store: NDArray[np.float64] | None = None
 
     def save(self, directory: Path) -> None:
         directory.mkdir(parents=True, exist_ok=True)
@@ -123,6 +129,9 @@ class MoistureResult:
             orographic_lift=self.orographic_lift,
             convective_precip=self.convective_precip,
             annual_precipitation=self.annual_precipitation,
+            land_store=np.asarray(self.land_store)
+            if self.land_store is not None
+            else np.array([], dtype=np.float64),
         )
         (directory / "moisture_diagnostics.json").write_text(
             json.dumps(self.diagnostics, indent=2, sort_keys=True) + "\n",
@@ -229,6 +238,9 @@ def build_moisture(
     lake_mask: NDArray[np.bool_] | None = None,
     river_mask: NDArray[np.bool_] | None = None,
     lake_fraction: NDArray[np.floating] | None = None,
+    river_fraction: NDArray[np.floating] | None = None,
+    q_init: NDArray[np.floating] | None = None,
+    land_store_init: NDArray[np.floating] | None = None,
     reporter: ProgressReporter | None = None,
 ) -> MoistureResult:
     params = params or MoistureParams()
@@ -323,8 +335,10 @@ def build_moisture(
         lake_mask=lake_mask,
         river_mask=river_mask,
         lake_fraction=lake_fraction,
+        river_fraction=river_fraction,
         months=months,
-        advect_steps=params.advect_steps,
+        advect_steps=params.advect_max_substeps,
+        advect_max_substeps=params.advect_max_substeps,
         advect_wind_scale=params.advect_wind_scale,
         diffusion_mix_per_month=params.diffusion_mix_per_month,
         large_scale_frac=params.large_scale_frac,
@@ -347,6 +361,8 @@ def build_moisture(
         itcz_width_deg=params.itcz_width_deg,
         planet_radius_km=params.planet_radius_km,
         advect_scale_ref_width=ADVECT_SCALE_REF_WIDTH,
+        q_init=q_init,
+        land_store_init=land_store_init,
     )
 
     if reporter is not None:
@@ -369,6 +385,7 @@ def build_moisture(
             "height": climate.extent.height,
             "months": months,
             "advect_steps": params.advect_steps,
+            "advect_max_substeps": params.advect_max_substeps,
             "advect_wind_scale": params.advect_wind_scale,
             "large_scale_frac": params.large_scale_frac,
             "orographic_frac": params.orographic_frac,
@@ -403,7 +420,10 @@ def build_moisture(
             "monsoon_regional_mean_cells_effective": regional_cells,
             **monsoon_diag,
             "inland_water_sources": bool(
-                lake_mask is not None or river_mask is not None
+                lake_mask is not None
+                or river_mask is not None
+                or lake_fraction is not None
+                or river_fraction is not None
             ),
             "lake_cell_count": int(np.count_nonzero(lake_mask))
             if lake_mask is not None
@@ -412,7 +432,13 @@ def build_moisture(
             if river_mask is not None
             else 0,
             "moisture_role": (
-                "moisture_ecology" if lake_mask is not None or river_mask is not None
+                "moisture_ecology"
+                if (
+                    lake_mask is not None
+                    or river_mask is not None
+                    or lake_fraction is not None
+                    or river_fraction is not None
+                )
                 else "moisture_hydrology_input"
             ),
             **(fields["budget"] if isinstance(fields.get("budget"), dict) else {}),
@@ -420,9 +446,11 @@ def build_moisture(
     )
     # CR-1/CR-3: acceptance requires periodic spin-up (q + land store when gated).
     spinup_ok = bool(diagnostics.get("spinup_converged", False))
+    budget_ok = bool(diagnostics.get("moisture_budget_ok", True))
     heuristic_ok = bool(diagnostics.get("heuristic_fields_ok", False))
-    diagnostics["acceptance_ok"] = bool(spinup_ok)
+    diagnostics["acceptance_ok"] = bool(spinup_ok and budget_ok)
     diagnostics["acceptance_requires_spinup"] = True
+    diagnostics["moisture_budget_ok"] = budget_ok
     diagnostics["heuristic_fields_ok"] = heuristic_ok
     diagnostics["land_store_closure_gated"] = bool(
         diagnostics.get("spinup_store_gated", False)
@@ -442,4 +470,5 @@ def build_moisture(
         convective_precip=fields["convective_precip"],
         annual_precipitation=annual,
         diagnostics=diagnostics,
+        land_store=fields.get("land_store"),
     )

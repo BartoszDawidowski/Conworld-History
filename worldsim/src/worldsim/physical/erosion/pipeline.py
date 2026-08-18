@@ -13,6 +13,8 @@ from numpy.typing import NDArray
 from worldsim.physical.erosion.pass_one import (
     apply_erosion_pass_one,
     count_land_local_minima,
+    erosion_nontrivial_gate,
+    land_elevation_delta_stats,
     land_roughness,
     rock_resistance_proxy,
     slope_magnitude,
@@ -28,9 +30,18 @@ from worldsim.spatial.resample import upsample_bilinear_cylindrical
 
 @dataclass(frozen=True)
 class ErosionParams:
+    """First-pass (pre-hydrology) erosion. Independent of final stream-power.
+
+    Units: ``thermal_kappa`` is the 1 km-cell thermal coefficient
+    (``kappa_m2 = thermal_kappa * 1000²``). ``fluvial_k`` is precip×slope
+    incision on this pass only — not ``FinalRecalcParams.stream_power_k``.
+    """
+
     iterations: int = 5
     thermal_kappa: float = 0.08
     fluvial_k: float = 8.0
+    max_step_m: float = 25.0
+    macro_blend: float = 0.35
     planet_radius_km: float = EARTH_RADIUS_KM
 
 
@@ -128,6 +139,8 @@ def build_erosion_pass_one(
         iterations=params.iterations,
         thermal_kappa=params.thermal_kappa,
         fluvial_k=params.fluvial_k,
+        max_step_m=params.max_step_m,
+        macro_blend=params.macro_blend,
         planet_radius_km=params.planet_radius_km,
     )
 
@@ -139,15 +152,26 @@ def build_erosion_pass_one(
     corr = _macro_relief_correlation(before, dem_v1, ocean)
     slope = slope_magnitude(dem_v1, planet_radius_km=params.planet_radius_km)
 
+    delta_stats = land_elevation_delta_stats(before, dem_v1, ocean)
+    nontrivial, min_required = erosion_nontrivial_gate(
+        float(delta_stats["mean_abs_delta_land_m"]),
+        float(delta_stats["elev_range_land_m"]),
+    )
     drainage_improved = minima_after <= minima_before
     roughness_reduced = rough_after <= rough_before * 1.02
     macro_preserved = corr >= 0.97
+    ocean_unchanged = bool(delta_stats["ocean_unchanged"])
 
-    land = ~ocean
     diagnostics: dict[str, Any] = {
         "width": tw,
         "height": th,
         "iterations": params.iterations,
+        "thermal_kappa": float(params.thermal_kappa),
+        "thermal_kappa_units": "1km_cell_coeff; kappa_m2=thermal_kappa*1000^2",
+        "fluvial_k": float(params.fluvial_k),
+        "fluvial_k_role": "first_pass_precip_slope_only",
+        "max_step_m": float(params.max_step_m),
+        "macro_blend": float(params.macro_blend),
         "local_minima_before": minima_before,
         "local_minima_after": minima_after,
         "drainage_quality_improved": drainage_improved,
@@ -156,16 +180,22 @@ def build_erosion_pass_one(
         "roughness_reduced": roughness_reduced,
         "macro_relief_correlation": corr,
         "macro_relief_preserved": macro_preserved,
-        "mean_abs_delta_land_m": float(np.mean(np.abs(delta[land])))
-        if np.any(land)
-        else 0.0,
-        "max_abs_delta_land_m": float(np.max(np.abs(delta[land])))
-        if np.any(land)
-        else 0.0,
-        "ocean_unchanged": bool(np.allclose(dem_v1[ocean], before[ocean])),
+        "mean_abs_delta_land_m": float(delta_stats["mean_abs_delta_land_m"]),
+        "median_abs_delta_land_m": float(delta_stats["median_abs_delta_land_m"]),
+        "p90_abs_delta_land_m": float(delta_stats["p90_abs_delta_land_m"]),
+        "max_abs_delta_land_m": float(delta_stats["max_abs_delta_land_m"]),
+        "elev_range_land_m": float(delta_stats["elev_range_land_m"]),
+        "erosion_min_mean_abs_delta_m": min_required,
+        "erosion_nontrivial": nontrivial,
+        "ocean_unchanged": ocean_unchanged,
         "slope_algorithm": "metric_gridmetrics_v1",
+        "erosion_algorithm": "c3_metric_pass1_v1",
         "acceptance_ok": bool(
-            drainage_improved and macro_preserved and roughness_reduced
+            drainage_improved
+            and macro_preserved
+            and roughness_reduced
+            and ocean_unchanged
+            and nontrivial
         ),
     }
 

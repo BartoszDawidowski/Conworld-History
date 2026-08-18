@@ -12,6 +12,7 @@ uniform vec4 coast_color : source_color = vec4(0.72, 0.64, 0.52, 1.0);
 uniform int style = 2;
 uniform int has_ocean_tex = 0;
 uniform int show_coast = 1;
+uniform int sample_nearest = 0;
 uniform float edge_soft = 0.16;
 uniform float mode_blur_texels = 0.65;
 // Screen-space coast half-width (pixels); AA fringe beyond this.
@@ -32,6 +33,16 @@ vec4 sample_blurred(sampler2D tex, vec2 uv, float texels) {
 	return c;
 }
 
+vec4 sample_mode(sampler2D tex, vec2 uv, float texels) {
+	if (sample_nearest == 1) {
+		ivec2 sz = textureSize(tex, 0);
+		vec2 px = uv * vec2(float(max(sz.x, 1)), float(max(sz.y, 1)));
+		ivec2 ip = ivec2(clamp(px, vec2(0.0), vec2(float(sz.x) - 1.0, float(sz.y) - 1.0)));
+		return texelFetch(tex, ip, 0);
+	}
+	return sample_blurred(tex, uv, texels);
+}
+
 void fragment() {
 	float raw = texture(land_mask, UV).r;
 	float m = smoothstep(0.5 - edge_soft, 0.5 + edge_soft, raw);
@@ -42,7 +53,7 @@ void fragment() {
 
 	vec3 land_rgb = land_flat.rgb;
 	if (style == 0) {
-		land_rgb = sample_blurred(mode_tex, UV, mode_blur_texels).rgb;
+		land_rgb = sample_mode(mode_tex, UV, mode_blur_texels).rgb;
 	} else if (style == 2) {
 		vec4 elev = sample_blurred(mode_tex, UV, mode_blur_texels);
 		float g = dot(elev.rgb, vec3(0.299, 0.587, 0.114));

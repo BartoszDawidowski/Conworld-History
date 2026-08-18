@@ -10,7 +10,11 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from worldsim.physical.climate.pipeline import ClimateResult, downsample_mean
+from worldsim.physical.climate.pipeline import (
+    ClimateResult,
+    climate_grid_land_elevation,
+    downsample_mean,
+)
 from worldsim.physical.ecology.pipeline import EcologyResult
 from worldsim.physical.hydrology.pipeline import HydrologyResult
 from worldsim.physical.moisture.pipeline import MoistureResult
@@ -22,6 +26,7 @@ from worldsim.spatial.hex_grid.aggregate import (
     aggregate_scalar,
     build_hex_of_climate_cells,
     dominant_int,
+    unique_positive_ids_per_hex,
 )
 from worldsim.spatial.hex_grid.intersections import (
     coastline_ids_per_hex,
@@ -38,6 +43,47 @@ from worldsim.spatial.hex_grid.layout import (
     neighbour_matrix,
     neighbours,
 )
+
+_OPTIONAL_HEX_ARRAYS: tuple[str, ...] = (
+    "mountain_score_mean",
+    "plateau_score_mean",
+    "mountain_terrain_fraction",
+    "mountain_range_fraction",
+    "plateau_context_fraction",
+    "plateau_object_fraction",
+    "context_dominant",
+    "local_form_dominant",
+    "terrain_barrier_strength",
+    "biome_v2_dominant",
+    "frost_months_mean",
+    "growing_season_months_mean",
+    "water_deficit_mm_mean",
+    "soil_state_dominant",
+    "local_relief_mean_m",
+    "slope_mean_deg",
+    "temperature_annual_c",
+    "precipitation_annual_mm",
+    "permanent_water_fraction",
+    "seasonal_water_fraction",
+    "perennial_river_fraction",
+    "seasonal_river_fraction",
+    "wadi_fraction",
+    "mean_effective_discharge",
+)
+
+_INT_OPTIONAL = {
+    "context_dominant",
+    "local_form_dominant",
+    "biome_v2_dominant",
+    "soil_state_dominant",
+}
+
+
+def _optional_hex_array(env: Any, name: str) -> NDArray[Any] | None:
+    if name not in env.files:
+        return None
+    dtype = np.int32 if name in _INT_OPTIONAL else np.float64
+    return np.asarray(env[name], dtype=dtype)
 
 
 @dataclass
@@ -65,13 +111,34 @@ class HexAnalysisResult:
     coastline_segment_ids: list[list[int]]
     river_edge_mask: NDArray[np.uint8]
     diagnostics: dict[str, Any]
-    # PR-9 landform aggregates (optional; zeros if analysis absent)
-    mountain_fraction: NDArray[np.float64] | None = None
-    plateau_fraction: NDArray[np.float64] | None = None
+    # C8 landform / water aggregates (optional)
+    mountain_score_mean: NDArray[np.float64] | None = None
+    plateau_score_mean: NDArray[np.float64] | None = None
+    mountain_terrain_fraction: NDArray[np.float64] | None = None
+    mountain_range_fraction: NDArray[np.float64] | None = None
+    plateau_context_fraction: NDArray[np.float64] | None = None
+    plateau_object_fraction: NDArray[np.float64] | None = None
     context_dominant: NDArray[np.int32] | None = None
+    local_form_dominant: NDArray[np.int32] | None = None
     terrain_barrier_strength: NDArray[np.float64] | None = None
     mountain_range_ids: list[list[int]] | None = None
     plateau_ids: list[list[int]] | None = None
+    basin_ids: list[list[int]] | None = None
+    biome_v2_dominant: NDArray[np.int32] | None = None
+    frost_months_mean: NDArray[np.float64] | None = None
+    growing_season_months_mean: NDArray[np.float64] | None = None
+    water_deficit_mm_mean: NDArray[np.float64] | None = None
+    soil_state_dominant: NDArray[np.int32] | None = None
+    local_relief_mean_m: NDArray[np.float64] | None = None
+    slope_mean_deg: NDArray[np.float64] | None = None
+    temperature_annual_c: NDArray[np.float64] | None = None
+    precipitation_annual_mm: NDArray[np.float64] | None = None
+    permanent_water_fraction: NDArray[np.float64] | None = None
+    seasonal_water_fraction: NDArray[np.float64] | None = None
+    perennial_river_fraction: NDArray[np.float64] | None = None
+    seasonal_river_fraction: NDArray[np.float64] | None = None
+    wadi_fraction: NDArray[np.float64] | None = None
+    mean_effective_discharge: NDArray[np.float64] | None = None
 
     @property
     def n_cells(self) -> int:
@@ -99,11 +166,10 @@ class HexAnalysisResult:
             "permeability_mean": self.permeability_mean,
             "river_edge_mask": self.river_edge_mask,
         }
-        if self.mountain_fraction is not None:
-            payload["mountain_fraction"] = self.mountain_fraction
-            payload["plateau_fraction"] = self.plateau_fraction
-            payload["context_dominant"] = self.context_dominant
-            payload["terrain_barrier_strength"] = self.terrain_barrier_strength
+        for name in _OPTIONAL_HEX_ARRAYS:
+            arr = getattr(self, name)
+            if arr is not None:
+                payload[name] = arr
         np.savez_compressed(directory / "hex_environment.npz", **payload)
         refs = {
             "river_ids": self.river_ids,
@@ -113,6 +179,8 @@ class HexAnalysisResult:
         if self.mountain_range_ids is not None:
             refs["mountain_range_ids"] = self.mountain_range_ids
             refs["plateau_ids"] = self.plateau_ids
+        if self.basin_ids is not None:
+            refs["basin_ids"] = self.basin_ids
         (directory / "hex_object_refs.json").write_text(
             json.dumps(refs, separators=(",", ":")) + "\n",
             encoding="utf-8",
@@ -147,7 +215,7 @@ class HexAnalysisResult:
                 while width * height != n and height > 1:
                     height -= 1
                     width = n // height
-        return cls(
+        result = cls(
             spec=HexGridSpec(width=width, height=height, orientation="flat_top"),
             center_x=np.asarray(env["center_x"], dtype=np.float64),
             center_y=np.asarray(env["center_y"], dtype=np.float64),
@@ -176,31 +244,53 @@ class HexAnalysisResult:
             coastline_segment_ids=list(refs.get("coastline_segment_ids", [])),
             river_edge_mask=np.asarray(env["river_edge_mask"], dtype=np.uint8),
             diagnostics=diagnostics,
-            mountain_fraction=(
-                np.asarray(env["mountain_fraction"], dtype=np.float64)
-                if "mountain_fraction" in env.files
-                else None
-            ),
-            plateau_fraction=(
-                np.asarray(env["plateau_fraction"], dtype=np.float64)
-                if "plateau_fraction" in env.files
-                else None
-            ),
-            context_dominant=(
-                np.asarray(env["context_dominant"], dtype=np.int32)
-                if "context_dominant" in env.files
-                else None
-            ),
-            terrain_barrier_strength=(
-                np.asarray(env["terrain_barrier_strength"], dtype=np.float64)
-                if "terrain_barrier_strength" in env.files
-                else None
-            ),
             mountain_range_ids=list(refs["mountain_range_ids"])
             if "mountain_range_ids" in refs
             else None,
             plateau_ids=list(refs["plateau_ids"]) if "plateau_ids" in refs else None,
+            basin_ids=list(refs["basin_ids"]) if "basin_ids" in refs else None,
+            **{
+                name: _optional_hex_array(env, name) for name in _OPTIONAL_HEX_ARRAYS
+            },
         )
+        # Legacy caches stored score means as *_fraction.
+        if result.mountain_score_mean is None and "mountain_fraction" in env.files:
+            result.mountain_score_mean = np.asarray(env["mountain_fraction"], dtype=np.float64)
+        if result.plateau_score_mean is None and "plateau_fraction" in env.files:
+            result.plateau_score_mean = np.asarray(env["plateau_fraction"], dtype=np.float64)
+        return result
+
+
+def _lake_period_maps(hydrology: HydrologyResult) -> tuple[NDArray[np.float64] | None, NDArray[np.float64] | None]:
+    """Permanent vs seasonal liquid fraction rasters at hydrology resolution."""
+    frac = getattr(hydrology, "water_fraction_mean", None)
+    lid = getattr(hydrology, "lake_id", None)
+    if frac is None or lid is None or not np.asarray(lid).size:
+        return None, None
+    wf = np.asarray(frac, dtype=np.float64)
+    ids = np.asarray(lid, dtype=np.int32)
+    if wf.shape != ids.shape:
+        return None, None
+    recs = list(getattr(hydrology, "lake_records", None) or [])
+    max_id = int(ids.max()) if ids.size else 0
+    code = np.zeros(max_id + 1, dtype=np.uint8)
+    for rec in recs:
+        i = int(rec.get("lake_id") or rec.get("id") or 0)
+        if i <= 0 or i > max_id:
+            continue
+        hp = str(rec.get("hydroperiod") or "")
+        if hp == "permanent":
+            code[i] = 1
+        elif hp in ("seasonal", "ephemeral_or_dry"):
+            code[i] = 2
+    if recs:
+        cls = code[np.clip(ids, 0, max_id)]
+        perm = np.where(cls == 1, wf, 0.0)
+        seas = np.where(cls == 2, wf, 0.0)
+    else:
+        perm = wf.copy()
+        seas = np.zeros_like(wf)
+    return perm, seas
 
 
 def build_hex_analysis_grid(
@@ -245,36 +335,60 @@ def build_hex_analysis_grid(
 
     lake_frac = np.zeros(n, dtype=np.float64)
     if hydrology is not None:
-        # downsample lake mask to climate grid then aggregate
-        from worldsim.physical.climate.pipeline import downsample_mode_bool
+        frac_src = getattr(hydrology, "water_fraction_mean", None)
+        if frac_src is not None and np.asarray(frac_src).size:
+            lake_c = downsample_mean(
+                np.asarray(frac_src, dtype=np.float64),
+                climate.extent.width,
+                climate.extent.height,
+            )
+            lake_mean, _, _, _, _ = aggregate_scalar(lake_c, hex_of, n_hex=n)
+            lake_frac = np.clip(lake_mean, 0.0, 1.0)
+        else:
+            from worldsim.physical.climate.pipeline import downsample_mode_bool
 
-        lake_c = downsample_mode_bool(
-            hydrology.lake_mask, climate.extent.width, climate.extent.height
-        )
-        lake_frac = aggregate_fraction(lake_c, hex_of, n_hex=n)
+            lake_c = downsample_mode_bool(
+                hydrology.lake_mask, climate.extent.width, climate.extent.height
+            )
+            lake_frac = aggregate_fraction(lake_c, hex_of, n_hex=n)
 
     if elevation_terrain_m is not None:
-        elev = downsample_mean(
-            np.asarray(elevation_terrain_m, dtype=np.float64),
+        src = np.asarray(elevation_terrain_m, dtype=np.float64)
+        if hydrology is not None and hydrology.ocean_mask.shape == src.shape:
+            terrain_ocean = hydrology.ocean_mask
+        else:
+            terrain_ocean = src < 0.0
+        elev = climate_grid_land_elevation(
+            src,
+            terrain_ocean,
             climate.extent.width,
             climate.extent.height,
+            climate_ocean_mask=ocean,
+            ocean_elevation_m=climate.elevation_m,
         )
-        elev = np.where(ocean, climate.elevation_m, elev)
     else:
         elev = climate.elevation_m
 
-    elev_mean, elev_min, elev_max, elev_std, _ = aggregate_scalar(
+    elev_mean, elev_min, elev_max, elev_std, land_counts = aggregate_scalar(
         elev, hex_of, n_hex=n, mask=land
     )
-    # For ocean-only hexes, fill elev from all cells
-    elev_all_mean, elev_all_min, elev_all_max, elev_all_std, counts = aggregate_scalar(
-        elev, hex_of, n_hex=n
-    )
-    empty_land = ~np.isfinite(elev_mean)
-    elev_mean = np.where(empty_land, elev_all_mean, elev_mean)
-    elev_min = np.where(empty_land, elev_all_min, elev_min)
-    elev_max = np.where(empty_land, elev_all_max, elev_max)
-    elev_std = np.where(empty_land, elev_all_std, elev_std)
+    _, _, _, _, counts = aggregate_scalar(elev, hex_of, n_hex=n)
+    # Ocean-only / uncovered hexes: land elevation is no-data, not zero.
+    elev_mean = np.where(land_counts > 0, elev_mean, np.nan)
+    elev_min = np.where(land_counts > 0, elev_min, np.nan)
+    elev_max = np.where(land_counts > 0, elev_max, np.nan)
+    elev_std = np.where(land_counts > 0, elev_std, np.nan)
+    local_relief = np.where(land_counts > 0, elev_max - elev_min, np.nan)
+
+    from worldsim.spatial.hex_grid.contract import resample_nearest
+    from worldsim.spatial.metrics import EARTH_RADIUS_KM, grid_metrics
+
+    radius_km = float(climate.diagnostics.get("planet_radius_km", EARTH_RADIUS_KM))
+    gm = grid_metrics(cw, ch, radius_km=radius_km)
+    slope_ratio = gm.metric_slope(elev)
+    slope_deg = np.degrees(np.arctan(np.asarray(slope_ratio, dtype=np.float64)))
+    slope_mean, _, _, _, _ = aggregate_scalar(slope_deg, hex_of, n_hex=n, mask=land)
+    slope_mean = np.where(land_counts > 0, slope_mean, np.nan)
 
     if reporter is not None:
         reporter.progress("hex", 0.45)
@@ -291,6 +405,36 @@ def build_hex_analysis_grid(
     # Hexes with no climate cells (e.g. Quick 128×64 climate vs 256×128 hex) → no data
     hold = np.where(counts > 0, hold, np.int32(-1))
     perm, _, _, _, _ = aggregate_scalar(ecology.permeability, hex_of, n_hex=n, mask=land)
+    perm = np.where(land_counts > 0, perm, np.nan)
+
+    biome_dom = frost_mean = grow_mean = deficit_mean = soil_dom = None
+    if ecology.biome_v2_class is not None:
+        b_all = dominant_int(ecology.biome_v2_class.astype(np.int32), hex_of, n_hex=n)
+        b_land = dominant_int(
+            ecology.biome_v2_class.astype(np.int32), hex_of, n_hex=n, mask=land
+        )
+        biome_dom = np.where(land_frac >= 0.05, b_land, b_all).astype(np.int32)
+        biome_dom = np.where(counts > 0, biome_dom, np.int32(-1))
+        frost_mean, _, _, _, _ = aggregate_scalar(
+            ecology.frost_months.astype(np.float64), hex_of, n_hex=n, mask=land
+        )
+        grow_mean, _, _, _, _ = aggregate_scalar(
+            ecology.growing_season_months.astype(np.float64),
+            hex_of,
+            n_hex=n,
+            mask=land,
+        )
+        deficit_mean, _, _, _, _ = aggregate_scalar(
+            ecology.water_deficit_mm.astype(np.float64), hex_of, n_hex=n, mask=land
+        )
+        frost_mean = np.where(land_counts > 0, frost_mean, np.nan)
+        grow_mean = np.where(land_counts > 0, grow_mean, np.nan)
+        deficit_mean = np.where(land_counts > 0, deficit_mean, np.nan)
+        if ecology.soil_state is not None:
+            soil_dom = dominant_int(
+                ecology.soil_state.astype(np.int32), hex_of, n_hex=n, mask=land
+            )
+            soil_dom = np.where(land_counts > 0, soil_dom, np.int32(-1))
 
     if reporter is not None:
         reporter.progress("hex", 0.7)
@@ -325,7 +469,7 @@ def build_hex_analysis_grid(
     sample_ids = rng.choice(n, size=min(64, n), replace=False)
     err = []
     for hid in sample_ids:
-        if counts[hid] < 1:
+        if counts[hid] < 1 or not np.isfinite(elev_mean[hid]):
             continue
         # climate cell at hex centre
         from worldsim.spatial.coordinates import wrap_x
@@ -353,52 +497,118 @@ def build_hex_analysis_grid(
     # Production default is 256×128; smaller grids are allowed in unit tests.
     production_size_ok = n == 32768
 
-    # PR-9 landform aggregates (climate-grid landform rasters → hex)
-    mountain_frac = plateau_frac = barrier = None
-    context_dom = None
+    # C8 landform aggregates: score mean ≠ terrain/object fraction
+    mountain_score_mean = plateau_score_mean = barrier = None
+    mountain_terrain_fraction = mountain_range_fraction = None
+    plateau_context_fraction = plateau_object_fraction = None
+    context_dom = local_form_dom = None
     mtn_ids: list[list[int]] | None = None
     plat_ids: list[list[int]] | None = None
     if landforms is not None and getattr(landforms, "mountain_score_u8", None) is not None:
-        from worldsim.physical.climate.pipeline import downsample_mean as _ds
+        from worldsim.physical.landforms.classify import BroadContext
 
-        cw, ch = climate.extent.width, climate.extent.height
-        mscore = _ds(
-            landforms.mountain_score_u8.astype(np.float64) / 255.0, cw, ch
+        diag = getattr(landforms, "diagnostics", None) or {}
+        mtn_thr = float(diag.get("mountain_score_threshold", 0.60)) if isinstance(diag, dict) else 0.60
+        mscore = resample_nearest(
+            landforms.mountain_score_u8.astype(np.float64) / 255.0, ch, cw
         )
-        pscore = _ds(
-            landforms.plateau_score_u8.astype(np.float64) / 255.0, cw, ch
+        pscore = resample_nearest(
+            landforms.plateau_score_u8.astype(np.float64) / 255.0, ch, cw
         )
-        mountain_frac, _, _, _, _ = aggregate_scalar(mscore, hex_of, n_hex=n, mask=land)
-        plateau_frac, _, _, _, _ = aggregate_scalar(pscore, hex_of, n_hex=n, mask=land)
-        ctx = landforms.context_id
-        if ctx.shape != (ch, cw):
-            # nearest downsample
-            y_idx = (np.arange(ch) * ctx.shape[0] / ch).astype(np.int32)
-            x_idx = (np.arange(cw) * ctx.shape[1] / cw).astype(np.int32)
-            ctx = ctx[y_idx][:, x_idx]
-        context_dom = dominant_int(ctx.astype(np.int32), hex_of, n_hex=n, mask=land)
-        barrier = np.clip(mountain_frac * 0.85 + (1.0 - land_frac) * 0.0, 0.0, 1.0)
-        # Intersecting object IDs: unique positive IDs per hex from downsampled maps
-        rid = landforms.mountain_range_id
-        pid = landforms.plateau_id
-        if rid.shape != (ch, cw):
-            y_idx = (np.arange(ch) * rid.shape[0] / ch).astype(np.int32)
-            x_idx = (np.arange(cw) * rid.shape[1] / cw).astype(np.int32)
-            rid = rid[y_idx][:, x_idx]
-            pid = pid[y_idx][:, x_idx]
-        mtn_ids = [[] for _ in range(n)]
-        plat_ids = [[] for _ in range(n)]
-        for j in range(ch):
-            for i in range(cw):
-                hid = int(hex_of[j, i])
-                if hid < 0 or hid >= n:
-                    continue
-                r = int(rid[j, i])
-                p = int(pid[j, i])
-                if r > 0 and r not in mtn_ids[hid]:
-                    mtn_ids[hid].append(r)
-                if p > 0 and p not in plat_ids[hid]:
-                    plat_ids[hid].append(p)
+        mountain_score_mean, _, _, _, _ = aggregate_scalar(
+            mscore, hex_of, n_hex=n, mask=land
+        )
+        plateau_score_mean, _, _, _, _ = aggregate_scalar(
+            pscore, hex_of, n_hex=n, mask=land
+        )
+        mountain_score_mean = np.where(land_counts > 0, mountain_score_mean, np.nan)
+        plateau_score_mean = np.where(land_counts > 0, plateau_score_mean, np.nan)
+        mountain_terrain_fraction = aggregate_fraction(
+            (mscore >= mtn_thr) & land, hex_of, n_hex=n
+        )
+        # Land-normalised fractions: share of land cells, not of the whole hex.
+        mountain_terrain_fraction = np.where(
+            land_frac > 0.0, mountain_terrain_fraction / np.maximum(land_frac, 1e-12), np.nan
+        )
+        ctx = resample_nearest(landforms.context_id, ch, cw).astype(np.int32)
+        loc = resample_nearest(landforms.local_form_id, ch, cw).astype(np.int32)
+        context_dom = dominant_int(ctx, hex_of, n_hex=n, mask=land)
+        local_form_dom = dominant_int(loc, hex_of, n_hex=n, mask=land)
+        context_dom = np.where(land_counts > 0, context_dom, np.int32(-1))
+        local_form_dom = np.where(land_counts > 0, local_form_dom, np.int32(-1))
+        plateau_context_fraction = aggregate_fraction(
+            (ctx == int(BroadContext.PLATEAU)) & land, hex_of, n_hex=n
+        )
+        plateau_context_fraction = np.where(
+            land_frac > 0.0,
+            plateau_context_fraction / np.maximum(land_frac, 1e-12),
+            np.nan,
+        )
+        rid = resample_nearest(landforms.mountain_range_id, ch, cw)
+        pid = resample_nearest(landforms.plateau_id, ch, cw)
+        mountain_range_fraction = aggregate_fraction((rid > 0) & land, hex_of, n_hex=n)
+        mountain_range_fraction = np.where(
+            land_frac > 0.0,
+            mountain_range_fraction / np.maximum(land_frac, 1e-12),
+            np.nan,
+        )
+        plateau_object_fraction = aggregate_fraction((pid > 0) & land, hex_of, n_hex=n)
+        plateau_object_fraction = np.where(
+            land_frac > 0.0,
+            plateau_object_fraction / np.maximum(land_frac, 1e-12),
+            np.nan,
+        )
+        barrier = np.where(land_counts > 0, np.clip(mountain_score_mean * 0.85, 0.0, 1.0), np.nan)
+        mtn_ids = unique_positive_ids_per_hex(rid, hex_of, n_hex=n)
+        plat_ids = unique_positive_ids_per_hex(pid, hex_of, n_hex=n)
+
+    precip_scale = float(ecology.diagnostics.get("precip_scale_mm", 200.0))
+    temp_annual = np.mean(temp, axis=1)
+    precip_annual = np.sum(precip, axis=1) * precip_scale
+    temp_annual = np.where(counts > 0, temp_annual, np.nan)
+    precip_annual = np.where(counts > 0, precip_annual, np.nan)
+
+    perm_water = seas_water = None
+    perennial_frac = seasonal_frac = wadi_frac = None
+    mean_q = None
+    basin_ids: list[list[int]] | None = None
+    if hydrology is not None:
+        from worldsim.physical.hydrology.channels import (
+            CHANNEL_PERENNIAL,
+            CHANNEL_SEASONAL,
+            CHANNEL_WADI,
+        )
+
+        perm_src, seas_src = _lake_period_maps(hydrology)
+        if perm_src is not None:
+            perm_c = downsample_mean(perm_src, cw, ch)
+            seas_c = downsample_mean(seas_src, cw, ch)
+            perm_water, _, _, _, _ = aggregate_scalar(perm_c, hex_of, n_hex=n)
+            seas_water, _, _, _, _ = aggregate_scalar(seas_c, hex_of, n_hex=n)
+            perm_water = np.where(counts > 0, np.clip(perm_water, 0.0, 1.0), np.nan)
+            seas_water = np.where(counts > 0, np.clip(seas_water, 0.0, 1.0), np.nan)
+        ch_state = getattr(hydrology, "channel_state", None)
+        if ch_state is not None and np.asarray(ch_state).size:
+            st = resample_nearest(np.asarray(ch_state), ch, cw)
+            perennial_frac = aggregate_fraction(st == CHANNEL_PERENNIAL, hex_of, n_hex=n)
+            seasonal_frac = aggregate_fraction(st == CHANNEL_SEASONAL, hex_of, n_hex=n)
+            wadi_frac = aggregate_fraction(st == CHANNEL_WADI, hex_of, n_hex=n)
+            perennial_frac = np.where(counts > 0, perennial_frac, np.nan)
+            seasonal_frac = np.where(counts > 0, seasonal_frac, np.nan)
+            wadi_frac = np.where(counts > 0, wadi_frac, np.nan)
+            q_src = getattr(hydrology, "river_discharge_proxy", None)
+            if q_src is not None and np.asarray(q_src).size:
+                q = resample_nearest(np.asarray(q_src, dtype=np.float64), ch, cw)
+                channel = st > 0
+                mean_q, _, _, _, q_counts = aggregate_scalar(
+                    q, hex_of, n_hex=n, mask=channel
+                )
+                mean_q = np.where(q_counts > 0, mean_q, np.nan)
+        bid = getattr(hydrology, "basin_id", None)
+        if bid is not None and np.asarray(bid).size:
+            basin_ids = unique_positive_ids_per_hex(
+                resample_nearest(np.asarray(bid), ch, cw), hex_of, n_hex=n
+            )
 
     # PR-1 layout invariants (cheap; always recorded)
     abs_y = np.abs(cy)
@@ -448,7 +658,10 @@ def build_hex_analysis_grid(
             and mean_lat_ok
             and ns_mirror_ok
         ),
-        "landforms_aggregated": mountain_frac is not None,
+        "landforms_aggregated": mountain_score_mean is not None,
+        "precip_scale_mm": precip_scale,
+        "precipitation_annual_unit": "mm_declared_proxy",
+        "hex_contract": "c8",
     }
 
     if reporter is not None:
@@ -479,10 +692,31 @@ def build_hex_analysis_grid(
         coastline_segment_ids=coast_ids,
         river_edge_mask=edge_mask,
         diagnostics=diagnostics,
-        mountain_fraction=mountain_frac,
-        plateau_fraction=plateau_frac,
+        mountain_score_mean=mountain_score_mean,
+        plateau_score_mean=plateau_score_mean,
+        mountain_terrain_fraction=mountain_terrain_fraction,
+        mountain_range_fraction=mountain_range_fraction,
+        plateau_context_fraction=plateau_context_fraction,
+        plateau_object_fraction=plateau_object_fraction,
         context_dominant=context_dom,
+        local_form_dominant=local_form_dom,
         terrain_barrier_strength=barrier,
         mountain_range_ids=mtn_ids,
         plateau_ids=plat_ids,
+        basin_ids=basin_ids,
+        biome_v2_dominant=biome_dom,
+        frost_months_mean=frost_mean,
+        growing_season_months_mean=grow_mean,
+        water_deficit_mm_mean=deficit_mean,
+        soil_state_dominant=soil_dom,
+        local_relief_mean_m=local_relief,
+        slope_mean_deg=slope_mean,
+        temperature_annual_c=temp_annual,
+        precipitation_annual_mm=precip_annual,
+        permanent_water_fraction=perm_water,
+        seasonal_water_fraction=seas_water,
+        perennial_river_fraction=perennial_frac,
+        seasonal_river_fraction=seasonal_frac,
+        wadi_fraction=wadi_frac,
+        mean_effective_discharge=mean_q,
     )

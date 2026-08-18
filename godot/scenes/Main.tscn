@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://conworld_main_atlas"]
+[gd_scene load_steps=4 format=3 uid="uid://conworld_main_atlas"]
 
 [ext_resource type="Script" path="res://scenes/Main.gd" id="1_main"]
 [ext_resource type="Script" path="res://atlas/InspectorPanel.gd" id="2_insp"]
+[ext_resource type="Script" path="res://atlas/LegendPanel.gd" id="3_legend"]
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -89,6 +90,12 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Load world"
 
+[node name="LastWorldBtn" type="Button" parent="Root/TopBar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Last"
+tooltip_text = "Paste the path of the last generated world"
+
 [node name="StatusLabel" type="Label" parent="Root/TopBar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(160, 0)
@@ -122,7 +129,18 @@ theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 8
 theme_override_constants/margin_bottom = 8
 
-[node name="InspectorText" type="RichTextLabel" parent="Root/Body/InspectorPanel/Margin"]
+[node name="InspectorVBox" type="VBoxContainer" parent="Root/Body/InspectorPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="InspectorTabs" type="TabBar" parent="Root/Body/InspectorPanel/Margin/InspectorVBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+clip_tabs = true
+tab_close_display_policy = 0
+
+[node name="InspectorText" type="RichTextLabel" parent="Root/Body/InspectorPanel/Margin/InspectorVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
@@ -131,18 +149,24 @@ fit_content = false
 scroll_active = true
 text = "Inspector"
 
-[node name="MapPane" type="PanelContainer" parent="Root/Body"]
+[node name="MapPane" type="Control" parent="Root/Body"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+clip_contents = true
+mouse_filter = 2
 
 [node name="SubViewportContainer" type="SubViewportContainer" parent="Root/Body/MapPane"]
 unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 stretch = true
+mouse_filter = 0
 
 [node name="SubViewport" type="SubViewport" parent="Root/Body/MapPane/SubViewportContainer"]
 unique_name_in_owner = true
@@ -162,33 +186,55 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -220.0
-offset_top = -200.0
+offset_left = -168.0
+offset_top = -160.0
 offset_right = -8.0
 offset_bottom = -8.0
 grow_horizontal = 0
 grow_vertical = 0
+size_flags_horizontal = 0
+size_flags_vertical = 0
+mouse_filter = 0
+z_index = 10
+script = ExtResource("3_legend")
 
 [node name="LegendMargin" type="MarginContainer" parent="Root/Body/MapPane/LegendPanel"]
 layout_mode = 2
+mouse_filter = 0
 theme_override_constants/margin_left = 6
-theme_override_constants/margin_top = 6
+theme_override_constants/margin_top = 4
 theme_override_constants/margin_right = 6
-theme_override_constants/margin_bottom = 6
+theme_override_constants/margin_bottom = 4
 
-[node name="LegendScroll" type="ScrollContainer" parent="Root/Body/MapPane/LegendPanel/LegendMargin"]
-custom_minimum_size = Vector2(200, 180)
+[node name="LegendVBox" type="VBoxContainer" parent="Root/Body/MapPane/LegendPanel/LegendMargin"]
 layout_mode = 2
-horizontal_scroll_mode = 0
+theme_override_constants/separation = 2
 
-[node name="LegendText" type="RichTextLabel" parent="Root/Body/MapPane/LegendPanel/LegendMargin/LegendScroll"]
+[node name="LegendHeader" type="Button" parent="Root/Body/MapPane/LegendPanel/LegendMargin/LegendVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+flat = true
+text = "Legend"
+alignment = 0
+focus_mode = 0
+
+[node name="LegendScroll" type="ScrollContainer" parent="Root/Body/MapPane/LegendPanel/LegendMargin/LegendVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 1
+
+[node name="LegendText" type="RichTextLabel" parent="Root/Body/MapPane/LegendPanel/LegendMargin/LegendVBox/LegendScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
 bbcode_enabled = true
 fit_content = true
 scroll_active = false
+autowrap_mode = 3
 text = "Legend"
 
 [node name="BottomBar" type="HBoxContainer" parent="Root"]
@@ -235,6 +281,13 @@ layout_mode = 2
 text = "Flow"
 tooltip_text = "D8 flow-direction ticks (diagnostic layer)"
 
+[node name="LandformCheck" type="CheckBox" parent="Root/BottomBar"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "Landform objects"
+tooltip_text = "Mountain ranges, ridges, plateaus, and rims from Python GeoJSON"
+
 [node name="MonthSep" type="VSeparator" parent="Root/BottomBar"]
 layout_mode = 2
 
@@ -251,11 +304,17 @@ tooltip_text = "Month for temperature / precipitation modes"
 [node name="ZoomSep" type="VSeparator" parent="Root/BottomBar"]
 layout_mode = 2
 
-[node name="ZoomLabel" type="Label" parent="Root/BottomBar"]
+[node name="ZoomBox" type="HBoxContainer" parent="Root/BottomBar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="ZoomLabel" type="Label" parent="Root/BottomBar/ZoomBox"]
 layout_mode = 2
 text = "Zoom"
 
-[node name="ZoomSlider" type="HSlider" parent="Root/BottomBar"]
+[node name="ZoomSlider" type="HSlider" parent="Root/BottomBar/ZoomBox"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(160, 0)
 layout_mode = 2
@@ -266,7 +325,7 @@ step = 0.05
 value = 1.0
 tooltip_text = "Min = Fit, max = 16x Fit"
 
-[node name="ZoomFitBtn" type="Button" parent="Root/BottomBar"]
+[node name="ZoomFitBtn" type="Button" parent="Root/BottomBar/ZoomBox"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Fit"
@@ -370,8 +429,8 @@ layout_mode = 2
 min_value = 1.0
 max_value = 20.0
 value = 5.0
-prefix = "erosion "
-tooltip_text = "Erosion pass iterations."
+prefix = "pass-1 erosion "
+tooltip_text = "First-pass (pre-hydrology) erosion iterations. Does not control final stream-power."
 
 [node name="FluvialKSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
 unique_name_in_owner = true
@@ -380,8 +439,8 @@ min_value = 0.0
 max_value = 20.0
 step = 0.5
 value = 8.0
-prefix = "fluvial k "
-tooltip_text = "Fluvial erosion strength."
+prefix = "pass-1 fluvial k "
+tooltip_text = "First-pass precip×slope coefficient only. Does not control final stream-power incision."
 
 [node name="FoldingRatioSpin" type="SpinBox" parent="AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox"]
 unique_name_in_owner = true

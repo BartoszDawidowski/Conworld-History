@@ -34,6 +34,7 @@ func _ready() -> void:
 	_material.set_shader_parameter("coast_width_px", 1.25)
 	_material.set_shader_parameter("elev_overlay_strength", 0.9)
 	_material.set_shader_parameter("style", 2)
+	_material.set_shader_parameter("sample_nearest", 0)
 	_sprite.material = _material
 
 
@@ -81,6 +82,7 @@ func set_map_mode(mode: String, texture: Texture2D) -> void:
 		_material.set_shader_parameter("style", 1)
 		_material.set_shader_parameter("mode_blur_texels", 0.65)
 		_material.set_shader_parameter("edge_soft", 0.16)
+		_material.set_shader_parameter("sample_nearest", 0)
 		if _ocean_tex != null:
 			_sprite.texture = _ocean_tex
 		elif _sprite.texture == null and _tex_size.x > 0.0:
@@ -91,6 +93,7 @@ func set_map_mode(mode: String, texture: Texture2D) -> void:
 		_material.set_shader_parameter("style", 2)
 		_material.set_shader_parameter("mode_blur_texels", 0.85)
 		_material.set_shader_parameter("edge_soft", 0.16)
+		_material.set_shader_parameter("sample_nearest", 0)
 		if texture != null:
 			_sprite.texture = texture
 			_material.set_shader_parameter("mode_tex", texture)
@@ -99,13 +102,11 @@ func set_map_mode(mode: String, texture: Texture2D) -> void:
 		if texture != null:
 			_sprite.texture = texture
 			_material.set_shader_parameter("mode_tex", texture)
-		# Holdridge is categorical — less blur so swatches stay readable.
-		if mode == "holdridge":
-			_material.set_shader_parameter("mode_blur_texels", 0.15)
-			_material.set_shader_parameter("edge_soft", 0.12)
-		else:
-			_material.set_shader_parameter("mode_blur_texels", 0.65)
-			_material.set_shader_parameter("edge_soft", 0.16)
+		# Holdridge, biome_v2, landforms: soft cell edges (same as pre-C9 Holdridge).
+		# Vector landform strokes (ranges / ridges / rims) stay sharp + Chaikin-smoothed.
+		_material.set_shader_parameter("mode_blur_texels", 0.65)
+		_material.set_shader_parameter("edge_soft", 0.16)
+		_material.set_shader_parameter("sample_nearest", 0)
 	_apply_mode_visibility()
 	queue_redraw()
 

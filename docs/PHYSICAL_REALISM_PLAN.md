@@ -1,9 +1,9 @@
 # Physical Realism Plan — operational tracker
 
-> **Status:** **PR-0–PR-9 foundation delivered**; **CR-0–CR-9** accepted — [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md).  
-> **Authority:** [`docs/WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md) (design) + corrections doc (production defects / repair order).  
-> **Rule:** One milestone at a time. Validate → `docs/validation/physical_realism_{pr|cr}N.md` → stop.  
-> **Next when instructed:** optional atlas **B10**. Do not calibrate precip until Atlas spin-up leftover is measured.
+> **Status:** **PR-0–PR-9 foundation delivered**; **CR-0–CR-9** baseline implemented — **correction required** ([`WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md`](WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md)).  
+> **Authority:** [`docs/WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md) (design) + corrections doc + addendum (production defects / repair order).  
+> **Rule:** One milestone at a time. Validate → stop.  
+> **Next when instructed:** **C10**. C9 delivered (Godot BiomeV2 / landform modes). Atlas 183716 leftover until regen.
 
 ---
 
@@ -27,6 +27,7 @@ This document is the **execution index** for scientific hardening of the physica
 | `ATLAS_PLAN_B.md` | Atlas UX B1–B7 done; **B8/B9 mechanisms and order amended** by annex |
 | `WORLDGEN_PHYSICAL_REALISM_ANNEX.md` | Normative corrective design + PR-0…PR-9 sequence |
 | `PHYSICAL_REALISM_CORRECTIONS.md` | Post–PR-9 defect register + **CR-0…CR-9** repair order |
+| `WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md` | Post–CR-9 production repairs **C0…C10**; precedence when CR production gates fail |
 | This file | Living status + conflict register + next milestone |
 
 Where the annex identifies a demonstrated correctness problem, its corrective requirement **takes precedence** over an earlier qualitative “milestone complete” acceptance statement. Where the **corrections** document shows production failure of an accepted PR, the CR track **takes precedence** until the defect is closed. Unrelated architectural decisions remain valid.
@@ -47,7 +48,7 @@ Where the annex identifies a demonstrated correctness problem, its corrective re
 | C-08 | Cell-based climate scales (`*_cells`) as permanent params | Godot omits `continentality_scale_km` (**F-19**, closed CR-6); `advect_steps` is CFL cap (**CR-8**); erosion metric slope (**CR-9**). |
 | C-09 | Single max land normalisation / every seed hits `land_scale_m` | **power_tail_v2** production default (**CR-5**); `tail_softness` real (**F-12**). |
 | C-10 | Moisture #2 labeled as if it caused hydrology | Provenance split: `moisture_hydrology_input` vs `moisture_ecology` (D-13); diagnostics must not mislabel. |
-| C-11 | PR-0…PR-9 “complete” ⇒ production-ready climate | **Superseded.** CR-0…CR-9 accepted; Atlas regen leftovers remain. |
+| C-11 | PR-0…PR-9 “complete” ⇒ production-ready climate | **Superseded.** CR-0…CR-9 baseline implemented; addendum C0…C10 required. |
 
 ---
 
@@ -61,10 +62,22 @@ PR-0 … PR-9   Foundation (delivered; see honest status in corrections §6)
   → CR-3  Moisture closure + SST anomaly + monsoon regime   ← HARD GATE
   → CR-4  Monthly hydrology + typed outlets / endorheism     ← HARD GATE
   → CR-5  Joint calibration — hypsometry accepted; landforms reopened
-  → CR-6  Hydrology hotfix (PET, outlets, liquid mask, Godot km)  ✅
-  → CR-7  Light hydrology v2  ✅
-  → CR-8  Atmosphere (conservative advect, monsoon, one hydro↔evap pass)  ✅
-  → CR-9  Erosion / landforms / BiomeV2  ✅
+  → CR-6  Hydrology hotfix (PET, outlets, liquid mask, Godot km)  BASELINE — CORRECTION REQUIRED
+  → CR-7  Light hydrology v2  BASELINE — CORRECTION REQUIRED
+  → CR-8  Atmosphere (conservative advect, monsoon, one hydro↔evap pass)  BASELINE — CORRECTION REQUIRED
+  → CR-9  Erosion / landforms / BiomeV2  BASELINE — CORRECTION REQUIRED
+  → C0  Product-contract hotfixes  ✅
+  → C1  Lake geometry from storage  ✅
+  → C2  Rivers, channel losses, bounded coupling  ✅
+  → C3  Metric erosion recalibration  ✅
+  → C3T Temperature-state integrity  ✅
+  → C4  Conservative moisture transport  ✅
+  → C5  Precipitation mechanisms / monsoon  ✅
+  → C6  BiomeV2 correctness  ✅
+  → C7  Landform scales / classes / objects  ✅
+  → C8  Canonical WorldSpatialModel / hex / query  ✅
+  → C9  Godot BiomeV2 / landform modes  ✅
+  → C10 Multi-seed calibration / Full RSS / release decision  (next)
 
 Parallel (atlas presentation only, when requested):
   B10  Full-resolution land polygons  — no PR/CR dependency
@@ -103,10 +116,21 @@ Detail: annex §§7–19. Production defects: corrections §3 (F-01…).
 | CR-3 | Moisture + SST anomaly + monsoon | ⚠️ Fixtures OK; production reopened | [`docs/validation/physical_realism_cr3.md`](validation/physical_realism_cr3.md) |
 | CR-4 | Monthly hydro + endorheism | ⚠️ Fixtures OK; PET×12 / lakes reopened | [`docs/validation/physical_realism_cr4.md`](validation/physical_realism_cr4.md) |
 | CR-5 | Joint calibration (+ PR-9E) | ⚠️ Hypsometry OK; landforms reopened | [`docs/validation/physical_realism_cr5.md`](validation/physical_realism_cr5.md) |
-| CR-6 | Hydrology hotfix | ✅ Complete | [`docs/validation/physical_realism_cr6.md`](validation/physical_realism_cr6.md) |
-| CR-7 | Light hydrology v2 | ✅ Complete | [`docs/validation/physical_realism_cr7.md`](validation/physical_realism_cr7.md) |
-| CR-8 | Atmosphere (advect / lee / monsoon) | ✅ Complete | [`docs/validation/physical_realism_cr8.md`](validation/physical_realism_cr8.md) |
-| CR-9 | Erosion, landforms, BiomeV2 | ✅ Complete | [`docs/validation/physical_realism_cr9.md`](validation/physical_realism_cr9.md) |
+| CR-6 | Hydrology hotfix | BASELINE — CORRECTION REQUIRED | [`docs/validation/physical_realism_cr6.md`](validation/physical_realism_cr6.md) |
+| CR-7 | Light hydrology v2 | BASELINE — CORRECTION REQUIRED | [`docs/validation/physical_realism_cr7.md`](validation/physical_realism_cr7.md) |
+| CR-8 | Atmosphere (advect / lee / monsoon) | BASELINE — CORRECTION REQUIRED | [`docs/validation/physical_realism_cr8.md`](validation/physical_realism_cr8.md) |
+| CR-9 | Erosion, landforms, BiomeV2 | BASELINE — CORRECTION REQUIRED | [`docs/validation/physical_realism_cr9.md`](validation/physical_realism_cr9.md) |
+| C0 | Product-contract hotfixes | ✅ Complete | [`docs/validation/worldgen_corrective_c0.md`](validation/worldgen_corrective_c0.md) |
+| C1 | Lake geometry from storage | ✅ Complete | [`docs/validation/worldgen_corrective_c1.md`](validation/worldgen_corrective_c1.md) |
+| C2 | Rivers, channel losses, bounded coupling | ✅ Complete | [`docs/validation/worldgen_corrective_c2.md`](validation/worldgen_corrective_c2.md) |
+| C3 | Metric erosion recalibration | ✅ Complete (defaults not retuned) | [`docs/validation/worldgen_corrective_c3.md`](validation/worldgen_corrective_c3.md) |
+| C3T | Temperature-state integrity | ✅ Complete (gain default 0) | [`docs/validation/worldgen_corrective_c3t.md`](validation/worldgen_corrective_c3t.md) |
+| C4 | Conservative moisture transport | ✅ Complete (Atlas spin-up leftover) | [`docs/validation/worldgen_corrective_c4.md`](validation/worldgen_corrective_c4.md) |
+| C5 | Precipitation mechanisms / monsoon | ✅ Complete (YAML knobs not retuned) | [`docs/validation/worldgen_corrective_c5.md`](validation/worldgen_corrective_c5.md) |
+| C6 | BiomeV2 correctness / canonical integration | ✅ Complete (Holdridge annual unchanged) | [`docs/validation/worldgen_corrective_c6.md`](validation/worldgen_corrective_c6.md) |
+| C7 | Landform scales / classes / objects | ✅ Complete (threshold 0.60 not retuned) | [`docs/validation/worldgen_corrective_c7.md`](validation/worldgen_corrective_c7.md) |
+| C8 | Canonical WorldSpatialModel / hex / query / export | ✅ Complete (Godot display leftover → C9) | [`docs/validation/worldgen_corrective_c8.md`](validation/worldgen_corrective_c8.md) |
+| C9 | Godot BiomeV2 / landform modes / legends / inspector | ✅ Complete (Fit/4× leftover until regen) | [`docs/validation/worldgen_corrective_c9.md`](validation/worldgen_corrective_c9.md) |
 
 ---
 
@@ -132,10 +156,10 @@ Landforms (**PR-9** / **CR-5**) feed hex caches and `EnvironmentAdapter` later; 
 ## 7. Suggested human instructions
 
 ```text
-Plan B presentation: B10 Full land polys when requested.
+Worldgen corrective addendum: execute C10 only.
 ```
 
-CR track is complete. Atlas spin-up leftover remains until regen. Optional atlas **B10** remains independent presentation.
+C9 delivered (Godot BiomeV2 / landform display / legends / inspector). Atlas 183716 leftovers remain until regen. Optional atlas **B10** remains independent presentation.
 
 ---
 

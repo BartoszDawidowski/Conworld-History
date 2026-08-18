@@ -62,8 +62,20 @@ terrain:
   hypsometry_tail_softness: 1.0
 
 erosion:
+  # First-pass (pre-hydrology). thermal_kappa is the 1 km-cell coefficient
+  # (kappa_m2 = thermal_kappa * 1000^2). fluvial_k is precip×slope on this
+  # pass only — it does not control final stream-power incision.
   iterations: 5
+  thermal_kappa: 0.08
   fluvial_k: 8.0
+  max_step_m: 25.0
+  macro_blend: 0.35
+  # Final river incision (independent of fluvial_k). C3 does not retune these.
+  stream_power_k: 12.0
+  stream_power_iterations: 4
+  stream_power_max_step_m: 30.0
+  stream_power_macro_blend: 0.40
+  micro_fill_max_depth_m: 25.0
 
 climate:
   months: 12
@@ -71,6 +83,8 @@ climate:
   base_temp_c: 25.0
   # CR-2: explicit continentality length (legacy 24 cells ≈ 1876 km mid-lat Atlas).
   continentality_scale_km: 500.0
+  # C3T: inland seasonal-amplitude gain. 0 = production (not a retune).
+  continental_seasonality_gain: 0.0
 
 # Holdridge PET/P scaling: precip_proxy × precip_scale_mm → mm-like annual precip
 ecology:
@@ -78,7 +92,9 @@ ecology:
 
 # Atlas-tuned moisture inland (2026-08-15)
 moisture:
+  # C4: numerical CFL cap (legacy alias advect_steps). Not physical reach.
   advect_steps: 32
+  advect_max_substeps: 32
   advect_wind_scale: 0.2
   large_scale_frac: 0.15
   orographic_frac: 0.85
@@ -92,8 +108,8 @@ moisture:
   # CR-8: condensation brake on leeward descent (not a q mass sink).
   # PR-4 — physical diffusion + periodic climatology spin-up
   diffusion_mix_per_month: 0.08
-  # CR-3: production default — joint q+store closure; audit seeds needed ~16–20.
-  spinup_max_years: 20
+  # CR-3/C4: production cap — early-stop field gates; audit seeds needed ~16–20.
+  spinup_max_years: 48
   spinup_tolerance_relative: 0.02
   spinup_tolerance_absolute: 0.001
   # PR-7 / revised B8 — inside moisture budget (no post-hoc rain)
@@ -127,8 +143,8 @@ hydrology:
   # Drop ice-sheet / polar fill depressions (mean annual °C).
   lake_min_mean_temp_c: 1.0
   lake_inflow_land_quantile: 0.75
-  # Channel transmission losses (Nil OK / wadi dies); 0 = gross accuflux only.
-  # CR-7 scales this demand by path_length_km / 50 km (HydrologyParams.transmission_ref_km).
+  # Channel-bed loss (C2) uses HydrologyParams.bed_loss_m3_per_km_month, not PET×cell.
+  # transmission_rate is retained for config compatibility and is unused by C2 routing.
   transmission_rate: 0.45
   # CR-4: fill only numerical pits shallower than this pour depth (m).
   # Negative = legacy fill-all (no closed basins).

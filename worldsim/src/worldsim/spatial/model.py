@@ -5,13 +5,17 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 from worldsim.config import PlanetConfig
-from worldsim.physical.climate.pipeline import ClimateResult, downsample_mean
+from worldsim.physical.climate.pipeline import (
+    ClimateResult,
+    climate_grid_land_elevation,
+)
 from worldsim.physical.ecology.pipeline import EcologyResult
 from worldsim.physical.hydrology.pipeline import HydrologyResult
 from worldsim.physical.moisture.pipeline import MoistureResult
@@ -106,6 +110,21 @@ class WorldSpatialModel:
     def hex_environment(self, hex_id: int) -> dict[str, Any]:
         return self.queries.hex_environment(hex_id)
 
+    def mountain_range(self, range_id: int) -> dict[str, Any]:
+        return self.queries.mountain_range(range_id)
+
+    def plateau(self, plateau_id: int) -> dict[str, Any]:
+        return self.queries.plateau(plateau_id)
+
+    def river(self, river_id: int) -> dict[str, Any]:
+        return self.queries.river(river_id)
+
+    def lake(self, lake_id: int) -> dict[str, Any]:
+        return self.queries.lake(lake_id)
+
+    def basin(self, basin_id: int) -> dict[str, Any]:
+        return self.queries.basin(basin_id)
+
     def neighbour_hexes(self, hex_id: int) -> list[int | None]:
         return self.queries.neighbour_hexes(hex_id)
 
@@ -194,6 +213,7 @@ def _fill_rasters(
     ecology: EcologyResult,
     hydrology: HydrologyResult | None,
     elevation_terrain_m: NDArray[np.floating] | None,
+    landforms: Any | None = None,
 ) -> SpatialExtent:
     store.put("climate/elevation_m", climate.elevation_m, extent_key="climate")
     store.put("climate/ocean_mask", climate.ocean_mask.astype(np.uint8))
@@ -213,31 +233,92 @@ def _fill_rasters(
     store.put("ecology/holdridge_zone_id", ecology.holdridge_zone_id)
     store.put("ecology/biotemperature_c", ecology.biotemperature_c)
     store.put("ecology/pet_ratio", ecology.pet_ratio)
+    if ecology.biome_v2_class is not None:
+        store.put("ecology/biome_v2_class", ecology.biome_v2_class)
+        store.put("ecology/frost_months", ecology.frost_months)
+        store.put("ecology/growing_season_months", ecology.growing_season_months)
+        store.put("ecology/water_deficit_mm", ecology.water_deficit_mm)
+        store.put("ecology/soil_state", ecology.soil_state)
+        store.put("ecology/thermal_regime_id", ecology.thermal_regime_id)
+        store.put("ecology/moisture_regime_id", ecology.moisture_regime_id)
 
     if hydrology is not None:
         # Persist hydrology at its native resolution; climate sampling uses climate/*
-        store.put(
-            "hydrology/river_mask",
-            hydrology.river_mask.astype(np.uint8),
-            extent_key="hydrology",
-        )
-        store.put("hydrology/lake_mask", hydrology.lake_mask.astype(np.uint8))
-        store.put("hydrology/basin_id", hydrology.basin_id)
-        store.put("hydrology/flow_accumulation", hydrology.flow_accumulation)
-        store.put(
-            "hydrology/flow_direction",
-            hydrology.flow_direction.astype(np.uint8),
-        )
-        store.put("hydrology/river_discharge_proxy", hydrology.river_discharge_proxy)
-        store.put("hydrology/river_discharge_gross", hydrology.river_discharge_gross)
+        river_mask = getattr(hydrology, "river_mask", None)
+        if river_mask is not None and np.asarray(river_mask).size:
+            store.put(
+                "hydrology/river_mask",
+                np.asarray(river_mask).astype(np.uint8),
+                extent_key="hydrology",
+            )
+        lake_mask = getattr(hydrology, "lake_mask", None)
+        if lake_mask is not None and np.asarray(lake_mask).size:
+            store.put("hydrology/lake_mask", np.asarray(lake_mask).astype(np.uint8))
+        if getattr(hydrology, "basin_envelope_id", None) is not None and hydrology.basin_envelope_id.size:
+            store.put("hydrology/basin_envelope_id", hydrology.basin_envelope_id)
+        if getattr(hydrology, "water_fraction_mean", None) is not None and hydrology.water_fraction_mean.size:
+            store.put(
+                "hydrology/water_fraction_mean",
+                hydrology.water_fraction_mean.astype(np.float32),
+            )
+        if getattr(hydrology, "river_water_fraction", None) is not None and hydrology.river_water_fraction.size:
+            store.put(
+                "hydrology/river_water_fraction",
+                hydrology.river_water_fraction.astype(np.float32),
+            )
+        if getattr(hydrology, "channel_state", None) is not None and hydrology.channel_state.size:
+            store.put("hydrology/channel_state", hydrology.channel_state)
+        basin_id = getattr(hydrology, "basin_id", None)
+        if basin_id is not None and np.asarray(basin_id).size:
+            store.put("hydrology/basin_id", basin_id)
+        if getattr(hydrology, "lake_id", None) is not None and np.asarray(hydrology.lake_id).size:
+            store.put("hydrology/lake_id", hydrology.lake_id)
+        flow_acc = getattr(hydrology, "flow_accumulation", None)
+        if flow_acc is not None and np.asarray(flow_acc).size:
+            store.put("hydrology/flow_accumulation", flow_acc)
+        flow_dir = getattr(hydrology, "flow_direction", None)
+        if flow_dir is not None and np.asarray(flow_dir).size:
+            store.put("hydrology/flow_direction", np.asarray(flow_dir).astype(np.uint8))
+        q_proxy = getattr(hydrology, "river_discharge_proxy", None)
+        if q_proxy is not None and np.asarray(q_proxy).size:
+            store.put("hydrology/river_discharge_proxy", q_proxy)
+        q_gross = getattr(hydrology, "river_discharge_gross", None)
+        if q_gross is not None and np.asarray(q_gross).size:
+            store.put("hydrology/river_discharge_gross", q_gross)
 
     if elevation_terrain_m is not None:
         elev = np.asarray(elevation_terrain_m, dtype=np.float64)
         store.put("terrain/elevation_v2_m", elev, extent_key="terrain")
-        # Convenience climate-res DEM for tools that only open climate group
-        dem_c = downsample_mean(elev, climate.extent.width, climate.extent.height)
-        dem_c = np.where(climate.ocean_mask, climate.elevation_m, dem_c)
+        ocean_t = (
+            hydrology.ocean_mask
+            if hydrology is not None and hydrology.ocean_mask.shape == elev.shape
+            else elev < 0.0
+        )
+        dem_c = climate_grid_land_elevation(
+            elev,
+            ocean_t,
+            climate.extent.width,
+            climate.extent.height,
+            climate_ocean_mask=climate.ocean_mask,
+            ocean_elevation_m=climate.elevation_m,
+        )
         store.put("terrain/elevation_climate_m", dem_c)
+
+    if landforms is not None and getattr(landforms, "context_id", None) is not None:
+        store.put("landforms/context_id", landforms.context_id, extent_key="landforms")
+        store.put("landforms/local_form_id", landforms.local_form_id)
+        store.put("landforms/provenance_id", landforms.provenance_id)
+        store.put("landforms/confidence", landforms.confidence_u8)
+        store.put("landforms/mountain_score", landforms.mountain_score_u8)
+        store.put("landforms/plateau_score", landforms.plateau_score_u8)
+        store.put("landforms/hill_score", landforms.hill_score_u8)
+        store.put("landforms/mountain_range_id", landforms.mountain_range_id)
+        store.put("landforms/plateau_id", landforms.plateau_id)
+        thr = None
+        if isinstance(getattr(landforms, "diagnostics", None), dict):
+            thr = landforms.diagnostics.get("mountain_score_threshold")
+        if thr is not None:
+            store.notes["landforms/mountain_score_threshold"] = str(float(thr))
 
     return climate.extent
 
@@ -252,6 +333,7 @@ def build_world_spatial_model(
     hex_grid: HexAnalysisResult,
     hydrology: HydrologyResult | None = None,
     elevation_terrain_m: NDArray[np.floating] | None = None,
+    landforms: Any | None = None,
     master_seed: int | None = None,
     metadata: dict[str, Any] | None = None,
     reporter: ProgressReporter | None = None,
@@ -268,11 +350,13 @@ def build_world_spatial_model(
         ecology=ecology,
         hydrology=hydrology,
         elevation_terrain_m=elevation_terrain_m,
+        landforms=landforms,
     )
     if reporter is not None:
         reporter.progress("world", 0.4)
 
     vector_store = VectorStore.from_vector_geography(vectors)
+    vector_store.attach_landforms(landforms)
     if reporter is not None:
         reporter.progress("world", 0.7)
 
@@ -323,6 +407,12 @@ def build_world_spatial_model(
         config_snapshot=dict(config.raw) if getattr(config, "raw", None) else {},
         metadata=dict(metadata or {}),
     )
+    model.metadata.setdefault(
+        "categorical_legends",
+        categorical_legends(ecology=ecology, landforms=landforms),
+    )
+    if hydrology is not None and getattr(hydrology, "lake_records", None):
+        model.metadata.setdefault("hydrology_lake_records", list(hydrology.lake_records))
 
     if reporter is not None:
         reporter.progress("world", 1.0)
@@ -338,10 +428,19 @@ def rebuild_hex_analysis_cache(
     ecology: EcologyResult,
     hydrology: HydrologyResult | None = None,
     elevation_terrain_m: NDArray[np.floating] | None = None,
+    landforms: Any | None = None,
 ) -> HexAnalysisResult:
     """Rebuild hex analysis grid from canonical stores / live stage results."""
     # Prefer live climate objects; vectors come from model SoT
     from worldsim.physical.vectorize.pipeline import VectorGeographyResult
+
+    if landforms is None:
+        landforms = landforms_from_rasters(model.rasters)
+    if hydrology is None:
+        hydrology = hydrology_from_rasters(
+            model.rasters,
+            lake_records=model.metadata.get("hydrology_lake_records"),
+        )
 
     vectors = VectorGeographyResult(
         extent=model.vectors.extent,
@@ -359,6 +458,7 @@ def rebuild_hex_analysis_cache(
         hydrology=hydrology,
         vectors=vectors,
         elevation_terrain_m=elevation_terrain_m,
+        landforms=landforms,
         width=model.hex_grid.spec.width,
         height=model.hex_grid.spec.height,
     )
@@ -367,3 +467,84 @@ def rebuild_hex_analysis_cache(
     model.manifest.hex_n_cells = hex_grid.n_cells
     model.manifest.acceptance_ok = bool(hex_grid.diagnostics.get("acceptance_ok"))
     return hex_grid
+
+
+def categorical_legends(*, ecology: Any | None = None, landforms: Any | None = None) -> dict[str, Any]:
+    from worldsim.physical.ecology.biome_v2 import (
+        CLASS_NAMES,
+        MOISTURE_NAMES,
+        THERMAL_NAMES,
+    )
+    from worldsim.physical.ecology.holdridge import build_zone_legend
+    from worldsim.physical.hydrology.channels import CHANNEL_STATE_NAME
+    from worldsim.physical.landforms.classify import legend_payload
+
+    soil = {"0": "ocean_or_dry", "1": "moist", "2": "wet", "3": "saturated"}
+    payload = {
+        "holdridge_zone": build_zone_legend(),
+        "biome_v2_class": {str(k): v for k, v in CLASS_NAMES.items()},
+        "thermal_regime": {str(k): v for k, v in THERMAL_NAMES.items()},
+        "moisture_regime": {str(k): v for k, v in MOISTURE_NAMES.items()},
+        "soil_state": soil,
+        "landform": {
+            key: {str(i): name for i, name in values.items()}
+            for key, values in legend_payload().items()
+        },
+        "channel_state": {str(k): v for k, v in CHANNEL_STATE_NAME.items()},
+    }
+    if ecology is not None:
+        names = getattr(ecology, "diagnostics", {}).get("class_names")
+        if names:
+            payload["biome_v2_class"] = {str(k): v for k, v in names.items()}
+    _ = landforms
+    return payload
+
+
+def landforms_from_rasters(rasters: RasterStore) -> SimpleNamespace | None:
+    if not rasters.has("landforms/context_id"):
+        return None
+    thr_note = rasters.notes.get("landforms/mountain_score_threshold")
+    return SimpleNamespace(
+        context_id=rasters.get("landforms/context_id"),
+        local_form_id=rasters.get("landforms/local_form_id"),
+        provenance_id=rasters.get("landforms/provenance_id"),
+        confidence_u8=rasters.get("landforms/confidence"),
+        mountain_score_u8=rasters.get("landforms/mountain_score"),
+        plateau_score_u8=rasters.get("landforms/plateau_score"),
+        hill_score_u8=rasters.get("landforms/hill_score"),
+        mountain_range_id=rasters.get("landforms/mountain_range_id"),
+        plateau_id=rasters.get("landforms/plateau_id"),
+        mountain_ranges=[],
+        plateaus=[],
+        diagnostics={
+            "mountain_score_threshold": float(thr_note) if thr_note else 0.60,
+        },
+    )
+
+
+def hydrology_from_rasters(
+    rasters: RasterStore,
+    *,
+    lake_records: list[dict[str, Any]] | None = None,
+) -> SimpleNamespace | None:
+    if not rasters.has("hydrology/basin_id"):
+        return None
+
+    def _opt(name: str) -> Any:
+        return rasters.get(name) if rasters.has(name) else None
+
+    ocean = (
+        rasters.get("climate/ocean_mask").astype(bool)
+        if rasters.has("climate/ocean_mask")
+        else None
+    )
+    return SimpleNamespace(
+        water_fraction_mean=_opt("hydrology/water_fraction_mean"),
+        lake_mask=(_opt("hydrology/lake_mask").astype(bool) if rasters.has("hydrology/lake_mask") else None),
+        channel_state=_opt("hydrology/channel_state"),
+        river_discharge_proxy=_opt("hydrology/river_discharge_proxy"),
+        basin_id=_opt("hydrology/basin_id"),
+        lake_id=_opt("hydrology/lake_id"),
+        lake_records=list(lake_records or []),
+        ocean_mask=ocean if ocean is not None else np.zeros((1, 1), dtype=bool),
+    )

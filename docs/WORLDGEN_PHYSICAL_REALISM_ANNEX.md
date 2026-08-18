@@ -2,14 +2,15 @@
 
 ## Hypsometry, temperature, moisture, hydrology, and landform semantics
 
-> **Status:** Accepted design guidance; **PR-0…PR-9 foundation implemented**; **CR-0–CR-9** accepted — [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md)  
+> **Status:** Accepted design guidance; **PR-0…PR-9 foundation implemented**; **CR-0–CR-9** baseline implemented — **correction required** — [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md), [`WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md`](WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md)  
 > **Date:** 2026-08-16 (header amended 2026-08-17)  
 > **Repository:** BartoszDawidowski/Conworld-History  
 > **Audited commit:** 6a961161c2a10d322de0990e6cbec8317ea80a5c  
 > **Primary objective:** Improve the physical credibility of generated worlds without materially exceeding the demonstrated capabilities of the target Apple M2 / 8 GB machine.  
 > **Execution rule:** Convert this annex into small implementation milestones. Complete, validate, document, and stop after each milestone before starting the next one.  
 > **Operational tracker:** [`docs/PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md) (PR + CR status, conflict register).  
-> **Production defects / CR-0…CR-9:** [`docs/PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md).
+> **Production defects / CR-0…CR-9:** [`docs/PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md).  
+> **Post–CR-9 repairs / C0…C10:** [`docs/WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md`](WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md).
 
 ---
 
@@ -1644,7 +1645,7 @@ They may combine ridge topology with the river/valley graph without changing the
 
 ## 18.7 Post–PR-9 production hardening (CR track)
 
-Status: **CR-0–CR-9 accepted** — see [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md). Atlas regen leftovers remain.
+Status: **CR-0–CR-9 baseline implemented — correction required** — see [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md) and [`WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md`](WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md). A skipped Atlas run is not production Accepted. Next: **C2** after C1.
 
 Reopen / continue when fixed-seed production metrics contradict a PR acceptance note (spin-up, SST form, monsoon regime, endorheism, subgrid layout, resolution-invariant scales). Do not substitute parameter retuning for those defects.
 

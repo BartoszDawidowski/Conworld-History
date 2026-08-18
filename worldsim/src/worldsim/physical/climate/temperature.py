@@ -10,6 +10,11 @@ from numpy.typing import NDArray
 from worldsim.physical.tectonics.interpretation import cylindrical_distance_to_mask
 from worldsim.spatial.metrics import EARTH_RADIUS_KM, GridMetrics, grid_metrics
 
+TEMPERATURE_STATE_EQUILIBRIUM = "temperature_equilibrium_c"
+TEMPERATURE_STATE_BASE = "temperature_base_c"
+TEMPERATURE_STATE_SST = "temperature_sst_coupled_c"
+TEMPERATURE_STATE_FINAL = "temperature_final_c"
+
 
 def continentality_factor(
     ocean_mask: NDArray[np.bool_],
@@ -41,6 +46,104 @@ def continentality_factor(
     inland = np.where(land, dist, 0.0)
     cells = float(scale_cells if scale_cells is not None else 24.0)
     return 1.0 - np.exp(-inland / max(cells, 1e-6))
+
+
+def temperature_diagnostics(
+    temperature_c: NDArray[np.floating],
+    *,
+    latitude_deg: NDArray[np.floating],
+    elevation_m: NDArray[np.floating],
+    ocean_mask: NDArray[np.bool_],
+    state_name: str,
+) -> dict[str, Any]:
+    """Seasonal / polar / lapse stats from an explicitly named temperature array.
+
+    Callers must pass the array that ``state_name`` refers to. Do not attach
+    these keys to diagnostics computed from an earlier state (C3T).
+    """
+    t = np.asarray(temperature_c, dtype=np.float64)
+    lat_deg = np.asarray(latitude_deg, dtype=np.float64)
+    elev = np.asarray(elevation_m, dtype=np.float64)
+    ocean = np.asarray(ocean_mask, dtype=bool)
+    if t.ndim != 3:
+        raise ValueError("temperature_c must be [months, y, x]")
+
+    june = min(5, t.shape[0] - 1)
+    december = min(11, t.shape[0] - 1)
+    nh = (lat_deg > 40.0) & (lat_deg < 55.0)
+    sh = (lat_deg < -40.0) & (lat_deg > -55.0)
+    seasonal_inversion_ok = True
+    if np.any(nh) and np.any(sh):
+        nh_june = float(t[june][nh].mean())
+        nh_dec = float(t[december][nh].mean())
+        sh_june = float(t[june][sh].mean())
+        sh_dec = float(t[december][sh].mean())
+        seasonal_inversion_ok = (nh_june > nh_dec) and (sh_dec > sh_june)
+    else:
+        nh_june = nh_dec = sh_june = sh_dec = float("nan")
+
+    trop = np.abs(lat_deg) < 15.0
+    polar = np.abs(lat_deg) > 70.0
+    annual = t.mean(axis=0)
+    polar_colder = True
+    if np.any(trop) and np.any(polar):
+        polar_colder = float(annual[polar].mean()) < float(annual[trop].mean())
+
+    land = ~ocean
+    elevation_trend_ok = True
+    if np.count_nonzero(land) > 50:
+        land_elev = elev[land]
+        land_temp = annual[land]
+        if float(np.std(land_elev)) > 1.0:
+            corr = float(np.corrcoef(land_elev, land_temp)[0, 1])
+            elevation_trend_ok = corr < -0.2
+        else:
+            corr = float("nan")
+    else:
+        corr = float("nan")
+
+    return {
+        "temperature_state": str(state_name),
+        "diagnostics_source_state": str(state_name),
+        "temperature_min_c": float(np.min(t)),
+        "temperature_max_c": float(np.max(t)),
+        "annual_mean_c": float(np.mean(annual)),
+        "seasonal_inversion_ok": seasonal_inversion_ok,
+        "nh_june_mean_c": nh_june,
+        "nh_december_mean_c": nh_dec,
+        "sh_june_mean_c": sh_june,
+        "sh_december_mean_c": sh_dec,
+        "polar_colder_than_tropics": polar_colder,
+        "elevation_temperature_corr_land": corr,
+        "elevation_trend_ok": elevation_trend_ok,
+        "published_temperature_array": "temperature_c",
+    }
+
+
+def apply_continental_seasonality(
+    temperature_c: NDArray[np.floating],
+    continentality: NDArray[np.floating],
+    *,
+    gain: float = 0.0,
+) -> tuple[NDArray[np.float64], dict[str, Any]]:
+    """Amplify seasonal anomaly around each cell's annual mean (C3T optional).
+
+    ``T' = annual + (T - annual) × (1 + continentality × gain)``.
+    Per-cell annual mean is preserved. ``gain=0`` is a no-op.
+    """
+    t = np.asarray(temperature_c, dtype=np.float64)
+    g = float(gain)
+    diag = {
+        "continental_seasonality_gain": g,
+        "continental_seasonality_applied": bool(g != 0.0),
+    }
+    if g == 0.0:
+        return t.copy(), diag
+    cont = np.clip(np.asarray(continentality, dtype=np.float64), 0.0, 1.0)
+    annual = t.mean(axis=0)
+    scale = 1.0 + cont * g
+    out = annual[np.newaxis, :, :] + (t - annual[np.newaxis, :, :]) * scale[np.newaxis, :, :]
+    return out, diag
 
 
 def equilibrium_temperature_c(
@@ -183,11 +286,14 @@ def build_monthly_temperature_c(
     tau_land_months: float = 0.55,
     tau_ocean_months: float = 2.8,
     planet_radius_km: float = EARTH_RADIUS_KM,
+    continental_seasonality_gain: float = 0.0,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64], dict[str, Any]]:
     """Return ``(temperature_base_c, continentality, temperature_equilibrium_c, diag)``.
 
     ``temperature_base_c`` = equilibrium after periodic inertia (includes lapse
-    from ``elevation_m``). SST coupling is applied later by ocean stage.
+    from ``elevation_m``). Optional ``continental_seasonality_gain`` amplifies
+    the inland seasonal anomaly around each cell's annual mean (default 0).
+    SST coupling is applied later by ocean stage.
     """
     ocean = np.asarray(ocean_mask, dtype=bool)
     h, w = ocean.shape
@@ -215,8 +321,12 @@ def build_monthly_temperature_c(
         tau_land_months=tau_land_months,
         tau_ocean_months=tau_ocean_months,
     )
+    temperature, season_diag = apply_continental_seasonality(
+        temperature, cont, gain=continental_seasonality_gain
+    )
     diag = {
         **inertia_diag,
+        **season_diag,
         "lapse_owner": "climate_equilibrium",
         "lapse_rate_c_per_km": float(lapse_rate_c_per_km),
         "continentality_scale_km": (
@@ -229,6 +339,6 @@ def build_monthly_temperature_c(
             if continentality_scale_cells is not None
             else None
         ),
-        "temperature_state": "temperature_base_c",
+        "temperature_state": TEMPERATURE_STATE_BASE,
     }
     return temperature, cont, t_eq, diag

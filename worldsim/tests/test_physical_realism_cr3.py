@@ -50,7 +50,7 @@ def test_spinup_gates_on_land_store_as_well_as_q() -> None:
         plume_strength=0.1,
         land_store_capacity=4.0,
         itcz_convective_scale=0.0,
-        spinup_max_years=24,
+        spinup_max_years=48,
         spinup_tolerance_relative=0.02,
         spinup_tolerance_absolute=0.001,
     )
@@ -58,13 +58,13 @@ def test_spinup_gates_on_land_store_as_well_as_q() -> None:
     assert budget["spinup_store_gated"] is True
     assert "spinup_closure_store_max_abs" in budget
     assert budget["spinup_converged"] is True
-    assert budget["spinup_years_used"] <= 24
+    assert budget["spinup_years_used"] <= 48
 
 
 def test_config_cr3_defaults() -> None:
     cfg = load_planet_config(default_config_path())
     assert cfg.sst_mix == pytest.approx(0.28)
-    assert cfg.moisture_spinup_max_years == 20
+    assert cfg.moisture_spinup_max_years == 48
     assert cfg.moisture_monsoon_strength == pytest.approx(0.35)
     o = cfg.to_ocean_params()
     assert o.sst_mix == pytest.approx(0.28)
@@ -96,7 +96,7 @@ def test_monsoon_local_not_hemisphere_mean() -> None:
     assert june_du > 0.15
     assert dec_du < -0.15
     assert june_du > 0.1  # onshore (eastward) on west coast of land
-    assert diag.get("algorithm") == "monsoon_anomaly_gate_v1"
+    assert diag.get("algorithm") == "monsoon_sector_gate_v1"
 
 
 def test_sst_anomaly_coast_gt_deep() -> None:

@@ -1,7 +1,7 @@
 # Physical Realism CR-8 — atmosphere (advection, lee, monsoon, hydro↔evap)
 
 **Date:** 2026-08-17  
-**Status:** ✅ **Accepted**  
+**Status:** BASELINE IMPLEMENTED — CORRECTION REQUIRED (skipped Atlas 183716 is not production Accepted; see addendum C4)  
 **Authority:** [`docs/PHYSICAL_REALISM_CORRECTIONS.md`](../PHYSICAL_REALISM_CORRECTIONS.md) §5 CR-8  
 **Defects closed:** **F-18** remainder (one damped hydrology rebuild after inland-water moisture).  
 **Partial:** **F-03** (lee no longer a mass sink; CFL advection; joint closure unchanged — Atlas 183716 `spinup_converged` not re-measured); **F-07** (anomaly monsoon + sign gate + sea-level / `temperature_base_c` — Atlas year-round offshore leftover until regen); **F-11** (`advect_steps` is a CFL cap; km Courant vs Atlas width 1024).
@@ -52,4 +52,4 @@ Atlas 183716 full regen was **not** re-run (same as CR-6/CR-7). Expected product
 - Full memory rewrite (**F-14**)  
 - Atlas cell still larger than 500 km² (**F-17 leftover**)
 
-**Decision:** accept CR-8; stop. Next when instructed: **CR-9** only.
+**Decision:** CR-8 remains a fixture baseline. A skipped Atlas run is not production Accepted. Remainder → addendum **C4**.

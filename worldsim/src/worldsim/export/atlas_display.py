@@ -10,9 +10,102 @@ import numpy as np
 from numpy.typing import NDArray
 
 from worldsim.export.pngutil import write_png_rgb, write_png_rgba
+from worldsim.physical.hydrology.lakes_meta import LAKE_VECTOR_SCHEMA
+from worldsim.physical.vectorize.lakes import lake_atlas_properties
 from worldsim.spatial.hex_grid.pipeline import HexAnalysisResult
+from worldsim.spatial.hex_grid.contract import HEX_CONTRACT_FIELDS, hex_environment_columns
 from worldsim.spatial.model import WorldSpatialModel
 from worldsim.spatial.raster_store import RasterStore
+
+# C0: version the display contract. C9 writes structured mode descriptors.
+ATLAS_DISPLAY_SCHEMA = "atlas_display_v2"
+
+
+def _hex_color_rgb(color: str) -> tuple[int, int, int]:
+    text = str(color).lstrip("#")
+    if len(text) != 6:
+        return (128, 128, 128)
+    return int(text[0:2], 16), int(text[2:4], 16), int(text[4:6], 16)
+
+
+def paint_categorical_rgb(
+    class_ids: NDArray[np.integer],
+    classes: dict[str, dict[str, Any]],
+) -> NDArray[np.uint8]:
+    ids = np.asarray(class_ids)
+    out = np.zeros((*ids.shape, 3), dtype=np.uint8)
+    for key, spec in classes.items():
+        rgb = _hex_color_rgb(spec.get("color", "#808080"))
+        out[ids == int(key)] = rgb
+    return out
+
+
+def _mode_descriptor(
+    mode_id: str,
+    *,
+    label: str,
+    icon: str,
+    kind: str,
+    file: str,
+    legend: str | None = None,
+    monthly: bool = False,
+) -> dict[str, Any]:
+    return {
+        "id": mode_id,
+        "label": label,
+        "icon": icon,
+        "kind": kind,
+        "file": file,
+        "legend": legend,
+        "monthly": monthly,
+    }
+
+
+PRIMARY_MODE_DESCRIPTORS: tuple[dict[str, Any], ...] = (
+    _mode_descriptor("elevation", label="Elevation", icon="El", kind="continuous", file="elevation.png"),
+    _mode_descriptor("bathymetry", label="Bathymetry", icon="Ba", kind="continuous", file="bathymetry.png"),
+    _mode_descriptor(
+        "temperature",
+        label="Temperature",
+        icon="Te",
+        kind="continuous",
+        file="temperature_{month:02d}.png",
+        monthly=True,
+    ),
+    _mode_descriptor(
+        "precipitation",
+        label="Precipitation",
+        icon="Pr",
+        kind="continuous",
+        file="precipitation_{month:02d}.png",
+        monthly=True,
+    ),
+    _mode_descriptor(
+        "holdridge",
+        label="Holdridge",
+        icon="Ho",
+        kind="categorical",
+        file="holdridge.png",
+        legend="holdridge_zone_legend.json",
+    ),
+    _mode_descriptor(
+        "biome_v2",
+        label="Biome V2",
+        icon="B2",
+        kind="categorical",
+        file="biome_v2.png",
+        legend="biome_v2_legend.json",
+    ),
+    _mode_descriptor(
+        "landforms",
+        label="Landforms",
+        icon="Lf",
+        kind="categorical",
+        file="landforms.png",
+        legend="landform_legend.json",
+    ),
+)
+
 
 
 def _nearest_uint8(src: NDArray[np.uint8], height: int, width: int) -> NDArray[np.uint8]:
@@ -86,14 +179,12 @@ def _precip_rgb(precip: NDArray[np.floating]) -> NDArray[np.uint8]:
 
 
 def _holdridge_rgb(zones: NDArray[np.integer]) -> NDArray[np.uint8]:
+    from worldsim.physical.ecology.holdridge import holdridge_zone_rgb
+
     z = np.asarray(zones)
-    # Deterministic palette from zone id
     rgb = np.zeros((*z.shape, 3), dtype=np.uint8)
-    rgb[..., 0] = ((z * 37) % 200 + 30).astype(np.uint8)
-    rgb[..., 1] = ((z * 91) % 200 + 30).astype(np.uint8)
-    rgb[..., 2] = ((z * 17) % 200 + 30).astype(np.uint8)
-    ocean = z < 10
-    rgb[ocean] = (20, 40, 90)
+    for zid in np.unique(z):
+        rgb[z == zid] = holdridge_zone_rgb(int(zid))
     return rgb
 
 
@@ -187,6 +278,48 @@ def export_atlas_display(
             _holdridge_rgb(rasters.get("ecology/holdridge_zone_id")),
         )
 
+    from worldsim.physical.ecology.biome_v2 import biome_v2_legend
+    from worldsim.physical.landforms.classify import (
+        derive_display_landform_id,
+        landform_display_legend,
+    )
+
+    biome_legend = biome_v2_legend()
+    if rasters.has("ecology/biome_v2_class"):
+        klass = np.asarray(rasters.get("ecology/biome_v2_class"))
+        if klass.shape != (h, w):
+            klass = _nearest_uint8(klass.astype(np.uint8), h, w)
+        write_png_rgb(
+            directory / "biome_v2.png",
+            paint_categorical_rgb(klass, biome_legend["classes"]),
+        )
+
+    landform_legend = landform_display_legend()
+    display_overlap = 0
+    if rasters.has("landforms/context_id"):
+        from worldsim.spatial.hex_grid.contract import resample_nearest
+
+        ctx = resample_nearest(np.asarray(rasters.get("landforms/context_id")), h, w)
+        rid = (
+            resample_nearest(np.asarray(rasters.get("landforms/mountain_range_id")), h, w)
+            if rasters.has("landforms/mountain_range_id")
+            else None
+        )
+        pid = (
+            resample_nearest(np.asarray(rasters.get("landforms/plateau_id")), h, w)
+            if rasters.has("landforms/plateau_id")
+            else None
+        )
+        display_id, display_diag = derive_display_landform_id(
+            ctx, mountain_range_id=rid, plateau_id=pid, ocean_mask=ocean
+        )
+        display_overlap = int(display_diag.get("range_plateau_overlap_cells", 0))
+        write_png_rgb(
+            directory / "landforms.png",
+            paint_categorical_rgb(display_id, landform_legend["display_classes"]),
+        )
+        landform_legend["range_plateau_overlap_cells"] = display_overlap
+
     # Vectors as JSON FeatureCollections (Godot-friendly).
     # B6: simplify + Chaikin on rivers/coast (presentation); raster SoT unchanged.
     from worldsim.export.stroke_smooth import smooth_open_polyline, vertex_count
@@ -213,6 +346,12 @@ def export_atlas_display(
                         "monthly_discharge": list(s.monthly_discharge),
                         "from_lake_id": s.from_lake_id,
                         "to_lake_id": s.to_lake_id,
+                        "channel_state": s.channel_state,
+                        "catchment_km2": s.catchment_km2,
+                        "channel_length_km": s.channel_length_km,
+                        "monthly_bed_loss": list(s.monthly_bed_loss),
+                        "bed_loss_mean": s.bed_loss_mean,
+                        "loss_limited": s.loss_limited,
                         "parent_segment_id": s.id,
                     },
                     "geometry": {
@@ -251,6 +390,7 @@ def export_atlas_display(
     coastline = {"type": "FeatureCollection", "features": coast_feats}
     lakes = {
         "type": "FeatureCollection",
+        "lake_vector_schema": LAKE_VECTOR_SCHEMA,
         "features": [],
     }
     from worldsim.export.stroke_smooth import smooth_closed_ring
@@ -263,12 +403,7 @@ def export_atlas_display(
         lakes["features"].append(
             {
                 "type": "Feature",
-                "properties": {
-                    "id": lake.id,
-                    "surface_elevation": lake.surface_elevation,
-                    "closed_basin": lake.closed_basin,
-                    "area_cells": lake.area_cells,
-                },
+                "properties": lake_atlas_properties(lake),
                 "geometry": {
                     "type": "Polygon",
                     "coordinates": [[[x, y] for x, y in smoothed]],
@@ -319,55 +454,71 @@ def export_atlas_display(
         json.dumps(hex_meta, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
 
-    # Compact hex cache for inspector (avoid huge sparse river_ids lists in JSON)
-    river_nonempty = {
-        str(i): ids
-        for i, ids in enumerate(hex_grid.river_ids)
-        if ids
-    }
-    hex_env = {
-        "center_x": [float(v) for v in hex_grid.center_x.tolist()],
-        "center_y": [float(v) for v in hex_grid.center_y.tolist()],
-        "cell_count": [int(v) for v in hex_grid.cell_count.tolist()],
-        "land_fraction": [float(v) for v in hex_grid.land_fraction.tolist()],
-        "ocean_fraction": [float(v) for v in hex_grid.ocean_fraction.tolist()],
-        "lake_fraction": [float(v) for v in hex_grid.lake_fraction.tolist()],
-        "elevation_mean": [float(v) for v in hex_grid.elevation_mean.tolist()],
-        "temperature_annual_c": [
-            float(v) for v in np.mean(hex_grid.temperature_mean, axis=1).tolist()
-        ],
-        "precipitation_annual": [
-            float(v) for v in np.sum(hex_grid.precipitation_mean, axis=1).tolist()
-        ],
-        "holdridge_dominant": [int(v) for v in hex_grid.holdridge_dominant.tolist()],
-        "permeability_mean": [float(v) for v in hex_grid.permeability_mean.tolist()],
-        "river_ids_nonempty": river_nonempty,
-    }
+    # Compact hex cache for inspector — C8 contract names (aliases for pre-C9 Godot).
+    hex_env = hex_environment_columns(hex_grid)
+    hex_env["elevation_mean"] = hex_env["elevation_mean_m"]
+    hex_env["precipitation_annual"] = hex_env["precipitation_annual_mm"]
+    hex_env["precipitation_annual_unit"] = hex_grid.diagnostics.get(
+        "precipitation_annual_unit", "mm_declared_proxy"
+    )
+    hex_env["precip_scale_mm"] = hex_grid.diagnostics.get("precip_scale_mm", 200.0)
     (directory / "hex_environment.json").write_text(
         json.dumps(hex_env, separators=(",", ":")) + "\n", encoding="utf-8"
     )
 
-    from worldsim.physical.ecology.holdridge import build_zone_legend
+    from worldsim.physical.ecology.holdridge import holdridge_display_legend
+    from worldsim.export.inspection_grid import write_inspection_grid
 
+    holdridge_legend = holdridge_display_legend()
     (directory / "holdridge_zone_legend.json").write_text(
-        json.dumps(build_zone_legend(), indent=2, sort_keys=True) + "\n",
+        json.dumps(holdridge_legend, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (directory / "biome_v2_legend.json").write_text(
+        json.dumps(biome_legend, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (directory / "landform_legend.json").write_text(
+        json.dumps(landform_legend, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
 
+    precip_scale = float(hex_grid.diagnostics.get("precip_scale_mm", 200.0))
+    write_inspection_grid(
+        directory,
+        temperature=hex_grid.temperature_mean,
+        precipitation=hex_grid.precipitation_mean,
+        humidity=hex_grid.humidity_mean,
+        precip_scale_mm=precip_scale,
+    )
+    summary = _climate_summary(model, display_overlap=display_overlap)
+    (directory / "climate_summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    def _write_fc(name: str, features: list[dict[str, Any]]) -> None:
+        (directory / name).write_text(
+            json.dumps({"type": "FeatureCollection", "features": features}) + "\n",
+            encoding="utf-8",
+        )
+
+    _write_fc("mountain_ranges.geojson", list(model.vectors.mountain_ranges))
+    _write_fc("mountain_ridges.geojson", list(model.vectors.mountain_ridges))
+    _write_fc("plateaus.geojson", list(model.vectors.plateaus))
+    _write_fc("plateau_rims.geojson", list(model.vectors.plateau_rims))
+
+    available = [d for d in PRIMARY_MODE_DESCRIPTORS if (directory / _descriptor_file(d, 1)).is_file()]
     meta: dict[str, Any] = {
-        "schema": "atlas_display_v1",
+        "schema": ATLAS_DISPLAY_SCHEMA,
+        "lake_vector_schema": LAKE_VECTOR_SCHEMA,
         "raster_width": w,
         "raster_height": h,
         "months": n_months,
-        "map_modes": [
-            "elevation",
-            "bathymetry",
-            "temperature",
-            "precipitation",
-            "holdridge",
-        ],
+        "map_modes": available,
+        "map_mode_ids": [str(d["id"]) for d in available],
         "default_mode": "elevation",
         "hex_n_cells": hex_grid.n_cells,
+        "static_modes": [str(d["id"]) for d in available if not d.get("monthly")],
         "files": {
             "elevation": "elevation.png",
             "bathymetry": "bathymetry.png",
@@ -383,7 +534,19 @@ def export_atlas_display(
             "hex_grid": "hex_grid.json",
             "hex_environment": "hex_environment.json",
             "holdridge_zone_legend": "holdridge_zone_legend.json",
+            "biome_v2_legend": "biome_v2_legend.json",
+            "landform_legend": "landform_legend.json",
+            "mountain_ranges": "mountain_ranges.geojson",
+            "mountain_ridges": "mountain_ridges.geojson",
+            "plateaus": "plateaus.geojson",
+            "plateau_rims": "plateau_rims.geojson",
+            "biome_v2": "biome_v2.png",
+            "landforms": "landforms.png",
+            "inspection_grid": "inspection_grid.bin",
+            "inspection_grid_schema": "inspection_grid.json",
+            "climate_summary": "climate_summary.json",
         },
+        "hex_contract_fields": list(HEX_CONTRACT_FIELDS),
         "stroke_smooth": {
             "river_vertices_before": riv_verts_before,
             "river_vertices_after": riv_verts_after,
@@ -397,3 +560,41 @@ def export_atlas_display(
         json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     return meta
+
+
+def _descriptor_file(desc: dict[str, Any], month: int = 1) -> str:
+    template = str(desc.get("file", ""))
+    try:
+        return template.format(month=int(month))
+    except (KeyError, ValueError, IndexError):
+        return template
+
+
+def _climate_summary(
+    model: WorldSpatialModel, *, display_overlap: int = 0
+) -> dict[str, Any]:
+    extra = dict(model.manifest.extra or {})
+    rasters = model.rasters
+    warnings: list[str] = []
+    biome_ok = bool(rasters.has("ecology/biome_v2_class"))
+    landforms_ok = bool(rasters.has("landforms/context_id"))
+    if not biome_ok:
+        warnings.append("ecology/biome_v2_class missing")
+    if not landforms_ok:
+        warnings.append("landforms/context_id missing")
+    if display_overlap:
+        warnings.append(f"range/plateau object overlap: {display_overlap} cells")
+    return {
+        "temperature_integrity_ok": bool(
+            extra.get("temperature_integrity_ok", extra.get("climate_acceptance_ok", True))
+        ),
+        "moisture_spinup_ok": bool(extra.get("moisture_spinup_ok", extra.get("moisture_acceptance_ok", False))),
+        "moisture_budget_ok": bool(extra.get("moisture_budget_ok", extra.get("moisture_acceptance_ok", False))),
+        "hydrology_coupling_ok": bool(
+            extra.get("hydrology_coupling_ok", extra.get("hydrology_acceptance_ok", False))
+        ),
+        "biome_v2_ok": biome_ok,
+        "landforms_ok": landforms_ok,
+        "overall_acceptance_ok": bool(model.manifest.acceptance_ok),
+        "warnings": warnings,
+    }

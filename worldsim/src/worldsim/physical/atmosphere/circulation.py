@@ -165,6 +165,31 @@ def elevation_gradients_cylindrical(
     return de_dx, de_dy
 
 
+def smooth_field_cylindrical(
+    field: NDArray[np.floating],
+    half_cells: int,
+) -> NDArray[np.float64]:
+    """Separable box mean; E–W wrap, N–S edge clamp."""
+    q = np.asarray(field, dtype=np.float64)
+    half = max(int(half_cells), 0)
+    if half <= 0:
+        return q.copy()
+    acc = np.zeros_like(q)
+    k = 2 * half + 1
+    for s in range(-half, half + 1):
+        acc += np.roll(q, s, axis=1)
+    acc /= float(k)
+    ns = np.zeros_like(q)
+    for s in range(-half, half + 1):
+        if s < 0:
+            ns += np.pad(acc[:s, :], ((-s, 0), (0, 0)), mode="edge")
+        elif s > 0:
+            ns += np.pad(acc[s:, :], ((0, s), (0, 0)), mode="edge")
+        else:
+            ns += acc
+    return ns / float(k)
+
+
 def apply_topographic_perturbation(
     u: NDArray[np.floating],
     v: NDArray[np.floating],
@@ -183,18 +208,20 @@ def apply_topographic_perturbation(
     uu = np.asarray(u, dtype=np.float64).copy()
     vv = np.asarray(v, dtype=np.float64).copy()
     gx, gy = elevation_gradients_cylindrical(elevation_m)
-    # Soft unitless slope ∈ (−1, 1)
+    # Soft unitless slope ∈ (−1, 1). gy is d_elev/d_south; wind_v > 0 is northward.
     sx = np.tanh(gx / elev_scale_m)
     sy = np.tanh(gy / elev_scale_m)
+    slope_e = sx
+    slope_n = -sy
 
-    du = -drag_amp * sx
-    dv = -drag_amp * sy
-    # Flow into the slope → extra blocking + mild diversion around high ground
-    into = uu * sx + vv * sy
-    du = du - divert_amp * into * sx
-    dv = dv - divert_amp * into * sy
-    du = du + divert_amp * 0.35 * (-sy) * np.abs(into)
-    dv = dv + divert_amp * 0.35 * sx * np.abs(into)
+    du = -drag_amp * slope_e
+    dv = -drag_amp * slope_n
+    # Flow into the upslope (east, north) — same orientation as orographic lift.
+    into = uu * slope_e + vv * slope_n
+    du = du - divert_amp * into * slope_e
+    dv = dv - divert_amp * into * slope_n
+    du = du + divert_amp * 0.35 * (-slope_n) * np.abs(into)
+    dv = dv + divert_amp * 0.35 * slope_e * np.abs(into)
 
     # Cap perturbation magnitude vs local wind
     speed = np.hypot(uu, vv)

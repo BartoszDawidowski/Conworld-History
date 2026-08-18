@@ -17,6 +17,105 @@ from worldsim.physical.hydrology.cylindrical_graph import (
 WaterState = Literal["open", "endorheic", "seasonal_or_playa", "frozen_or_ice_covered"]
 LIQUID_WATER_STATES: frozenset[str] = frozenset({"open", "endorheic"})
 
+# C0 lake-vector contract. water_state remains a derived compatibility field.
+LAKE_VECTOR_SCHEMA = "lake_vector_v1"
+OUTLET_TYPES = ("ocean_draining", "open_lake", "closed_endorheic")
+HYDROPERIODS = ("permanent", "seasonal", "ephemeral_or_dry")
+ICE_REGIMES = ("normally_liquid", "seasonally_frozen", "perennially_frozen")
+
+
+def derive_lake_axes(
+    *,
+    water_state: str = "",
+    closed_basin: bool = True,
+    has_ocean_outlet: bool = False,
+    outlet_type: str = "",
+    hydroperiod: str = "",
+    ice_regime: str = "",
+) -> dict[str, str]:
+    """Fill independent lake axes; derive compatibility ``water_state`` from them."""
+    state = str(water_state or "")
+    ot = str(outlet_type or "")
+    hp = str(hydroperiod or "")
+    ice = str(ice_regime or "")
+    if not (ot and hp and ice):
+        if state == "frozen_or_ice_covered":
+            ice = ice or "perennially_frozen"
+            hp = hp or "permanent"
+            ot = ot or ("closed_endorheic" if closed_basin else "open_lake")
+        elif state == "seasonal_or_playa":
+            ice = ice or "normally_liquid"
+            hp = hp or "ephemeral_or_dry"
+            ot = ot or "closed_endorheic"
+        elif state == "endorheic":
+            ice = ice or "normally_liquid"
+            hp = hp or "permanent"
+            ot = ot or "closed_endorheic"
+        elif state == "open":
+            ice = ice or "normally_liquid"
+            hp = hp or "permanent"
+            ot = ot or ("ocean_draining" if has_ocean_outlet else "open_lake")
+    compat = compatibility_water_state(ot, hp, ice, fallback=state)
+    return {
+        "outlet_type": ot,
+        "hydroperiod": hp,
+        "ice_regime": ice,
+        "water_state": compat,
+    }
+
+
+def compatibility_water_state(
+    outlet_type: str,
+    hydroperiod: str,
+    ice_regime: str,
+    *,
+    fallback: str = "",
+) -> str:
+    """Derived CR-6 ``water_state``; not the canonical source of truth."""
+    if ice_regime == "perennially_frozen":
+        return "frozen_or_ice_covered"
+    if hydroperiod == "ephemeral_or_dry":
+        return "seasonal_or_playa"
+    if outlet_type == "closed_endorheic" and hydroperiod in ("permanent", "seasonal"):
+        return "endorheic"
+    if outlet_type in ("open_lake", "ocean_draining") and hydroperiod in (
+        "permanent",
+        "seasonal",
+    ):
+        return "open"
+    return str(fallback or "")
+
+
+def atlas_lake_is_liquid(props: dict[str, Any]) -> bool:
+    """Fail-closed atlas draw rule: missing state is not liquid water."""
+    ice = str(props.get("ice_regime") or "")
+    hydro = str(props.get("hydroperiod") or "")
+    state = str(props.get("water_state") or "")
+    if ice == "perennially_frozen" or hydro == "ephemeral_or_dry":
+        return False
+    if state in LIQUID_WATER_STATES:
+        return True
+    outlet = str(props.get("outlet_type") or "")
+    if hydro in ("permanent", "seasonal") and ice in (
+        "",
+        "normally_liquid",
+        "seasonally_frozen",
+    ):
+        return outlet in OUTLET_TYPES
+    return False
+
+
+def apply_lake_identity(rec: dict[str, Any]) -> dict[str, Any]:
+    """Set topographic ``feature_id`` vs liquid ``water_body_id`` on a record."""
+    lid = int(rec.get("lake_id") or rec.get("id") or 0)
+    basin = int(rec.get("basin_id") or 0)
+    rec["feature_id"] = int(rec.get("feature_id") or (basin if basin else lid))
+    state = str(rec.get("water_state") or "")
+    if int(rec.get("water_body_id") or 0) > 0:
+        return rec
+    rec["water_body_id"] = lid if state in LIQUID_WATER_STATES else 0
+    return rec
+
 
 def spill_elevation_m(
     lake_mask: NDArray[np.bool_],
@@ -118,9 +217,17 @@ def classify_lake_body(
     else:
         state = "open"
 
+    axes = derive_lake_axes(
+        water_state=state,
+        closed_basin=closed_basin,
+        has_ocean_outlet=has_ocean_outlet,
+    )
     return {
         "lake_id": int(lake_id_value),
-        "water_state": state,
+        "water_state": axes["water_state"],
+        "outlet_type": axes["outlet_type"],
+        "hydroperiod": axes["hydroperiod"],
+        "ice_regime": axes["ice_regime"],
         "closed_basin": bool(closed_basin),
         "has_ocean_outlet": bool(has_ocean_outlet),
         "has_land_outlet": bool(has_land_outlet),
@@ -133,6 +240,8 @@ def classify_lake_body(
         "mean_temp_c": mean_temp,
         "area_cells": int(np.count_nonzero(body)),
         "basin_id": 0,  # filled by caller from dominant basin
+        "feature_id": 0,
+        "water_body_id": int(lake_id_value) if axes["water_state"] in LIQUID_WATER_STATES else 0,
     }
 
 
@@ -167,6 +276,7 @@ def build_lake_records(
         )
         bids, counts = np.unique(basin_id[body], return_counts=True)
         rec["basin_id"] = int(bids[int(np.argmax(counts))]) if len(bids) else 0
+        apply_lake_identity(rec)
         records.append(rec)
     return records
 

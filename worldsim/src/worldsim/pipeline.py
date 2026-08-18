@@ -18,14 +18,13 @@ from worldsim.physical.climate import ClimateParams, build_base_climate
 from worldsim.physical.climate.pipeline import ClimateResult
 from worldsim.physical.ocean import OceanParams, OceanResult, build_ocean_circulation
 from worldsim.physical.moisture import MoistureParams, MoistureResult, build_moisture
-from worldsim.physical.erosion import ErosionParams, ErosionResult, build_erosion_pass_one
+from worldsim.physical.erosion import ErosionResult, build_erosion_pass_one
 from worldsim.physical.hydrology import (
     HydrologyResult,
     build_hydrology,
 )
 from worldsim.physical.vectorize import VectorGeographyResult, build_vector_geography
 from worldsim.physical.final import (
-    FinalRecalcParams,
     FinalRecalcResult,
     build_final_recalculation,
 )
@@ -348,6 +347,7 @@ def _build_climate_for_state(
                 lengths.resolved["continentality_scale_km"].value_km
             ),
             planet_radius_km=config.planet_radius_km,
+            continental_seasonality_gain=config.climate_continental_seasonality_gain,
         ),
         reporter=reporter,
     )
@@ -945,10 +945,7 @@ def _build_erosion_for_state(
         terrain=terrain,
         moisture=moisture,
         interpretation=interpretation,
-        params=ErosionParams(
-            iterations=config.erosion_iterations,
-            fluvial_k=config.erosion_fluvial_k,
-        ),
+        params=config.to_erosion_params(),
         reporter=reporter,
     )
 
@@ -1352,14 +1349,7 @@ def _pipeline_through_final(
         climate_v1=climate,
         terrain=terrain,
         interpretation=interpretation,
-        params=FinalRecalcParams(
-            months=config.climate_months,
-            axial_tilt_deg=config.axial_tilt_deg,
-            ocean=config.to_ocean_params(),
-            moisture=config.to_moisture_params(),
-            hydrology=config.to_hydrology_params(),
-            landforms=config.to_landform_params(),
-        ),
+        params=config.to_final_recalc_params(),
         reporter=reporter,
     )
     final.save(output_dir / "final")
@@ -1707,6 +1697,7 @@ def run_world(
         hex_grid=hex_grid,
         hydrology=final.hydrology,
         elevation_terrain_m=final.elevation_v2_m,
+        landforms=final.landforms,
         master_seed=master_seed,
         metadata={
             "tectonics_seed": state.metadata.get("tectonics_seed"),

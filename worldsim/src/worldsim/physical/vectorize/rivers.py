@@ -7,12 +7,14 @@ opaque lake fills are drawn above rivers in the atlas.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
+from worldsim.physical.hydrology.channels import CHANNEL_STATE_NAME
 from worldsim.physical.vectorize.coords import polyline_length_norm
 from worldsim.spatial.extent import SpatialExtent
 
@@ -55,6 +57,13 @@ class RiverSegment:
     ## A4c: lake left at start (outlet) / entered at end (inlet); 0 = none.
     from_lake_id: int = 0
     to_lake_id: int = 0
+    channel_state: str = "none"
+    catchment_km2: float = 0.0
+    channel_length_km: float = 0.0
+    monthly_bed_loss: list[float] = field(default_factory=list)
+    bed_loss_mean: float = 0.0
+    loss_limited: bool = False
+    estimated_width_m: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -69,6 +78,13 @@ class RiverSegment:
             "length": self.length,
             "from_lake_id": self.from_lake_id,
             "to_lake_id": self.to_lake_id,
+            "channel_state": self.channel_state,
+            "catchment_km2": float(self.catchment_km2),
+            "channel_length_km": float(self.channel_length_km),
+            "monthly_bed_loss": [float(v) for v in self.monthly_bed_loss],
+            "bed_loss_mean": float(self.bed_loss_mean),
+            "loss_limited": bool(self.loss_limited),
+            "estimated_width_m": float(self.estimated_width_m),
         }
 
 
@@ -214,6 +230,12 @@ def build_river_network(
     monthly_discharge: NDArray[np.floating],
     extent: SpatialExtent,
     lake_id: NDArray[np.integer] | None = None,
+    channel_state: NDArray[np.integer] | None = None,
+    flow_accumulation: NDArray[np.floating] | None = None,
+    cell_area_km2: float | None = None,
+    path_length_km: NDArray[np.floating] | None = None,
+    monthly_bed_loss: NDArray[np.floating] | None = None,
+    bed_loss_potential_m3s: NDArray[np.floating] | None = None,
 ) -> RiverNetwork:
     """Build canonical river network from the cylindrical D8 graph (PR-5).
 
@@ -316,6 +338,30 @@ def build_river_network(
         er, ec = path[-1]
         from_lid = int(lid_raster[sr, sc]) if lakes[sr, sc] else 0
         to_lid = int(lid_raster[er, ec]) if lakes[er, ec] else 0
+        state_name = "none"
+        if channel_state is not None and np.asarray(channel_state).size:
+            state_name = CHANNEL_STATE_NAME.get(int(channel_state[mr, mc]), "none")
+        catch_km2 = 0.0
+        if flow_accumulation is not None and cell_area_km2 is not None:
+            catch_km2 = float(flow_accumulation[mr, mc]) * float(cell_area_km2)
+        length_km = 0.0
+        if path_length_km is not None:
+            length_km = float(
+                sum(float(path_length_km[r, c]) for r, c in path)
+            )
+        monthly_loss = []
+        if monthly_bed_loss is not None and monthly_bed_loss.size:
+            monthly_loss = [
+                float(monthly_bed_loss[m, mr, mc])
+                for m in range(monthly_bed_loss.shape[0])
+            ]
+        loss_mean = float(np.mean(monthly_loss)) if monthly_loss else 0.0
+        potential = 0.0
+        if bed_loss_potential_m3s is not None and bed_loss_potential_m3s.size:
+            potential = float(bed_loss_potential_m3s[mr, mc])
+        available = mean_q + loss_mean
+        loss_limited = bool(potential > available + 1e-12)
+        width_est = float(min(400.0, 8.0 * math.sqrt(max(mean_q, 0.0))))
 
         start_t: NodeType = "lake_outlet" if from_lid else "source"
         end_t: NodeType = "lake_inlet" if to_lid else "junction"
@@ -346,6 +392,13 @@ def build_river_network(
             length=length,
             from_lake_id=from_lid,
             to_lake_id=to_lid,
+            channel_state=state_name,
+            catchment_km2=catch_km2,
+            channel_length_km=length_km,
+            monthly_bed_loss=monthly_loss,
+            bed_loss_mean=loss_mean,
+            loss_limited=loss_limited,
+            estimated_width_m=width_est,
         )
         segments.append(seg)
 

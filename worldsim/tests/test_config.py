@@ -28,6 +28,11 @@ def test_default_config_loads() -> None:
     assert config.to_pyplatec_params().folding_ratio == 0.01
     assert config.erosion_iterations == 5
     assert config.erosion_fluvial_k == 8.0
+    assert config.erosion_thermal_kappa == pytest.approx(0.08)
+    assert config.erosion_stream_power_k == pytest.approx(12.0)
+    assert config.to_erosion_params().thermal_kappa == pytest.approx(0.08)
+    assert config.to_erosion_params().fluvial_k == pytest.approx(8.0)
+    assert config.to_final_recalc_params().stream_power_k == pytest.approx(12.0)
     assert config.sst_mix == 0.28
     assert config.inland_decay_cells == 60.0
     assert config.sst_inland_decay_km == 1200.0
@@ -39,15 +44,17 @@ def test_default_config_loads() -> None:
     assert config.moisture_convective_scale == 2.0
     assert config.moisture_ocean_evap_rate == 1.4
     assert config.moisture_land_et_rate == 0.4
-    assert config.moisture_spinup_max_years == 20
+    assert config.moisture_spinup_max_years == 48
     assert config.moisture_monsoon_strength == 0.35
     assert config.moisture_continentality_dry == 0.4
     assert config.moisture_lake_evap_rate == 0.75
     assert config.moisture_river_evap_rate == 0.40
     assert config.to_ocean_params().sst_mix == 0.28
     assert config.to_moisture_params().advect_steps == 32
+    assert config.to_moisture_params().advect_max_substeps == 32
     assert config.to_moisture_params().lake_evap_rate == 0.75
     assert config.base_temp_c == 25.0
+    assert config.climate_continental_seasonality_gain == pytest.approx(0.0)
     assert config.precip_scale_mm == 200.0
     assert config.hydrology_transmission_rate == 0.45
     assert config.hydrology_fill_max_depth_m == 25.0

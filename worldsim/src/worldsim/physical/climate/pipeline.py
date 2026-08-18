@@ -11,7 +11,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 from worldsim.physical.climate.insolation import monthly_insolation_field
-from worldsim.physical.climate.temperature import build_monthly_temperature_c
+from worldsim.physical.climate.temperature import (
+    TEMPERATURE_STATE_BASE,
+    TEMPERATURE_STATE_EQUILIBRIUM,
+    build_monthly_temperature_c,
+    temperature_diagnostics,
+)
 from worldsim.physical.terrain.pipeline import TerrainOceanResult
 from worldsim.progress import ProgressReporter
 from worldsim.spatial.coordinates import y_to_lat
@@ -31,6 +36,7 @@ class ClimateParams:
     continentality_scale_km: float | None = None
     continentality_scale_cells: float = 24.0
     planet_radius_km: float = EARTH_RADIUS_KM
+    continental_seasonality_gain: float = 0.0
 
 
 @dataclass
@@ -151,10 +157,11 @@ def downsample_land_elevation_mean(
         for j in range(out_height):
             for i in range(out_width):
                 land_f = ~flat_o[j, i]
-                if ocean_out[j, i] or not np.any(land_f):
-                    out[j, i] = float(np.mean(flat_e[j, i]))
-                else:
+                if np.any(land_f):
+                    # Always land-only when any land exists (C3 coastal mix).
                     out[j, i] = float(np.mean(flat_e[j, i][land_f]))
+                else:
+                    out[j, i] = float(np.mean(flat_e[j, i]))
         return out, ocean_out
 
     # Non-divisible fallback: windowed land-only mean around each sample.
@@ -170,11 +177,34 @@ def downsample_land_elevation_mean(
             x0, x1 = max(0, x - rx), min(in_w, x + rx + 1)
             block = elev[y0:y1, x0:x1]
             oblock = ocean[y0:y1, x0:x1]
-            if ocean_out[j, i] or not np.any(~oblock):
-                out[j, i] = float(np.mean(block))
+            land_f = ~oblock
+            if np.any(land_f):
+                out[j, i] = float(np.mean(block[land_f]))
             else:
-                out[j, i] = float(np.mean(block[~oblock]))
+                out[j, i] = float(np.mean(block))
     return out, ocean_out
+
+
+def climate_grid_land_elevation(
+    elevation_m: NDArray[np.floating],
+    ocean_mask: NDArray[np.bool_],
+    out_width: int,
+    out_height: int,
+    *,
+    climate_ocean_mask: NDArray[np.bool_],
+    ocean_elevation_m: NDArray[np.floating],
+) -> NDArray[np.float64]:
+    """Climate-grid elevation: land-only mean on land cells, climate bathymetry on ocean.
+
+    Coastal land cells do not average negative bathymetry into the land height
+    used for temperature or ecology (C3).
+    """
+    land_mean, _ocean_out = downsample_land_elevation_mean(
+        elevation_m, ocean_mask, out_width, out_height
+    )
+    climate_ocean = np.asarray(climate_ocean_mask, dtype=bool)
+    ocean_elev = np.asarray(ocean_elevation_m, dtype=np.float64)
+    return np.where(climate_ocean, ocean_elev, land_mean)
 
 
 def downsample_mode_bool(
@@ -259,8 +289,20 @@ def replace_climate_temperature(
     *,
     diagnostics: dict[str, Any] | None = None,
     elevation_m: NDArray[np.floating] | None = None,
+    temperature_equilibrium_c: NDArray[np.floating] | None = None,
+    temperature_base_c: NDArray[np.floating] | None = None,
 ) -> ClimateResult:
-    """Copy climate with updated temperature (and optional elev / diagnostics)."""
+    """Copy climate with updated published T (and optional named states / elev).
+
+    ``None`` named-state arguments keep the previous arrays. Pass an array to
+    update a DEM-dependent state (C3T).
+    """
+    eq = climate.temperature_equilibrium_c
+    if temperature_equilibrium_c is not None:
+        eq = np.asarray(temperature_equilibrium_c, dtype=np.float64)
+    base = climate.temperature_base_c
+    if temperature_base_c is not None:
+        base = np.asarray(temperature_base_c, dtype=np.float64)
     return ClimateResult(
         extent=climate.extent,
         latitude_deg=climate.latitude_deg,
@@ -274,13 +316,36 @@ def replace_climate_temperature(
         ),
         ocean_mask=climate.ocean_mask,
         diagnostics=diagnostics if diagnostics is not None else dict(climate.diagnostics),
-        temperature_equilibrium_c=climate.temperature_equilibrium_c,
-        temperature_base_c=climate.temperature_base_c,
+        temperature_equilibrium_c=eq,
+        temperature_base_c=base,
         elev_p10_m=climate.elev_p10_m,
         elev_p90_m=climate.elev_p90_m,
         elev_ridge_m=climate.elev_ridge_m,
         elev_slope_rms=climate.elev_slope_rms,
     )
+
+
+def restamp_temperature_diagnostics(
+    climate: ClimateResult,
+    *,
+    state_name: str,
+    extra: dict[str, Any] | None = None,
+) -> ClimateResult:
+    """Replace temperature stats with values computed from ``climate.temperature_c``."""
+    stats = temperature_diagnostics(
+        climate.temperature_c,
+        latitude_deg=climate.latitude_deg,
+        elevation_m=climate.elevation_m,
+        ocean_mask=climate.ocean_mask,
+        state_name=state_name,
+    )
+    diag = {**dict(climate.diagnostics), **stats, **(extra or {})}
+    diag["temperature_provenance"] = {
+        "equilibrium": TEMPERATURE_STATE_EQUILIBRIUM,
+        "pre_sst_base": TEMPERATURE_STATE_BASE,
+        "published": str(state_name),
+    }
+    return replace_climate_temperature(climate, climate.temperature_c, diagnostics=diag)
 
 
 def _resolve_continentality_km(params: ClimateParams) -> float:
@@ -306,14 +371,22 @@ def build_base_climate(
         reporter.progress("climate", 0.1)
 
     lat_deg, lat_rad = latitude_grid(params.height, params.width)
+    ocean = downsample_mode_bool(terrain.ocean_mask, params.width, params.height)
     sub = downsample_elevation_subgrid_stats(
         terrain.elevation_m,
         params.width,
         params.height,
         planet_radius_km=params.planet_radius_km,
     )
-    elev = sub["elevation_m"]
-    ocean = downsample_mode_bool(terrain.ocean_mask, params.width, params.height)
+    elev = climate_grid_land_elevation(
+        terrain.elevation_m,
+        terrain.ocean_mask,
+        params.width,
+        params.height,
+        climate_ocean_mask=ocean,
+        ocean_elevation_m=sub["elevation_m"],
+    )
+    sub = {**sub, "elevation_m": elev}
     metrics = grid_metrics(
         params.width, params.height, radius_km=params.planet_radius_km
     )
@@ -338,50 +411,20 @@ def build_base_climate(
         continentality_scale_cells=None,
         metrics=metrics,
         planet_radius_km=params.planet_radius_km,
+        continental_seasonality_gain=params.continental_seasonality_gain,
     )
 
     if reporter is not None:
         reporter.progress("climate", 0.85)
 
-    # Diagnostics for acceptance: seasonal inversion + polar/elevation trends.
-    june = 5
-    december = 11
-    # Northern mid-lat band ~45°N
-    nh = (lat_deg > 40.0) & (lat_deg < 55.0)
-    sh = (lat_deg < -40.0) & (lat_deg > -55.0)
-    seasonal_inversion_ok = True
-    if np.any(nh) and np.any(sh):
-        nh_june = float(temperature_c[june][nh].mean())
-        nh_dec = float(temperature_c[december][nh].mean())
-        sh_june = float(temperature_c[june][sh].mean())
-        sh_dec = float(temperature_c[december][sh].mean())
-        seasonal_inversion_ok = (nh_june > nh_dec) and (sh_dec > sh_june)
-    else:
-        nh_june = nh_dec = sh_june = sh_dec = float("nan")
-
-    # Poles colder than tropics (annual mean)
-    trop = np.abs(lat_deg) < 15.0
-    polar = np.abs(lat_deg) > 70.0
-    annual = temperature_c.mean(axis=0)
-    polar_colder = True
-    if np.any(trop) and np.any(polar):
-        polar_colder = float(annual[polar].mean()) < float(annual[trop].mean())
-
-    # Elevation: high land colder than low land (annual)
     land = ~ocean
-    elevation_trend_ok = True
-    if np.count_nonzero(land) > 50:
-        land_elev = elev[land]
-        land_temp = annual[land]
-        # Correlation should be negative
-        if float(np.std(land_elev)) > 1.0:
-            corr = float(np.corrcoef(land_elev, land_temp)[0, 1])
-            elevation_trend_ok = corr < -0.2
-        else:
-            corr = float("nan")
-    else:
-        corr = float("nan")
-
+    stats = temperature_diagnostics(
+        temperature_c,
+        latitude_deg=lat_deg,
+        elevation_m=elev,
+        ocean_mask=ocean,
+        state_name=TEMPERATURE_STATE_BASE,
+    )
     diagnostics = {
         "width": params.width,
         "height": params.height,
@@ -389,25 +432,21 @@ def build_base_climate(
         "axial_tilt_deg": params.axial_tilt_deg,
         "lapse_rate_c_per_km": params.lapse_rate_c_per_km,
         "base_temp_c": params.base_temp_c,
-        "temperature_min_c": float(np.min(temperature_c)),
-        "temperature_max_c": float(np.max(temperature_c)),
-        "annual_mean_c": float(np.mean(annual)),
         "insolation_min": float(np.min(insolation)),
         "insolation_max": float(np.max(insolation)),
-        "seasonal_inversion_ok": seasonal_inversion_ok,
-        "nh_june_mean_c": nh_june,
-        "nh_december_mean_c": nh_dec,
-        "sh_june_mean_c": sh_june,
-        "sh_december_mean_c": sh_dec,
-        "polar_colder_than_tropics": polar_colder,
-        "elevation_temperature_corr_land": corr,
-        "elevation_trend_ok": elevation_trend_ok,
-        "temperature_state": "temperature_base_c",
+        "climate_land_elev_min_m": float(np.min(elev[land])) if np.any(land) else 0.0,
+        "climate_land_elev_source": "land_only_mean",
         "lapse_apply_count": 1,
         "sst_apply_count": 0,
         "subgrid_elev_stats": True,
         "subgrid_applied_to_temperature": False,
+        "temperature_provenance": {
+            "equilibrium": TEMPERATURE_STATE_EQUILIBRIUM,
+            "pre_sst_base": TEMPERATURE_STATE_BASE,
+            "published": TEMPERATURE_STATE_BASE,
+        },
         **temp_diag,
+        **stats,
     }
 
     if reporter is not None:

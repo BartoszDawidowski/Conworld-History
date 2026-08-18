@@ -129,6 +129,21 @@ def test_world_round_trip(tmp_path: Path) -> None:
     assert np.allclose(
         loaded.hex_grid.land_fraction, model.hex_grid.land_fraction
     )
+    for key in (
+        "ecology/biome_v2_class",
+        "ecology/frost_months",
+        "ecology/growing_season_months",
+        "ecology/water_deficit_mm",
+        "ecology/soil_state",
+        "ecology/thermal_regime_id",
+        "ecology/moisture_regime_id",
+    ):
+        assert loaded.rasters.has(key)
+        assert np.array_equal(loaded.rasters.get(key), model.rasters.get(key))
+    assert loaded.hex_grid.biome_v2_dominant is not None
+    assert np.array_equal(
+        loaded.hex_grid.biome_v2_dominant, model.hex_grid.biome_v2_dominant
+    )
     assert len(loaded.vectors.rivers.segments) == 1
     assert loaded.vectors.rivers.segments[0].id == 1
 
@@ -147,6 +162,9 @@ def test_query_api_without_godot() -> None:
     hid = model.hex_at(x, y)
     he = model.hex_environment(hid)
     assert he["hex_id"] == hid
+    assert "biome_v2_dominant" in he
+    assert "frost_months_mean" in he
+    assert env.get("biome_v2_hex") == he["biome_v2_dominant"]
     neigh = model.neighbour_hexes(hid)
     assert len(neigh) == 6
     rivers = model.rivers_in_bbox(0.0, -1.0, 1.0, 1.0)

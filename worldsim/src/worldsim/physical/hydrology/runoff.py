@@ -125,6 +125,7 @@ def build_monthly_runoff(
     soil_et = np.zeros_like(precip)
     residual_pet = np.zeros_like(precip)
     store_out = np.zeros_like(precip)
+    soil_monthly = np.zeros_like(precip)
     soil_out = np.zeros((h, w), dtype=np.float64)
     store = np.zeros((h, w), dtype=np.float64)
     soil = np.zeros((h, w), dtype=np.float64)
@@ -170,6 +171,7 @@ def build_monthly_runoff(
         soil_et[m] = et
         residual_pet[m] = np.maximum(pet - et, 0.0)
         store_out[m] = store
+        soil_monthly[m] = soil
 
     soil_out = soil
     diag = {
@@ -196,5 +198,6 @@ def build_monthly_runoff(
         "residual_pet": residual_pet,
         "snow_store": store_out,
         "soil_store": soil_out,
+        "soil_store_monthly": soil_monthly,
         "diagnostics": diag,
     }

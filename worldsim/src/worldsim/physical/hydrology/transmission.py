@@ -24,6 +24,35 @@ def month_pet_fraction(month_index: int) -> float:
     return float(MONTH_DAYS[int(month_index) % 12]) / float(YEAR_DAYS)
 
 
+NOMINAL_MONTH_DAYS = 30.0
+
+
+def channel_bed_loss_potential_m3s(
+    channel_length_km: NDArray[np.floating],
+    *,
+    loss_rate_m3_per_km_month: float,
+    width_factor: NDArray[np.floating] | float = 1.0,
+    channel_mask: NDArray[np.bool_] | None = None,
+    ocean_mask: NDArray[np.bool_] | None = None,
+) -> NDArray[np.float64]:
+    """Potential channel-bed loss in m³/s from geometry, not full-cell PET.
+
+    ``potential_loss_m3_month = rate × length_km × width_factor``. Converted
+    with a 30-day nominal month so monthly and independent-annual sinks share
+    the same m³/s semantics. Callers must cap by available Q during routing.
+    """
+    length = np.maximum(np.asarray(channel_length_km, dtype=np.float64), 0.0)
+    width = np.maximum(np.asarray(width_factor, dtype=np.float64), 0.0)
+    potential_m3_month = float(loss_rate_m3_per_km_month) * length * width
+    seconds = float(NOMINAL_MONTH_DAYS) * 86400.0
+    potential = potential_m3_month / max(seconds, 1.0)
+    if channel_mask is not None:
+        potential = np.where(np.asarray(channel_mask, dtype=np.bool_), potential, 0.0)
+    if ocean_mask is not None:
+        potential = np.where(np.asarray(ocean_mask, dtype=np.bool_), 0.0, potential)
+    return potential.astype(np.float64, copy=False)
+
+
 def transmission_sink(
     precip: NDArray[np.floating],
     temperature_c: NDArray[np.floating],

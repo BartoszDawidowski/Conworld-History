@@ -170,7 +170,7 @@ def test_build_hydrology_cr7_units_and_states() -> None:
         params=HydrologyParams(fill_max_depth_m=25.0),
         temperature_c=temp,
     )
-    assert hydro.diagnostics["hydrology_algorithm"] == "cr7_soil_q_m3s_km_loss_v1"
+    assert hydro.diagnostics["hydrology_algorithm"] == "c2_channel_bed_loss_v1"
     assert hydro.diagnostics["q_units"] == "m3_s"
     assert hydro.diagnostics["q_canonical"] == "mean_monthly_m3s"
     assert hydro.diagnostics["runoff_algorithm"] == "soil_bucket_v1"
@@ -212,7 +212,7 @@ def test_closed_basin_storage_has_twelve_scalars() -> None:
     rec = stored[0]
     assert len(rec["storage_m3"]) == 12
     assert len(rec["level_m"]) == 12
-    assert rec["storage_curve"] == "linear_a_of_h"
+    assert rec["storage_curve"] == "discrete_avh_v1"
     assert hydro.diagnostics["basin_storage_stepped_count"] >= 1
 
 

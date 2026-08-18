@@ -9,6 +9,54 @@ from worldsim.spatial.metrics import EARTH_RADIUS_KM, GridMetrics, grid_metrics
 
 # Cell laplacian * 0.08 matched ~1 km cells (F-21). Physical kappa = that * (1000 m)².
 THERMAL_KAPPA_REF_M = 1000.0
+# C3: a no-op pass must not pass acceptance just because correlation held.
+EROSION_MIN_MEAN_ABS_DELTA_M = 1.0
+EROSION_MIN_MEAN_ABS_FRAC_OF_RANGE = 0.0005
+
+
+def land_elevation_delta_stats(
+    before: NDArray[np.floating],
+    after: NDArray[np.floating],
+    ocean_mask: NDArray[np.bool_],
+) -> dict[str, float | bool | int]:
+    """Land-only change stats for first-pass / stream-power acceptance."""
+    ocean = np.asarray(ocean_mask, dtype=bool)
+    land = ~ocean
+    b = np.asarray(before, dtype=np.float64)
+    a = np.asarray(after, dtype=np.float64)
+    d = a - b
+    if not np.any(land):
+        return {
+            "mean_abs_delta_land_m": 0.0,
+            "median_abs_delta_land_m": 0.0,
+            "p90_abs_delta_land_m": 0.0,
+            "max_abs_delta_land_m": 0.0,
+            "elev_range_land_m": 1.0,
+            "ocean_unchanged": True,
+        }
+    ad = np.abs(d[land])
+    elev_range = float(np.ptp(b[land]))
+    elev_range = max(elev_range, 1.0)
+    return {
+        "mean_abs_delta_land_m": float(np.mean(ad)),
+        "median_abs_delta_land_m": float(np.median(ad)),
+        "p90_abs_delta_land_m": float(np.percentile(ad, 90)),
+        "max_abs_delta_land_m": float(np.max(ad)),
+        "elev_range_land_m": elev_range,
+        "ocean_unchanged": bool(np.allclose(a[ocean], b[ocean])),
+    }
+
+
+def erosion_nontrivial_gate(
+    mean_abs_delta_m: float,
+    elev_range_m: float,
+) -> tuple[bool, float]:
+    """Lower bound so a metric no-op cannot pass on correlation alone."""
+    required = max(
+        float(EROSION_MIN_MEAN_ABS_DELTA_M),
+        float(EROSION_MIN_MEAN_ABS_FRAC_OF_RANGE) * max(float(elev_range_m), 1.0),
+    )
+    return bool(float(mean_abs_delta_m) >= required), required
 
 
 def _metrics_for(
@@ -181,7 +229,9 @@ def apply_erosion_pass_one(
     Combines mild thermal diffusion (artefact reduction), precip×slope incision,
     and pit filling for drainage tendency. Macro-relief is anchored by blending
     back toward the original DEM each step. Slope and diffusion use GridMetrics
-    (CR-9 / F-21); ``thermal_kappa`` is the 1 km-cell coefficient.
+    (CR-9 / F-21). ``thermal_kappa`` is the 1 km-cell coefficient
+    (``kappa_m2 = thermal_kappa * 1000²``). ``fluvial_k`` is first-pass
+    precip×slope only — it does not control final stream-power incision.
     """
     elev0 = np.asarray(elevation_m, dtype=np.float64).copy()
     elev = elev0.copy()

@@ -16,7 +16,6 @@ var _land_composite_active: bool = false
 func _ready() -> void:
 	_sprite = Sprite2D.new()
 	_sprite.centered = false
-	# Milestone A1: linear filtering for atlas readability when zoomed.
 	_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	add_child(_sprite)
 
@@ -29,15 +28,16 @@ func load_atlas(atlas_dir: String, meta: Dictionary) -> void:
 
 func set_month(month: int) -> void:
 	_month = clampi(month, 1, int(_meta.get("months", 12)))
-	if _mode in ["temperature", "precipitation"]:
+	if _descriptor(_mode).get("monthly", _mode in ["temperature", "precipitation"]):
 		apply_mode(_mode, _month)
 
 
 func apply_mode(mode: String, month: int = -1) -> void:
-	_mode = mode
+	var requested := mode
+	var month_use := _month
 	if month > 0:
-		_month = month
-	var path := _path_for_mode(_mode, _month)
+		month_use = month
+	var path := _path_for_mode(requested, month_use)
 	if path.is_empty() or not FileAccess.file_exists(path):
 		push_warning("Missing atlas texture: %s" % path)
 		return
@@ -45,9 +45,13 @@ func apply_mode(mode: String, month: int = -1) -> void:
 	if img == null:
 		push_warning("Failed to load image: %s" % path)
 		return
+	_mode = requested
+	if month > 0:
+		_month = month
 	_texture_size = Vector2(img.get_width(), img.get_height())
 	var tex := ImageTexture.create_from_image(img)
 	_sprite.texture = tex
+	_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	_update_sprite_visibility()
 	mode_changed.emit(_mode)
 
@@ -86,7 +90,33 @@ func map_to_uv(local_pos: Vector2) -> Vector2:
 	return Vector2(u, y)
 
 
+func _descriptor(mode: String) -> Dictionary:
+	var modes = _meta.get("map_modes", [])
+	if typeof(modes) == TYPE_ARRAY:
+		for item in modes:
+			if typeof(item) == TYPE_DICTIONARY and str(item.get("id", "")) == mode:
+				return item
+	return {}
+
+
+func _is_categorical(mode: String) -> bool:
+	var kind := str(_descriptor(mode).get("kind", ""))
+	if kind != "":
+		return kind == "categorical"
+	return mode in ["holdridge", "biome_v2", "landforms"]
+
+
 func _path_for_mode(mode: String, month: int) -> String:
+	var desc := _descriptor(mode)
+	var files: Dictionary = _meta.get("files", {})
+	var template := str(desc.get("file", ""))
+	if template == "" and files.has(mode):
+		template = str(files[mode])
+	if template != "":
+		if "{month" in template:
+			template = template.replace("{month:02d}", "%02d" % month)
+			template = template.replace("{month}", str(month))
+		return _atlas_dir.path_join(template)
 	match mode:
 		"elevation":
 			return _atlas_dir.path_join("elevation.png")
@@ -94,6 +124,10 @@ func _path_for_mode(mode: String, month: int) -> String:
 			return _atlas_dir.path_join("bathymetry.png")
 		"holdridge":
 			return _atlas_dir.path_join("holdridge.png")
+		"biome_v2":
+			return _atlas_dir.path_join("biome_v2.png")
+		"landforms":
+			return _atlas_dir.path_join("landforms.png")
 		"temperature":
 			return _atlas_dir.path_join("temperature_%02d.png" % month)
 		"precipitation":

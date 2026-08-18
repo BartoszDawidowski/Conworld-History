@@ -11,7 +11,8 @@ from worldsim import SCHEMA_VERSION
 
 # Independent of seed SCHEMA_VERSION — bumping this does not reshuffle module seeds.
 # v2: PR-1 hex layout algorithm v2 + length-units migration metadata.
-WORLD_MODEL_SCHEMA_VERSION = 2
+# v3: C0 lake-vector contract — topographic feature_id vs liquid water_body_id.
+WORLD_MODEL_SCHEMA_VERSION = 3
 
 
 @dataclass

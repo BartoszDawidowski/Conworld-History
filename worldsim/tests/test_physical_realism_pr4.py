@@ -103,7 +103,7 @@ def test_spinup_removes_january_ramp() -> None:
         latitude_deg=lat,
         months=months,
         advect_steps=6,
-        spinup_max_years=5,
+        spinup_max_years=8,
     )
     land = ~ocean
     monthly = [float(fields["precipitation"][m][land].mean()) for m in range(months)]

@@ -1,7 +1,7 @@
 # Physical Realism CR-7 — light hydrology v2
 
 **Date:** 2026-08-17  
-**Status:** ✅ **Accepted**  
+**Status:** BASELINE IMPLEMENTED — CORRECTION REQUIRED (skipped Atlas 183716 is not production Accepted; see addendum C1–C2)  
 **Authority:** [`docs/PHYSICAL_REALISM_CORRECTIONS.md`](../PHYSICAL_REALISM_CORRECTIONS.md) §5 CR-7  
 **Defects closed:** none newly numbered (F-09 remains closed).  
 **Partial:** **F-17** — km² floor is applied *before* `river_acc_fraction` LOD; Atlas/Quick cell area still ≫ 500 km² so the floor is 1 cell and the display quantile still dominates visuals.
@@ -55,4 +55,4 @@ Atlas 183716 full regen was **not** re-run this milestone (fixtures + suite). Ex
 - Groundwater / hydraulic solver / Full memory rewrite (**F-14**)  
 - Precipitation / `orographic_frac` / `folding_ratio` / SST / `lake_min_depth_m` frozen  
 
-**Decision:** accept CR-7; stop. Next when instructed: **CR-8** only.
+**Decision:** CR-7 remains a fixture baseline. A skipped Atlas run is not production Accepted. Remainder → addendum **C1–C2**.

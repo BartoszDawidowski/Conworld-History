@@ -115,6 +115,7 @@ def test_production_defaults_keep_plateau_and_limit_mountains() -> None:
             fine_radius_km=20.0,
             meso_radius_km=50.0,
             macro_radius_km=120.0,
+            planet_radius_km=250.0,
         ),
     )
     assert len(cres.mountain_ranges) >= 1

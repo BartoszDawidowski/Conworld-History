@@ -9,6 +9,7 @@ import numpy as np
 
 from worldsim.spatial.coordinates import clamp_y, wrap_x
 from worldsim.spatial.extent import SpatialExtent
+from worldsim.spatial.hex_grid.contract import hex_environment_record
 from worldsim.spatial.hex_grid.layout import xy_to_hex, hex_id
 from worldsim.spatial.hex_grid.pipeline import HexAnalysisResult
 from worldsim.spatial.raster_store import RasterStore
@@ -107,7 +108,7 @@ class SpatialQueries:
                 y,
             )
         )
-        return {
+        out: dict[str, Any] = {
             "x": wrap_x(x),
             "y": clamp_y(y),
             "hex_id": hid,
@@ -117,6 +118,22 @@ class SpatialQueries:
             "land_fraction_hex": float(self.hex_grid.land_fraction[hid]),
             "holdridge_hex": int(self.hex_grid.holdridge_dominant[hid]),
         }
+        if self.hex_grid.biome_v2_dominant is not None:
+            from worldsim.spatial.hex_grid.contract import json_int
+
+            out["biome_v2_hex"] = json_int(self.hex_grid.biome_v2_dominant[hid])
+        else:
+            out["biome_v2_hex"] = None
+        if self.rasters.has("ecology/biome_v2_class"):
+            out["biome_v2_class"] = int(
+                _sample_scalar(
+                    self.rasters.get("ecology/biome_v2_class"),
+                    self.climate_extent,
+                    x,
+                    y,
+                )
+            )
+        return out
 
     def sample_elevation(self, x: float, y: float) -> float:
         return _sample_scalar(
@@ -136,23 +153,12 @@ class SpatialQueries:
         )
 
     def hex_environment(self, hex_id_value: int) -> dict[str, Any]:
-        h = int(hex_id_value)
-        if h < 0 or h >= self.hex_grid.n_cells:
-            raise IndexError(f"hex_id {h} out of range")
-        return {
-            "hex_id": h,
-            "latitude_deg": float(self.hex_grid.latitude_deg[h]),
-            "land_fraction": float(self.hex_grid.land_fraction[h]),
-            "ocean_fraction": float(self.hex_grid.ocean_fraction[h]),
-            "lake_fraction": float(self.hex_grid.lake_fraction[h]),
-            "elevation_mean": float(self.hex_grid.elevation_mean[h]),
-            "temperature_mean": self.hex_grid.temperature_mean[h].tolist(),
-            "precipitation_mean": self.hex_grid.precipitation_mean[h].tolist(),
-            "holdridge_dominant": int(self.hex_grid.holdridge_dominant[h]),
-            "river_ids": list(self.hex_grid.river_ids[h]),
-            "lake_ids": list(self.hex_grid.lake_ids[h]),
-            "river_edge_mask": int(self.hex_grid.river_edge_mask[h]),
-        }
+        rec = hex_environment_record(self.hex_grid, hex_id_value)
+        rec["lake_fraction"] = float(self.hex_grid.lake_fraction[int(hex_id_value)])
+        rec["river_edge_mask"] = int(self.hex_grid.river_edge_mask[int(hex_id_value)])
+        rec["temperature_mean"] = self.hex_grid.temperature_mean[int(hex_id_value)].tolist()
+        rec["precipitation_mean"] = self.hex_grid.precipitation_mean[int(hex_id_value)].tolist()
+        return rec
 
     def neighbour_hexes(self, hex_id_value: int) -> list[int | None]:
         h = int(hex_id_value)
@@ -215,3 +221,41 @@ class SpatialQueries:
         if not math.isfinite(best):
             return float("nan")
         return float(math.sqrt(best))
+
+    def mountain_range(self, range_id: int) -> dict[str, Any]:
+        return _geojson_by_id(self.vectors.mountain_ranges, range_id, "mountain_range")
+
+    def plateau(self, plateau_id: int) -> dict[str, Any]:
+        return _geojson_by_id(self.vectors.plateaus, plateau_id, "plateau")
+
+    def river(self, river_id: int) -> dict[str, Any]:
+        rid = int(river_id)
+        for seg in self.vectors.rivers.segments:
+            if int(seg.id) == rid:
+                return seg.to_dict()
+        raise KeyError(f"river {rid} not found")
+
+    def lake(self, lake_id: int) -> dict[str, Any]:
+        lid = int(lake_id)
+        for lake in self.vectors.lakes:
+            if int(lake.id) == lid:
+                return lake.to_dict()
+        raise KeyError(f"lake {lid} not found")
+
+    def basin(self, basin_id: int) -> dict[str, Any]:
+        bid = int(basin_id)
+        for basin in self.vectors.basins:
+            if int(basin.id) == bid:
+                return basin.to_dict()
+        raise KeyError(f"basin {bid} not found")
+
+
+def _geojson_by_id(
+    features: list[dict[str, Any]], object_id: int, kind: str
+) -> dict[str, Any]:
+    oid = int(object_id)
+    for feat in features:
+        props = feat.get("properties", feat)
+        if int(props.get("id", -1)) == oid:
+            return feat
+    raise KeyError(f"{kind} {oid} not found")

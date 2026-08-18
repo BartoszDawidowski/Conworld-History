@@ -18,6 +18,8 @@ def test_godot_project_skeleton_exists() -> None:
         "atlas/HexOverlayRenderer.gd",
         "atlas/MapModeController.gd",
         "atlas/InspectorPanel.gd",
+        "atlas/LegendPanel.gd",
+        "atlas/LandformLayerRenderer.gd",
         "atlas/TimelineController.gd",
         "simulation_bridge/SimulationRunner.gd",
         "simulation_bridge/SimulationProtocol.gd",
@@ -52,6 +54,15 @@ def test_godot_project_skeleton_exists() -> None:
     assert "RiversCheck" in main
     assert "LakesCheck" in main
     assert "HexCheck" in main
+    assert "LandformCheck" in main
+    assert "LegendPanel.gd" in main
+    assert "LastWorldBtn" in main
+    assert "InspectorTabs" in main
+    assert '[node name="MapPane" type="Control"' in main
+    assert "MapColumn" not in main
+    assert "LegendRow" not in main
+    assert "ZoomBox" in main
+    assert "LegendHeader" in main
     assert "ModeOption" not in main
     assert "AdvancedToggle" not in main
     atlas = (GODOT / "atlas" / "WorldAtlas.gd").read_text(encoding="utf-8")
@@ -75,10 +86,14 @@ def test_godot_project_skeleton_exists() -> None:
     modes = (GODOT / "atlas" / "MapModeController.gd").read_text(encoding="utf-8")
     assert "shaded_relief" not in modes
     assert 'current_mode: String = "elevation"' in modes
+    assert '"biome_v2"' in modes
+    assert '"landforms"' in modes
     insp = (GODOT / "atlas" / "InspectorPanel.gd").read_text(encoding="utf-8")
     assert "_format_hex" in insp
+    assert "HEX_TAB_ORDER" in insp
     assert "temperature_annual_c" in insp
     assert "holdridge_id" in insp
+    assert "biome_v2_dominant" in insp
     raster = (GODOT / "atlas" / "RasterLayerRenderer.gd").read_text(encoding="utf-8")
     assert "TEXTURE_FILTER_LINEAR" in raster
     assert "set_land_composite_active" in raster
@@ -94,6 +109,8 @@ def test_godot_project_skeleton_exists() -> None:
     atlas_gd = (GODOT / "atlas" / "WorldAtlas.gd").read_text(encoding="utf-8")
     assert "FlowLayerRenderer" in atlas_gd or "set_flow_overlay" in atlas_gd
     assert "set_flow_overlay" in atlas_gd
+    assert "set_landform_overlay" in atlas_gd
+    assert "inspect_feature" in atlas_gd
     assert "FlowLayerRenderer" in (GODOT / "atlas" / "FlowLayerRenderer.gd").read_text(
         encoding="utf-8"
     ) or (GODOT / "atlas" / "FlowLayerRenderer.gd").is_file()
@@ -148,7 +165,8 @@ def test_godot_project_skeleton_exists() -> None:
     assert "_write_planet_config" in main_gd
     assert "sst_mix" in main_gd
     assert "sst_inland_decay_km" in main_gd
-    assert "spinup_max_years: 20" in main_gd
+    assert "spinup_max_years: 48" in main_gd
+    assert "advect_max_substeps:" in main_gd
     assert "moisture_advect_steps" in main_gd
     assert "folding_ratio" in main_gd
     assert "land_scale_m" in main_gd
@@ -158,6 +176,8 @@ def test_godot_project_skeleton_exists() -> None:
     assert "mountain_score_threshold: 0.60" in main_gd
     assert "river_acc_fraction: 0.035" in main_gd
     assert "water_state" in vectors
+    assert "func _lake_is_liquid" in vectors
+    assert "fail-closed" in vectors
     assert "precip_scale_mm" in main_gd
     main_tscn = (GODOT / "scenes" / "Main.tscn").read_text(encoding="utf-8")
     assert "BaseTempSpin" in main_tscn
@@ -165,6 +185,10 @@ def test_godot_project_skeleton_exists() -> None:
     assert "_generation_knobs" in main_gd
     assert "advanced_popup" in main_gd
     assert "_setup_mode_buttons" in main_gd
+    assert "_on_last_world" in main_gd
+    assert "_save_last_world" in main_gd
+    assert "last_world_path.txt" in main_gd
+    assert "_sync_landform_overlay_visibility" in main_gd
     assert "ZOOM_MAX" in main_gd
     assert "width: %d" in main_gd
     assert "PROFILE_QUICK" in main_gd

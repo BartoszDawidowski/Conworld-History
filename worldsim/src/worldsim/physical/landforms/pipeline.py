@@ -13,6 +13,8 @@ from numpy.typing import NDArray
 
 from worldsim.physical.climate.pipeline import downsample_land_elevation_mean
 from worldsim.physical.landforms.classify import (
+    BroadContext,
+    LocalForm,
     classify_layers,
     compute_scores,
     legend_payload,
@@ -23,12 +25,15 @@ from worldsim.physical.landforms.objects import (
     Plateau,
     components_to_geojson_polygons,
     components_to_geojson_ridges,
+    components_to_geojson_rims,
     extract_mountain_ranges,
     extract_plateaus,
+    ridge_geometry_ok,
 )
 from worldsim.physical.landforms.params import (
     LANDFORM_ALGORITHM_VERSION,
     LandformParams,
+    min_object_cells,
     params_are_calibrated,
 )
 from worldsim.progress import ProgressReporter
@@ -106,6 +111,35 @@ class LandformResult:
             json.dumps({"type": "FeatureCollection", "features": ridge_feats}) + "\n",
             encoding="utf-8",
         )
+        rim_feats = components_to_geojson_rims(self.plateaus)
+        (out_vec / "plateau_rims.geojson").write_text(
+            json.dumps({"type": "FeatureCollection", "features": rim_feats}) + "\n",
+            encoding="utf-8",
+        )
+
+    @classmethod
+    def load(cls, directory: Path) -> LandformResult:
+        rasters = np.load(directory / "landform_rasters.npz")
+        diag_path = directory / "landform_diagnostics.json"
+        diagnostics = (
+            json.loads(diag_path.read_text(encoding="utf-8"))
+            if diag_path.is_file()
+            else {}
+        )
+        h, w = np.asarray(rasters["context_id"]).shape
+        return cls(
+            extent=SpatialExtent(width=w, height=h),
+            context_id=np.asarray(rasters["context_id"], dtype=np.uint8),
+            local_form_id=np.asarray(rasters["local_form_id"], dtype=np.uint8),
+            provenance_id=np.asarray(rasters["provenance_id"], dtype=np.uint8),
+            confidence_u8=np.asarray(rasters["confidence"], dtype=np.uint8),
+            mountain_score_u8=np.asarray(rasters["mountain_score"], dtype=np.uint8),
+            plateau_score_u8=np.asarray(rasters["plateau_score"], dtype=np.uint8),
+            hill_score_u8=np.asarray(rasters["hill_score"], dtype=np.uint8),
+            mountain_range_id=np.asarray(rasters["mountain_range_id"], dtype=np.int32),
+            plateau_id=np.asarray(rasters["plateau_id"], dtype=np.int32),
+            diagnostics=diagnostics,
+        )
 
 
 def build_landform_analysis(
@@ -172,7 +206,7 @@ def build_landform_analysis(
     if reporter is not None:
         reporter.progress("landforms", 0.25)
 
-    mfields = compute_metric_fields(
+    mfields, scale_windows = compute_metric_fields(
         elev,
         ocean,
         fine_radius_km=params.fine_radius_km,
@@ -249,6 +283,31 @@ def build_landform_analysis(
         x_idx = (np.arange(tw) * aw / tw).astype(np.int32)
         return arr[y_idx][:, x_idx]
 
+    context_full = up_u8(layers["context_id"])
+    local_full = up_u8(layers["local_form_id"])
+    prov_full = up_u8(layers["provenance_id"])
+    conf_full = up_u8(to_u8(scores["confidence"]))
+    mtn_full = up_u8(to_u8(scores["mountain_score"]))
+    plat_full = up_u8(to_u8(scores["plateau_score"]))
+    hill_full = up_u8(to_u8(scores["hill_score"]))
+    range_full = up_i32(range_id)
+    platid_full = up_i32(plat_id)
+
+    ocean_u8 = int(BroadContext.OCEAN)
+    local_ocean = int(LocalForm.OCEAN)
+    context_full[ocean_full] = ocean_u8
+    local_full[ocean_full] = local_ocean
+    prov_full[ocean_full] = 0
+    conf_full[ocean_full] = 0
+    mtn_full[ocean_full] = 0
+    plat_full[ocean_full] = 0
+    hill_full[ocean_full] = 0
+    range_full[ocean_full] = 0
+    platid_full[ocean_full] = 0
+    land_full = ~ocean_full
+    context_full[land_full & (context_full == ocean_u8)] = int(BroadContext.PLAIN)
+    local_full[land_full & (local_full == local_ocean)] = int(LocalForm.SLOPE)
+
     land = ~ocean
     if np.any(land):
         scores_finite = all(
@@ -258,9 +317,17 @@ def build_landform_analysis(
         mountain_frac = float(
             np.mean(scores["mountain_score"][land] >= params.mountain_score_threshold)
         )
+        plateau_frac = float(
+            np.mean(layers["context_id"][land] == int(BroadContext.PLATEAU))
+        )
+        esc_frac = float(
+            np.mean(layers["local_form_id"][land] == int(LocalForm.ESCARPMENT))
+        )
     else:
         scores_finite = True
         mountain_frac = 0.0
+        plateau_frac = 0.0
+        esc_frac = 0.0
     structural_ok = bool(
         aw >= 8
         and ah >= 8
@@ -269,6 +336,47 @@ def build_landform_analysis(
         and int(layers["context_id"].shape[1]) == aw
     )
     calibrated = params_are_calibrated(params)
+    mask_ok = bool(
+        np.all(context_full[ocean_full] == ocean_u8)
+        and np.all(context_full[land_full] != ocean_u8)
+        and np.all(local_full[ocean_full] == local_ocean)
+        and np.all(local_full[land_full] != local_ocean)
+        and np.all(range_full[ocean_full] == 0)
+        and np.all(platid_full[ocean_full] == 0)
+    )
+    pairs = [
+        (int(w["effective_rx_cells"]), int(w["effective_ry_cells"]))
+        for w in scale_windows.values()
+    ]
+    scales_collapsed = bool(len(set(pairs)) < len(pairs))
+    local_ids = {int(v) for v in np.unique(local_full)}
+    declared = set(range(int(LocalForm.OCEAN), int(LocalForm.ESCARPMENT) + 1))
+    local_coverage_ok = bool(local_ids.issubset(declared) and ocean_u8 in local_ids)
+    ridge_in_mask = True
+    ridge_no_dup = True
+    for rec in ranges:
+        sel = range_id == rec.id
+        chk = ridge_geometry_ok(rec.ridge_line, sel)
+        ridge_in_mask = ridge_in_mask and chk["in_mask"]
+        ridge_no_dup = ridge_no_dup and chk["no_consecutive_duplicates"]
+    esc_alarm_ok = bool(esc_frac < 0.20)
+    cell_area = float(metrics_grid.cell_area_km2)
+    min_range_cells_eff = max(
+        min_object_cells(
+            min_km2=params.min_range_km2,
+            min_cells=params.min_range_cells,
+            cell_area_km2=cell_area,
+        ),
+        int(params.min_component_cells),
+    )
+    min_plat_cells_eff = max(
+        min_object_cells(
+            min_km2=params.min_plateau_km2,
+            min_cells=params.min_plateau_cells,
+            cell_area_km2=cell_area,
+        ),
+        int(params.min_component_cells),
+    )
     diagnostics: dict[str, Any] = {
         "enabled": True,
         "algorithm": LANDFORM_ALGORITHM_VERSION,
@@ -280,13 +388,28 @@ def build_landform_analysis(
         "fine_radius_km": params.fine_radius_km,
         "meso_radius_km": params.meso_radius_km,
         "macro_radius_km": params.macro_radius_km,
+        "scale_windows": scale_windows,
+        "scales_collapsed": scales_collapsed,
+        "quick_scales_indistinguishable": bool(scales_collapsed and max(aw, ah) <= 128),
         "mountain_score_threshold": float(params.mountain_score_threshold),
         "min_range_km2": params.min_range_km2,
         "min_plateau_km2": params.min_plateau_km2,
-        "cell_area_km2": float(metrics_grid.cell_area_km2),
+        "cell_area_km2": cell_area,
+        "min_range_cells_effective": int(min_range_cells_eff),
+        "min_plateau_cells_effective": int(min_plat_cells_eff),
+        "min_range_km2_representable": float(min_range_cells_eff) * cell_area,
+        "min_plateau_km2_representable": float(min_plat_cells_eff) * cell_area,
         "mountain_range_count": len(ranges),
         "plateau_count": len(plateaus),
         "mountain_land_fraction": mountain_frac,
+        "plateau_context_land_fraction": plateau_frac,
+        "escarpment_land_fraction": esc_frac,
+        "mountain_fraction_alarm_band": [0.10, 0.30],
+        "plateau_fraction_alarm_band": [0.01, 0.08],
+        "escarpment_alarm_max": 0.20,
+        "mountain_fraction_alarm": bool(mountain_frac < 0.10 or mountain_frac > 0.30),
+        "plateau_fraction_alarm": bool(plateau_frac < 0.01 or plateau_frac > 0.08),
+        "escarpment_dominance_ok": esc_alarm_ok,
         "mean_mountain_score_land": float(scores["mountain_score"][land].mean())
         if np.any(land)
         else 0.0,
@@ -294,15 +417,25 @@ def build_landform_analysis(
         if np.any(land)
         else 0.0,
         "seam_crossing_ranges": int(sum(1 for r in ranges if r.crosses_ew_seam)),
+        "mask_consistency_ok": mask_ok,
+        "local_form_coverage_ok": local_coverage_ok,
+        "ridge_in_mask_ok": bool(ridge_in_mask),
+        "ridge_no_duplicate_ok": bool(ridge_no_dup),
         "structural_ok": structural_ok,
         "calibrated": calibrated,
         "mountain_fraction_ok": bool(
             mountain_frac <= float(params.max_mountain_land_fraction)
         ),
-        "acceptance_ok": bool(structural_ok and calibrated),
-        "ridge_centerlines": int(
-            sum(1 for r in ranges if len(r.ridge_line) >= 2)
+        "acceptance_ok": bool(
+            structural_ok
+            and calibrated
+            and mask_ok
+            and local_coverage_ok
+            and ridge_in_mask
+            and ridge_no_dup
         ),
+        "ridge_centerlines": int(sum(1 for r in ranges if len(r.ridge_line) >= 2)),
+        "plateau_rims": int(sum(1 for p in plateaus if len(p.rim_line) >= 2)),
     }
 
     if reporter is not None:
@@ -311,15 +444,15 @@ def build_landform_analysis(
 
     return LandformResult(
         extent=SpatialExtent(width=tw, height=th),
-        context_id=up_u8(layers["context_id"]),
-        local_form_id=up_u8(layers["local_form_id"]),
-        provenance_id=up_u8(layers["provenance_id"]),
-        confidence_u8=up_u8(to_u8(scores["confidence"])),
-        mountain_score_u8=up_u8(to_u8(scores["mountain_score"])),
-        plateau_score_u8=up_u8(to_u8(scores["plateau_score"])),
-        hill_score_u8=up_u8(to_u8(scores["hill_score"])),
-        mountain_range_id=up_i32(range_id),
-        plateau_id=up_i32(plat_id),
+        context_id=context_full,
+        local_form_id=local_full,
+        provenance_id=prov_full,
+        confidence_u8=conf_full,
+        mountain_score_u8=mtn_full,
+        plateau_score_u8=plat_full,
+        hill_score_u8=hill_full,
+        mountain_range_id=range_full,
+        plateau_id=platid_full,
         mountain_ranges=ranges,
         plateaus=plateaus,
         diagnostics=diagnostics,

@@ -13,30 +13,11 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from worldsim.physical.atmosphere.circulation import elevation_gradients_cylindrical
+from worldsim.physical.atmosphere.circulation import (
+    elevation_gradients_cylindrical,
+    smooth_field_cylindrical,
+)
 from worldsim.physical.tectonics.interpretation import cylindrical_distance_to_mask
-
-
-def _box_smooth(field: NDArray[np.floating], half_cells: int) -> NDArray[np.float64]:
-    """Separable box mean; E–W wrap, N–S edge clamp."""
-    q = np.asarray(field, dtype=np.float64)
-    half = max(int(half_cells), 0)
-    if half <= 0:
-        return q.copy()
-    acc = np.zeros_like(q)
-    k = 2 * half + 1
-    for s in range(-half, half + 1):
-        acc += np.roll(q, s, axis=1)
-    acc /= float(k)
-    ns = np.zeros_like(q)
-    for s in range(-half, half + 1):
-        if s < 0:
-            ns += np.pad(acc[:s, :], ((-s, 0), (0, 0)), mode="edge")
-        elif s > 0:
-            ns += np.pad(acc[s:, :], ((0, s), (0, 0)), mode="edge")
-        else:
-            ns += acc
-    return ns / float(k)
 
 
 def _sea_level_temperature(
@@ -86,7 +67,7 @@ def apply_monsoon_wind_anomaly(
             "monsoon_strength": 0.0,
             "mean_abs_anomaly_ms": 0.0,
             "monsoon_sign_gate_on": False,
-            "algorithm": "monsoon_anomaly_gate_v1",
+            "algorithm": "monsoon_sector_gate_v1",
         }
 
     ocean = np.asarray(ocean_mask, dtype=bool)
@@ -153,7 +134,7 @@ def apply_monsoon_wind_anomaly(
             dT_field.ravel()[take] = nearest_land_t[ok] - local_sst[ok]
 
         if half > 0:
-            dT_field = _box_smooth(dT_field, half)
+            dT_field = smooth_field_cylindrical(dT_field, half)
         dT_months[m] = dT_field
         active_band = band & (envelope > 0.05)
         monthly_dt.append(
@@ -164,40 +145,30 @@ def apply_monsoon_wind_anomaly(
     nh = lat >= 0.0
     sh = lat < 0.0
     eps = float(sign_flip_eps)
+    # C5: gate on each cell's own seasonal contrast. Hemisphere-mean gating
+    # can cancel opposite regional monsoons in the same hemisphere.
+    dT_max = dT_months.max(axis=0)
+    dT_min = dT_months.min(axis=0)
+    cell_gate = (dT_max > eps) & (dT_min < -eps) & band & (envelope > 0.05)
     hemi_gate = {
-        "nh": True,
-        "sh": True,
+        "nh": bool(np.any(cell_gate & nh)),
+        "sh": bool(np.any(cell_gate & sh)),
     }
-    for name, mask in (("nh", nh), ("sh", sh)):
-        active = mask & band & (envelope > 0.05)
-        if not np.any(active):
-            hemi_gate[name] = False
-            continue
-        series = np.array(
-            [float(np.mean(dT_months[m][active])) for m in range(months)],
-            dtype=np.float64,
-        )
-        hemi_gate[name] = bool(float(np.max(series)) > eps and float(np.min(series)) < -eps)
-
     global_flip = bool(float(np.max(dt_arr)) > eps and float(np.min(dt_arr)) < -eps)
-    gate_on = bool(hemi_gate["nh"] or hemi_gate["sh"])
+    gate_on = bool(np.any(cell_gate))
 
     for m in range(months):
-        dT_field = dT_months[m]
-        if not hemi_gate["nh"]:
-            dT_field = np.where(nh, 0.0, dT_field)
-        if not hemi_gate["sh"]:
-            dT_field = np.where(sh, 0.0, dT_field)
+        dT_field = np.where(cell_gate, dT_months[m], 0.0)
         factor = amp * np.tanh(dT_field / t_scale) * envelope
         du = factor * ux_inland
         dv = factor * uv_north
         u_out[m] = u0[m] + du
         v_out[m] = v0[m] + dv
-        if np.any(envelope > 0.05):
-            active = envelope > 0.05
+        if np.any(cell_gate):
             onshore = float(
                 np.mean(
-                    du[active] * ux_inland[active] + dv[active] * uv_north[active]
+                    du[cell_gate] * ux_inland[cell_gate]
+                    + dv[cell_gate] * uv_north[cell_gate]
                 )
             )
         else:
@@ -224,7 +195,8 @@ def apply_monsoon_wind_anomaly(
         "monsoon_sign_gate_on": gate_on,
         "monsoon_sign_gate_nh": bool(hemi_gate["nh"]),
         "monsoon_sign_gate_sh": bool(hemi_gate["sh"]),
+        "monsoon_gated_cell_count": int(np.count_nonzero(cell_gate)),
         "monsoon_global_contrast_flip": global_flip,
-        "algorithm": "monsoon_anomaly_gate_v1",
+        "algorithm": "monsoon_sector_gate_v1",
     }
     return u_out, v_out, diag

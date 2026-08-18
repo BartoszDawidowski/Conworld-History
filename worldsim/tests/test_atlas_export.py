@@ -97,7 +97,7 @@ def test_atlas_display_export(tmp_path: Path) -> None:
     model = _model()
     out = tmp_path / "atlas_display"
     meta = export_atlas_display(model, out)
-    assert meta["schema"] == "atlas_display_v1"
+    assert meta["schema"] == "atlas_display_v2"
     assert (out / "atlas_meta.json").is_file()
     assert (out / "elevation.png").is_file()
     assert (out / "temperature_01.png").is_file()
@@ -117,14 +117,26 @@ def test_atlas_display_export(tmp_path: Path) -> None:
     legend = json.loads((out / "holdridge_zone_legend.json").read_text(encoding="utf-8"))
     assert legend["0"] == "Ocean"
     assert "Tropical moist forest" in legend.values()
-    assert "shaded_relief" not in meta["map_modes"]
+    assert legend["classes"]["0"]["label"] == "Ocean"
+    assert legend["classes"]["0"]["color"].startswith("#")
+    assert "shaded_relief" not in meta.get("map_mode_ids", [])
+    mode_ids = [
+        str(m["id"]) if isinstance(m, dict) else str(m) for m in meta["map_modes"]
+    ]
     assert meta["default_mode"] == "elevation"
-    assert "elevation" in meta["map_modes"]
+    assert "elevation" in mode_ids
+    assert "biome_v2" in mode_ids
+    assert (out / "biome_v2.png").is_file()
+    assert (out / "biome_v2_legend.json").is_file()
+    assert (out / "inspection_grid.bin").is_file()
+    assert (out / "climate_summary.json").is_file()
     assert "stroke_smooth" in meta
     assert meta["stroke_smooth"]["chaikin_iters"] == 2
     env = json.loads((out / "hex_environment.json").read_text(encoding="utf-8"))
     assert "temperature_annual_c" in env
+    assert "precipitation_annual_mm" in env
     assert "precipitation_annual" in env
+    assert "elevation_mean_m" in env
     assert "cell_count" in env
     assert len(env["cell_count"]) == len(env["holdridge_dominant"])
 

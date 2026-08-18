@@ -44,6 +44,14 @@ class PlanetConfig:
     terrain_detail_amplitude: float
     erosion_iterations: int
     erosion_fluvial_k: float
+    erosion_thermal_kappa: float = 0.08
+    erosion_max_step_m: float = 25.0
+    erosion_macro_blend: float = 0.35
+    erosion_stream_power_k: float = 12.0
+    erosion_fluvial_iterations: int = 4
+    erosion_stream_power_max_step_m: float = 30.0
+    erosion_stream_power_macro_blend: float = 0.40
+    erosion_micro_fill_max_depth_m: float = 25.0
     # Plan B5 — tectonics / hypsometry (Atlas-tuned defaults 2026-08-15)
     tectonics_folding_ratio: float = 0.01
     tectonics_sea_level: float = 0.65
@@ -78,7 +86,7 @@ class PlanetConfig:
     moisture_continentality_dry: float = 0.4
     moisture_lee_dry: float = 0.12
     moisture_diffusion_mix_per_month: float = 0.08
-    moisture_spinup_max_years: int = 20
+    moisture_spinup_max_years: int = 48
     moisture_spinup_tolerance_relative: float = 0.02
     moisture_spinup_tolerance_absolute: float = 1e-3
     # PR-7 / revised B8
@@ -116,6 +124,7 @@ class PlanetConfig:
     landform_min_plateau_km2: float = 2500.0
     # Plan B5 — climate mean / Holdridge precip scaling
     base_temp_c: float = 25.0
+    climate_continental_seasonality_gain: float = 0.0
     precip_scale_mm: float = 200.0
     # PR-1 — physical planet radius (km); length migration uses this
     planet_radius_km: float = 6371.0
@@ -206,6 +215,35 @@ class PlanetConfig:
         from worldsim.physical.ecology import EcologyParams
 
         return EcologyParams(precip_scale_mm=self.precip_scale_mm)
+
+    def to_erosion_params(self) -> "ErosionParams":
+        from worldsim.physical.erosion import ErosionParams
+
+        return ErosionParams(
+            iterations=self.erosion_iterations,
+            thermal_kappa=self.erosion_thermal_kappa,
+            fluvial_k=self.erosion_fluvial_k,
+            max_step_m=self.erosion_max_step_m,
+            macro_blend=self.erosion_macro_blend,
+            planet_radius_km=self.planet_radius_km,
+        )
+
+    def to_final_recalc_params(self) -> "FinalRecalcParams":
+        from worldsim.physical.final.pipeline import FinalRecalcParams
+
+        return FinalRecalcParams(
+            fluvial_iterations=self.erosion_fluvial_iterations,
+            stream_power_k=self.erosion_stream_power_k,
+            stream_power_max_step_m=self.erosion_stream_power_max_step_m,
+            stream_power_macro_blend=self.erosion_stream_power_macro_blend,
+            micro_fill_max_depth_m=self.erosion_micro_fill_max_depth_m,
+            months=self.climate_months,
+            axial_tilt_deg=self.axial_tilt_deg,
+            ocean=self.to_ocean_params(),
+            moisture=self.to_moisture_params(),
+            hydrology=self.to_hydrology_params(),
+            landforms=self.to_landform_params(),
+        )
 
     def to_hydrology_params(self) -> "HydrologyParams":
         from worldsim.physical.hydrology import HydrologyParams
@@ -327,6 +365,11 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     base_temp_c = float(climate.get("base_temp_c", 25.0))
     if not -20.0 <= base_temp_c <= 40.0:
         raise ConfigError("climate.base_temp_c must be in [-20, 40]")
+    climate_continental_seasonality_gain = float(
+        climate.get("continental_seasonality_gain", 0.0)
+    )
+    if climate_continental_seasonality_gain < 0.0:
+        raise ConfigError("climate.continental_seasonality_gain must be >= 0")
 
     ecology_cfg = data.get("ecology") or {}
     if ecology_cfg is None:
@@ -417,6 +460,40 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     erosion_fluvial_k = float(erosion_cfg.get("fluvial_k", 8.0))
     if erosion_fluvial_k < 0.0:
         raise ConfigError("erosion.fluvial_k must be >= 0")
+    erosion_thermal_kappa = float(erosion_cfg.get("thermal_kappa", 0.08))
+    if erosion_thermal_kappa < 0.0:
+        raise ConfigError("erosion.thermal_kappa must be >= 0")
+    erosion_max_step_m = float(erosion_cfg.get("max_step_m", 25.0))
+    if erosion_max_step_m <= 0.0:
+        raise ConfigError("erosion.max_step_m must be > 0")
+    erosion_macro_blend = float(erosion_cfg.get("macro_blend", 0.35))
+    if not 0.0 <= erosion_macro_blend <= 1.0:
+        raise ConfigError("erosion.macro_blend must be in [0, 1]")
+    erosion_stream_power_k = float(erosion_cfg.get("stream_power_k", 12.0))
+    if erosion_stream_power_k < 0.0:
+        raise ConfigError("erosion.stream_power_k must be >= 0")
+    erosion_fluvial_iterations = int(
+        erosion_cfg.get(
+            "stream_power_iterations", erosion_cfg.get("fluvial_iterations", 4)
+        )
+    )
+    if erosion_fluvial_iterations < 1:
+        raise ConfigError("erosion.stream_power_iterations must be >= 1")
+    erosion_stream_power_max_step_m = float(
+        erosion_cfg.get("stream_power_max_step_m", 30.0)
+    )
+    if erosion_stream_power_max_step_m <= 0.0:
+        raise ConfigError("erosion.stream_power_max_step_m must be > 0")
+    erosion_stream_power_macro_blend = float(
+        erosion_cfg.get("stream_power_macro_blend", 0.40)
+    )
+    if not 0.0 <= erosion_stream_power_macro_blend <= 1.0:
+        raise ConfigError("erosion.stream_power_macro_blend must be in [0, 1]")
+    erosion_micro_fill_max_depth_m = float(
+        erosion_cfg.get("micro_fill_max_depth_m", 25.0)
+    )
+    if erosion_micro_fill_max_depth_m < 0.0:
+        raise ConfigError("erosion.micro_fill_max_depth_m must be >= 0")
 
     sst_mix = float(ocean_cfg.get("sst_mix", 0.28))
     if not 0.0 <= sst_mix <= 1.0:
@@ -445,9 +522,13 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     if not isinstance(moisture_cfg, dict):
         raise ConfigError("moisture must be a mapping when provided")
 
-    moisture_advect_steps = int(moisture_cfg.get("advect_steps", 32))
+    moisture_advect_steps = int(
+        moisture_cfg.get(
+            "advect_max_substeps", moisture_cfg.get("advect_steps", 32)
+        )
+    )
     if moisture_advect_steps < 1:
-        raise ConfigError("moisture.advect_steps must be >= 1")
+        raise ConfigError("moisture.advect_max_substeps must be >= 1")
     moisture_advect_wind_scale = float(moisture_cfg.get("advect_wind_scale", 0.2))
     if moisture_advect_wind_scale < 0.0:
         raise ConfigError("moisture.advect_wind_scale must be >= 0")
@@ -483,7 +564,7 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     )
     if not 0.0 <= moisture_diffusion_mix_per_month < 1.0:
         raise ConfigError("moisture.diffusion_mix_per_month must be in [0, 1)")
-    moisture_spinup_max_years = int(moisture_cfg.get("spinup_max_years", 20))
+    moisture_spinup_max_years = int(moisture_cfg.get("spinup_max_years", 48))
     if moisture_spinup_max_years < 1:
         raise ConfigError("moisture.spinup_max_years must be >= 1")
     moisture_spinup_tolerance_relative = float(
@@ -669,6 +750,14 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
         terrain_detail_amplitude=terrain_detail_amplitude,
         erosion_iterations=erosion_iterations,
         erosion_fluvial_k=erosion_fluvial_k,
+        erosion_thermal_kappa=erosion_thermal_kappa,
+        erosion_max_step_m=erosion_max_step_m,
+        erosion_macro_blend=erosion_macro_blend,
+        erosion_stream_power_k=erosion_stream_power_k,
+        erosion_fluvial_iterations=erosion_fluvial_iterations,
+        erosion_stream_power_max_step_m=erosion_stream_power_max_step_m,
+        erosion_stream_power_macro_blend=erosion_stream_power_macro_blend,
+        erosion_micro_fill_max_depth_m=erosion_micro_fill_max_depth_m,
         tectonics_folding_ratio=tectonics_folding_ratio,
         tectonics_sea_level=tectonics_sea_level,
         tectonics_erosion_period=tectonics_erosion_period,
@@ -733,6 +822,7 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
         landform_min_range_km2=landform_min_range_km2,
         landform_min_plateau_km2=landform_min_plateau_km2,
         base_temp_c=base_temp_c,
+        climate_continental_seasonality_gain=climate_continental_seasonality_gain,
         precip_scale_mm=precip_scale_mm,
         planet_radius_km=planet_radius_km,
         sst_inland_decay_km=sst_inland_decay_km,

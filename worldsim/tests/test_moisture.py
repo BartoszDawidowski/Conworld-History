@@ -83,7 +83,7 @@ def test_moisture_from_small_world(tmp_path: Path) -> None:
         climate=climate,
         atmosphere=atmosphere,
         ocean=ocean,
-        params=MoistureParams(spinup_max_years=12),
+        params=MoistureParams(spinup_max_years=48),
     )
     assert moisture.precipitation.shape[0] == 12
     assert moisture.precipitation.shape[1:] == climate.ocean_mask.shape
@@ -131,9 +131,13 @@ def test_moisture_advect_knob_moves_precip_inland() -> None:
         advect_wind_scale=0.1,
         large_scale_frac=0.25,
     )["precipitation"][0]
-    interior = ~ocean
-    interior[:, :12] = False  # focus far from coast strip
-    assert float(wet[interior].mean()) > float(dry[interior].mean())
+    land = ~ocean
+    # Transport raises near-inland precip; deep interior is allowed to stay drier
+    # than a high-rainout uniform drizzle (C5 stratiform).
+    near_inland = land.copy()
+    near_inland[:, :8] = False
+    near_inland[:, 18:] = False
+    assert float(wet[near_inland].mean()) > float(dry[near_inland].mean())
 
 
 def test_ocean_evap_exceeds_land() -> None:

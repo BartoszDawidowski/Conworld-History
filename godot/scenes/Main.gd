@@ -17,6 +17,8 @@ const _MODE_UI := {
 	"temperature": {"icon": "Te", "tip": "Temperature"},
 	"precipitation": {"icon": "Pr", "tip": "Precipitation"},
 	"holdridge": {"icon": "Ho", "tip": "Holdridge"},
+	"biome_v2": {"icon": "B2", "tip": "Biome V2"},
+	"landforms": {"icon": "Lf", "tip": "Landforms"},
 }
 
 @onready var atlas_host: Node2D = %AtlasHost
@@ -28,6 +30,7 @@ const _MODE_UI := {
 @onready var rivers_check: CheckBox = %RiversCheck
 @onready var lakes_check: CheckBox = %LakesCheck
 @onready var flow_check: CheckBox = %FlowCheck
+@onready var landform_check: CheckBox = get_node_or_null("%LandformCheck")
 @onready var seed_spin: SpinBox = %SeedSpin
 @onready var profile_option: OptionButton = %ProfileOption
 @onready var ocean_fraction_spin: SpinBox = %OceanFractionSpin
@@ -67,12 +70,15 @@ const _MODE_UI := {
 @onready var precip_scale_spin: SpinBox = %PrecipScaleSpin
 @onready var generate_btn: Button = %GenerateBtn
 @onready var load_btn: Button = %LoadBtn
+@onready var last_world_btn: Button = %LastWorldBtn
 @onready var world_path_edit: LineEdit = %WorldPathEdit
 @onready var inspector: PanelContainer = %InspectorPanel
+@onready var legend_panel: PanelContainer = %LegendPanel
 @onready var map_viewport: SubViewport = %SubViewport
 @onready var map_viewport_container: SubViewportContainer = %SubViewportContainer
 @onready var zoom_slider: HSlider = %ZoomSlider
 @onready var zoom_fit_btn: Button = %ZoomFitBtn
+@onready var zoom_box: HBoxContainer = get_node_or_null("%ZoomBox")
 @onready var advanced_btn: Button = %AdvancedBtn
 @onready var advanced_popup: PopupPanel = %AdvancedPopup
 @onready var adv_close_btn: Button = %AdvCloseBtn
@@ -87,15 +93,22 @@ var _mode_buttons: Dictionary = {}
 var _updating_zoom_slider: bool = false
 var _active_mode_style: StyleBoxFlat
 var _idle_mode_style: StyleBoxFlat
+var _landform_user_touched: bool = false
+var _landform_default_applied: bool = false
+var _last_inspect_kind: String = ""
+var _last_hex_id: int = -1
 
 
 func _ready() -> void:
 	_build_mode_styles()
 	atlas = WorldAtlasScr.new()
 	atlas_host.add_child(atlas)
-	atlas.inspect_terrain.connect(_on_inspect_terrain)
-	atlas.inspect_river.connect(_on_inspect_river)
-	atlas.inspect_hex.connect(_on_inspect_hex)
+	if atlas.has_signal("inspect_feature"):
+		atlas.inspect_feature.connect(_on_inspect_feature)
+	else:
+		atlas.inspect_terrain.connect(_on_inspect_terrain)
+		atlas.inspect_river.connect(_on_inspect_river)
+		atlas.inspect_hex.connect(_on_inspect_hex)
 	if atlas.has_signal("zoom_factor_changed"):
 		atlas.zoom_factor_changed.connect(_on_atlas_zoom_factor_changed)
 
@@ -124,11 +137,16 @@ func _ready() -> void:
 	rivers_check.toggled.connect(func(_v): _apply_vector_layers())
 	lakes_check.toggled.connect(func(_v): _apply_vector_layers())
 	flow_check.toggled.connect(func(v): atlas.set_flow_overlay(v))
+	if landform_check:
+		landform_check.toggled.connect(_on_landform_overlay)
 	_setup_profile_option()
 	advanced_btn.pressed.connect(_open_advanced_popup)
 	adv_close_btn.pressed.connect(func(): advanced_popup.hide())
 	generate_btn.pressed.connect(_on_generate)
 	load_btn.pressed.connect(_on_load)
+	if last_world_btn:
+		last_world_btn.pressed.connect(_on_last_world)
+		last_world_btn.disabled = _read_last_world_path() == ""
 	zoom_slider.min_value = ZOOM_MIN
 	zoom_slider.max_value = ZOOM_MAX
 	zoom_slider.value = ZOOM_MIN
@@ -137,6 +155,8 @@ func _ready() -> void:
 	map_viewport_container.gui_input.connect(_on_map_gui_input)
 	map_viewport_container.mouse_filter = Control.MOUSE_FILTER_STOP
 	map_viewport_container.resized.connect(_on_map_resized)
+	if zoom_box:
+		zoom_box.resized.connect(_sync_legend_layout)
 	map_viewport.transparent_bg = false
 	map_viewport.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
 	map_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
@@ -173,13 +193,17 @@ func _setup_mode_buttons() -> void:
 		child.queue_free()
 	_mode_buttons.clear()
 	var group := ButtonGroup.new()
-	for mode in MapModeControllerScr.MODES:
-		var ui: Dictionary = _MODE_UI.get(mode, {"icon": mode.substr(0, 2).capitalize(), "tip": mode.capitalize()})
+	var list: PackedStringArray = modes.available_modes
+	if list.is_empty():
+		list = PackedStringArray(MapModeControllerScr.MODES)
+	for mode in list:
+		var desc: Dictionary = modes.descriptor(str(mode)) if modes != null and modes.has_method("descriptor") else {}
+		var ui: Dictionary = _MODE_UI.get(str(mode), {"icon": str(mode).substr(0, 2).capitalize(), "tip": str(mode).capitalize()})
 		var btn := Button.new()
 		btn.toggle_mode = true
 		btn.button_group = group
-		btn.text = str(ui["icon"])
-		btn.tooltip_text = str(ui["tip"])
+		btn.text = str(desc.get("icon", ui["icon"]))
+		btn.tooltip_text = str(desc.get("label", ui["tip"]))
 		btn.custom_minimum_size = Vector2(40, 32)
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.add_theme_stylebox_override("normal", _idle_mode_style)
@@ -320,18 +344,28 @@ terrain:
 
 erosion:
   iterations: %d
+  thermal_kappa: 0.08
   fluvial_k: %.4f
+  max_step_m: 25.0
+  macro_blend: 0.35
+  stream_power_k: 12.0
+  stream_power_iterations: 4
+  stream_power_max_step_m: 30.0
+  stream_power_macro_blend: 0.40
+  micro_fill_max_depth_m: 25.0
 
 climate:
   months: 12
   base_temp_c: %.4f
   continentality_scale_km: 500.0
+  continental_seasonality_gain: 0.0
 
 ecology:
   precip_scale_mm: %.1f
 
 moisture:
   advect_steps: %d
+  advect_max_substeps: %d
   advect_wind_scale: %.4f
   large_scale_frac: %.4f
   orographic_frac: %.4f
@@ -343,7 +377,7 @@ moisture:
   continentality_dry: %.4f
   lee_dry: %.4f
   diffusion_mix_per_month: 0.08
-  spinup_max_years: 20
+  spinup_max_years: 48
   spinup_tolerance_relative: 0.02
   spinup_tolerance_absolute: 0.001
   plume_strength: %.4f
@@ -400,6 +434,7 @@ generation:
 		float(knobs["base_temp_c"]),
 		float(knobs["precip_scale_mm"]),
 		int(knobs["moisture_advect_steps"]),
+		int(knobs["moisture_advect_steps"]),
 		float(knobs["moisture_advect_wind_scale"]),
 		float(knobs["moisture_large_scale_frac"]),
 		float(knobs["moisture_orographic_frac"]),
@@ -439,6 +474,7 @@ func _on_map_resized() -> void:
 		if not meta.is_empty():
 			atlas.refresh_base_zoom_keep_factor()
 			_sync_zoom_slider_from_atlas()
+	_sync_legend_layout()
 
 
 func _on_map_gui_input(event: InputEvent) -> void:
@@ -536,12 +572,16 @@ func _load_world(world_root: String) -> void:
 		status_label.text = "Failed to load atlas at %s" % world_root
 		return
 	var meta: Dictionary = atlas.get_atlas_meta()
+	if modes.has_method("configure_from_meta"):
+		modes.configure_from_meta(meta)
+	_setup_mode_buttons()
 	timeline.set_months(int(meta.get("months", 12)))
 	month_spin.max_value = timeline.months
 	status_label.text = "Loaded atlas %dx%d" % [
 		int(meta.get("raster_width", 0)),
 		int(meta.get("raster_height", 0)),
 	]
+	_load_inspector_context()
 	modes.select_mode(str(meta.get("default_mode", "elevation")))
 	if inspector.has_method("clear_inspector"):
 		inspector.clear_inspector()
@@ -549,6 +589,8 @@ func _load_world(world_root: String) -> void:
 	atlas.set_hex_overlay(hex_check.button_pressed)
 	if atlas.has_method("set_flow_overlay"):
 		atlas.set_flow_overlay(flow_check.button_pressed)
+	_refresh_legend()
+	_sync_month_spin_enabled()
 	call_deferred("_fit_after_load")
 
 
@@ -579,6 +621,7 @@ func _on_run_complete(world_path: String) -> void:
 	progress_bar.value = 100
 	if not world_path.is_empty():
 		world_path_edit.text = world_path
+		_save_last_world(world_path)
 		_load_world(world_path)
 
 
@@ -591,6 +634,11 @@ func _on_run_error(code: String, message: String, stage: String) -> void:
 func _on_mode(mode: String) -> void:
 	atlas.set_map_mode(mode)
 	_refresh_mode_button_styles(mode)
+	_sync_landform_overlay_visibility(mode)
+	_sync_month_spin_enabled()
+	if inspector.has_method("set_context"):
+		inspector.set_context(mode, int(month_spin.value))
+	_refresh_legend()
 
 
 func _refresh_mode_button_styles(active: String) -> void:
@@ -607,6 +655,25 @@ func _refresh_mode_button_styles(active: String) -> void:
 func _on_month(month: int) -> void:
 	month_spin.value = month
 	atlas.set_month(month)
+	if inspector.has_method("set_context"):
+		inspector.set_context(str(modes.current_mode), month)
+	if _last_inspect_kind == "hex" and _last_hex_id >= 0 and atlas.hexes.has_method("hex_info"):
+		inspector.show_hex(atlas.hexes.hex_info(_last_hex_id, month))
+
+
+func _on_inspect_feature(kind: String, info: Dictionary) -> void:
+	_last_inspect_kind = kind
+	_last_hex_id = int(info.get("hex_id", -1)) if kind == "hex" else -1
+	if inspector.has_method("set_context"):
+		inspector.set_context(str(modes.current_mode), int(month_spin.value))
+	if inspector.has_method("show_feature"):
+		inspector.show_feature(kind, info)
+	elif kind == "hex" and inspector.has_method("show_hex"):
+		inspector.show_hex(info)
+	elif kind == "river" and inspector.has_method("show_river"):
+		inspector.show_river(info)
+	elif inspector.has_method("show_terrain"):
+		inspector.show_terrain(info)
 
 
 func _on_inspect_terrain(info: Dictionary) -> void:
@@ -627,3 +694,177 @@ func _on_inspect_hex(info: Dictionary) -> void:
 func _default_world_hint() -> String:
 	var repo := ProjectSettings.globalize_path("res://").rstrip("/").get_base_dir()
 	return repo.path_join("worlds/demo/world")
+
+
+func _on_landform_overlay(pressed: bool) -> void:
+	_landform_user_touched = true
+	_sync_landform_overlay_visibility(str(modes.current_mode))
+	_refresh_legend()
+
+
+func _maybe_default_landform_overlay(mode: String) -> void:
+	if mode != "landforms" or _landform_user_touched or _landform_default_applied:
+		return
+	_landform_default_applied = true
+	if landform_check:
+		landform_check.set_pressed_no_signal(true)
+
+
+func _sync_landform_overlay_visibility(mode: String) -> void:
+	if landform_check:
+		landform_check.visible = mode == "landforms"
+	if mode == "landforms":
+		_maybe_default_landform_overlay(mode)
+	var objects_on := mode == "landforms" and landform_check != null and landform_check.button_pressed
+	if atlas.has_method("set_landform_overlay"):
+		atlas.set_landform_overlay(objects_on)
+
+
+func _sync_month_spin_enabled() -> void:
+	var monthly := true
+	if modes != null and modes.has_method("is_monthly"):
+		monthly = modes.is_monthly(str(modes.current_mode))
+	month_spin.editable = monthly
+
+
+func _load_inspector_context() -> void:
+	if inspector.has_method("set_legends") and atlas.has_method("get_legends"):
+		inspector.set_legends(atlas.get_legends())
+	var summary := {}
+	var atlas_dir: String = ""
+	if atlas.has_method("get_atlas_dir"):
+		atlas_dir = str(atlas.get_atlas_dir())
+	if atlas_dir != "":
+		var path: String = atlas_dir.path_join("climate_summary.json")
+		if FileAccess.file_exists(path):
+			var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+			if typeof(parsed) == TYPE_DICTIONARY:
+				summary = parsed
+	if inspector.has_method("set_climate_summary"):
+		inspector.set_climate_summary(summary)
+	if inspector.has_method("set_context"):
+		inspector.set_context(str(modes.current_mode), int(month_spin.value))
+
+
+func _refresh_legend() -> void:
+	if legend_panel == null or not legend_panel.has_method("set_legend"):
+		return
+	var mode := str(modes.current_mode)
+	var desc: Dictionary = modes.descriptor(mode) if modes.has_method("descriptor") else {}
+	var legend_file := str(desc.get("legend", ""))
+	var atlas_dir: String = ""
+	if atlas.has_method("get_atlas_dir"):
+		atlas_dir = str(atlas.get_atlas_dir())
+	if legend_file == "" or atlas_dir == "":
+		legend_panel.clear_legend()
+		return
+	var path: String = atlas_dir.path_join(legend_file)
+	if not FileAccess.file_exists(path):
+		legend_panel.clear_legend()
+		return
+	var payload = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if typeof(payload) != TYPE_DICTIONARY:
+		legend_panel.clear_legend()
+		return
+	var title := str(payload.get("title", desc.get("label", mode)))
+	var entries: Array = _legend_entries(mode, payload)
+	var overlay: Array = []
+	var objects_on := mode == "landforms" and landform_check != null and landform_check.button_pressed
+	if objects_on:
+		var styles: Dictionary = payload.get("object_styles", {})
+		if typeof(styles) == TYPE_DICTIONARY:
+			for key in ["mountain_range", "ridge", "plateau_rim"]:
+				var spec = styles.get(key, {})
+				if typeof(spec) == TYPE_DICTIONARY:
+					overlay.append({
+						"color": str(spec.get("color", "#888888")),
+						"label": str(key).replace("_", " ").capitalize(),
+					})
+	legend_panel.set_legend(title, entries, overlay)
+	_sync_legend_layout()
+
+
+func _on_last_world() -> void:
+	var path := _read_last_world_path()
+	if path == "":
+		status_label.text = "No last generated world yet"
+		return
+	world_path_edit.text = path
+
+
+func _save_last_world(path: String) -> void:
+	var trimmed := path.strip_edges()
+	if trimmed == "":
+		return
+	var f := FileAccess.open("user://last_world_path.txt", FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_string(trimmed)
+	f.close()
+	if last_world_btn:
+		last_world_btn.disabled = false
+
+
+func _read_last_world_path() -> String:
+	if not FileAccess.file_exists("user://last_world_path.txt"):
+		return ""
+	return FileAccess.get_file_as_string("user://last_world_path.txt").strip_edges()
+
+
+func _sync_legend_layout() -> void:
+	if legend_panel == null or not legend_panel.has_method("sync_layout"):
+		return
+	var width := 160.0
+	if zoom_box != null and zoom_box.size.x > 1.0:
+		width = zoom_box.size.x
+	elif zoom_slider != null and zoom_slider.size.x > 1.0:
+		width = zoom_slider.size.x
+	var max_h := get_viewport_rect().size.y / 3.0
+	legend_panel.sync_layout(width, max_h)
+
+
+func _legend_entries(mode: String, payload: Dictionary) -> Array:
+	var entries: Array = []
+	var classes = payload.get("classes", {})
+	if mode == "landforms":
+		classes = payload.get("display_classes", classes)
+	if typeof(classes) == TYPE_DICTIONARY and not classes.is_empty():
+		var keys: Array = classes.keys()
+		keys.sort_custom(func(a, b): return int(str(a)) < int(str(b)))
+		for key in keys:
+			var rec = classes[key]
+			if typeof(rec) == TYPE_DICTIONARY:
+				entries.append({
+					"color": str(rec.get("color", "#888888")),
+					"label": str(rec.get("label", rec.get("key", key))),
+				})
+			else:
+				entries.append({"color": "#888888", "label": str(rec)})
+		return entries
+	var keys: Array = payload.keys()
+	keys.sort_custom(func(a, b): return str(a) < str(b))
+	for key in keys:
+		if str(key) in [
+			"schema", "title", "file", "derived", "priority", "ocean_composite_note",
+			"classes", "display_classes", "object_styles", "broad_context", "local_form",
+			"provenance",
+		]:
+			continue
+		var rec = payload[key]
+		if typeof(rec) == TYPE_DICTIONARY:
+			continue
+		var color := "#888888"
+		if mode == "holdridge" and str(key).is_valid_int():
+			color = _holdridge_swatch_hex(int(key))
+		entries.append({"color": color, "label": str(rec)})
+	return entries
+
+
+func _holdridge_swatch_hex(zid: int) -> String:
+	## Fallback for pre-classes Holdridge JSON. Keep in sync with holdridge_zone_rgb.
+	if zid < 10:
+		return "#14285A"
+	var r := (zid * 37) % 200 + 30
+	var g := (zid * 91) % 200 + 30
+	var b := (zid * 17) % 200 + 30
+	return "#%02X%02X%02X" % [r, g, b]

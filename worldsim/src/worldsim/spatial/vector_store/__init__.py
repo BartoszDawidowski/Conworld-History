@@ -16,6 +16,22 @@ from worldsim.physical.vectorize.rivers import RiverNetwork, RiverNode, RiverSeg
 from worldsim.spatial.extent import SpatialExtent
 
 
+def _load_feature_collection(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    return list(data.get("features", []))
+
+
+def _dump_feature_collection(path: Path, features: list[dict[str, Any]]) -> None:
+    path.write_text(
+        json.dumps({"type": "FeatureCollection", "features": features}) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _load_coastline(path: Path) -> list[CoastlineFeature]:
     data = json.loads(path.read_text(encoding="utf-8"))
     out: list[CoastlineFeature] = []
@@ -51,6 +67,7 @@ def _load_rivers(path: Path) -> RiverNetwork:
             type=n["type"],
             row=int(n["row"]),
             col=int(n["col"]),
+            lake_id=int(n.get("lake_id", 0)),
         )
         for n in data.get("nodes", [])
     ]
@@ -65,6 +82,15 @@ def _load_rivers(path: Path) -> RiverNetwork:
             monthly_discharge=[float(v) for v in s.get("monthly_discharge", [])],
             basin_id=int(s["basin_id"]),
             length=float(s["length"]),
+            from_lake_id=int(s.get("from_lake_id", 0)),
+            to_lake_id=int(s.get("to_lake_id", 0)),
+            channel_state=str(s.get("channel_state", "none")),
+            catchment_km2=float(s.get("catchment_km2", 0.0)),
+            channel_length_km=float(s.get("channel_length_km", 0.0)),
+            monthly_bed_loss=[float(v) for v in s.get("monthly_bed_loss", [])],
+            bed_loss_mean=float(s.get("bed_loss_mean", 0.0)),
+            loss_limited=bool(s.get("loss_limited", False)),
+            estimated_width_m=float(s.get("estimated_width_m", 0.0)),
         )
         for s in data.get("segments", [])
     ]
@@ -96,6 +122,13 @@ def _load_lakes(path: Path) -> list[Lake]:
                     else float(item["spill_elevation"])
                 ),
                 mean_effective_inflow=float(item.get("mean_effective_inflow", 0.0)),
+                feature_id=int(item.get("feature_id", 0)),
+                water_body_id=int(item.get("water_body_id", 0)),
+                outlet_type=str(item.get("outlet_type", "")),
+                hydroperiod=str(item.get("hydroperiod", "")),
+                ice_regime=str(item.get("ice_regime", "")),
+                envelope_area_km2=float(item.get("envelope_area_km2", 0.0)),
+                mean_wet_area_km2=float(item.get("mean_wet_area_km2", 0.0)),
             )
         )
     return lakes
@@ -131,7 +164,7 @@ def _load_index(path: Path) -> SpatialIndex:
 
 @dataclass
 class VectorStore:
-    """Canonical coastline / rivers / lakes / basins + spatial index."""
+    """Canonical coastline / rivers / lakes / basins + landform objects."""
 
     extent: SpatialExtent
     coastline: list[CoastlineFeature] = field(default_factory=list)
@@ -139,6 +172,10 @@ class VectorStore:
     lakes: list[Lake] = field(default_factory=list)
     basins: list[BasinMeta] = field(default_factory=list)
     spatial_index: SpatialIndex = field(default_factory=SpatialIndex)
+    mountain_ranges: list[dict[str, Any]] = field(default_factory=list)
+    mountain_ridges: list[dict[str, Any]] = field(default_factory=list)
+    plateaus: list[dict[str, Any]] = field(default_factory=list)
+    plateau_rims: list[dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def from_vector_geography(cls, vectors: VectorGeographyResult) -> VectorStore:
@@ -149,6 +186,32 @@ class VectorStore:
             lakes=list(vectors.lakes),
             basins=list(vectors.basins),
             spatial_index=vectors.spatial_index,
+        )
+
+    def attach_landforms(self, landforms: Any) -> None:
+        from worldsim.physical.landforms.objects import (
+            components_to_geojson_polygons,
+            components_to_geojson_ridges,
+            components_to_geojson_rims,
+        )
+
+        if landforms is None:
+            return
+        self.mountain_ranges = components_to_geojson_polygons(
+            landforms.mountain_range_id,
+            list(getattr(landforms, "mountain_ranges", [])),
+            kind="mountain_range",
+        )
+        self.plateaus = components_to_geojson_polygons(
+            landforms.plateau_id,
+            list(getattr(landforms, "plateaus", [])),
+            kind="plateau",
+        )
+        self.mountain_ridges = components_to_geojson_ridges(
+            list(getattr(landforms, "mountain_ranges", []))
+        )
+        self.plateau_rims = components_to_geojson_rims(
+            list(getattr(landforms, "plateaus", []))
         )
 
     def rebuild_spatial_index(self, *, nx: int = 32, ny: int = 16) -> SpatialIndex:
@@ -206,6 +269,10 @@ class VectorStore:
             json.dumps(self.spatial_index.to_dict(), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        _dump_feature_collection(directory / "mountain_ranges.geojson", self.mountain_ranges)
+        _dump_feature_collection(directory / "mountain_ridges.geojson", self.mountain_ridges)
+        _dump_feature_collection(directory / "plateaus.geojson", self.plateaus)
+        _dump_feature_collection(directory / "plateau_rims.geojson", self.plateau_rims)
 
     @classmethod
     def load(cls, directory: Path) -> VectorStore:
@@ -220,4 +287,8 @@ class VectorStore:
             lakes=_load_lakes(directory / "lakes.json"),
             basins=_load_basins(directory / "basins.json"),
             spatial_index=_load_index(directory / "spatial_index.json"),
+            mountain_ranges=_load_feature_collection(directory / "mountain_ranges.geojson"),
+            mountain_ridges=_load_feature_collection(directory / "mountain_ridges.geojson"),
+            plateaus=_load_feature_collection(directory / "plateaus.geojson"),
+            plateau_rims=_load_feature_collection(directory / "plateau_rims.geojson"),
         )

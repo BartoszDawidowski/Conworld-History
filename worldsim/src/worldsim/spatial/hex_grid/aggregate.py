@@ -145,3 +145,24 @@ def dominant_int(
         uniq, cnt = np.unique(chunk, return_counts=True)
         out[hi] = int(uniq[int(np.argmax(cnt))])
     return out
+
+
+def unique_positive_ids_per_hex(
+    id_map: NDArray[np.integer],
+    hex_of_cell: NDArray[np.integer],
+    *,
+    n_hex: int,
+) -> list[list[int]]:
+    """Unique positive integer IDs intersecting each hex."""
+    ids = np.asarray(id_map).ravel()
+    hid = np.asarray(hex_of_cell, dtype=np.int32).ravel()
+    out: list[list[int]] = [[] for _ in range(n_hex)]
+    seen: list[set[int]] = [set() for _ in range(n_hex)]
+    for h, raw in zip(hid.tolist(), ids.tolist()):
+        hi = int(h)
+        iv = int(raw)
+        if hi < 0 or hi >= n_hex or iv <= 0 or iv in seen[hi]:
+            continue
+        seen[hi].add(iv)
+        out[hi].append(iv)
+    return out

@@ -11,7 +11,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 from worldsim.physical.atmosphere.pipeline import AtmosphereResult
-from worldsim.physical.climate.pipeline import ClimateResult, replace_climate_temperature
+from worldsim.physical.climate.pipeline import (
+    ClimateResult,
+    replace_climate_temperature,
+    restamp_temperature_diagnostics,
+)
+from worldsim.physical.climate.temperature import TEMPERATURE_STATE_SST
 from worldsim.physical.ocean.currents import build_monthly_currents
 from worldsim.physical.ocean.sst import (
     build_monthly_sst,
@@ -173,18 +178,22 @@ def apply_ocean_temperature_to_climate(
     months = min(climate.temperature_c.shape[0], ocean.temperature_coupled_c.shape[0])
     temp = np.asarray(climate.temperature_c, dtype=np.float64).copy()
     temp[:months] = np.asarray(ocean.temperature_coupled_c[:months], dtype=np.float64)
-    diag = dict(climate.diagnostics)
-    prior = int(diag.get("sst_apply_count", 0) or 0)
-    diag["ocean_temperature_applied"] = True
-    diag["ocean_inland_decay_cells"] = ocean.diagnostics.get("inland_decay_cells")
-    diag["ocean_inland_decay_km"] = ocean.diagnostics.get("inland_decay_km")
-    diag["ocean_land_temp_delta_mean_abs"] = ocean.diagnostics.get(
-        "land_temp_delta_mean_abs"
+    prior = int(climate.diagnostics.get("sst_apply_count", 0) or 0)
+    updated = replace_climate_temperature(climate, temp)
+    return restamp_temperature_diagnostics(
+        updated,
+        state_name=TEMPERATURE_STATE_SST,
+        extra={
+            "ocean_temperature_applied": True,
+            "ocean_inland_decay_cells": ocean.diagnostics.get("inland_decay_cells"),
+            "ocean_inland_decay_km": ocean.diagnostics.get("inland_decay_km"),
+            "ocean_land_temp_delta_mean_abs": ocean.diagnostics.get(
+                "land_temp_delta_mean_abs"
+            ),
+            "sst_apply_count": prior + 1,
+            "sst_owner": "ocean_coupling",
+        },
     )
-    diag["sst_apply_count"] = prior + 1
-    diag["temperature_state"] = "temperature_sst_coupled_c"
-    diag["sst_owner"] = "ocean_coupling"
-    return replace_climate_temperature(climate, temp, diagnostics=diag)
 
 
 def build_ocean_circulation(

@@ -15,10 +15,11 @@ from worldsim.spatial.extent import SpatialExtent
 
 
 def _lp(**kwargs) -> LandformParams:
-    """PR-9 fixtures use cell floors and foundation score threshold."""
+    """PR-9 fixtures use cell floors, a toy planet so km radii are representable."""
     kwargs.setdefault("min_range_km2", None)
     kwargs.setdefault("min_plateau_km2", None)
     kwargs.setdefault("mountain_score_threshold", 0.42)
+    kwargs.setdefault("planet_radius_km", 250.0)
     return LandformParams(**kwargs)
 
 

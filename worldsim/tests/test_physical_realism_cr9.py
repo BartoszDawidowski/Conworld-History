@@ -98,6 +98,7 @@ def test_cone_and_plateau_survive_cr9_threshold() -> None:
             fine_radius_km=20.0,
             meso_radius_km=50.0,
             macro_radius_km=120.0,
+            planet_radius_km=250.0,
         ),
     )
     assert len(cres.mountain_ranges) >= 1

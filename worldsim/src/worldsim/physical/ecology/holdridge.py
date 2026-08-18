@@ -154,6 +154,33 @@ def build_zone_legend() -> dict[str, str]:
     return legend
 
 
+def holdridge_zone_rgb(zone_id: int) -> tuple[int, int, int]:
+    """Same palette as atlas Holdridge PNG. Ocean/overrides (id < 10) share one swatch."""
+    z = int(zone_id)
+    if z < 10:
+        return (20, 40, 90)
+    return ((z * 37) % 200 + 30, (z * 91) % 200 + 30, (z * 17) % 200 + 30)
+
+
+def holdridge_zone_color_hex(zone_id: int) -> str:
+    r, g, b = holdridge_zone_rgb(zone_id)
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
+def holdridge_display_legend() -> dict[str, object]:
+    """id→name aliases (C8) plus ``classes`` with colours for Godot."""
+    names = build_zone_legend()
+    classes = {
+        key: {"label": label, "color": holdridge_zone_color_hex(int(key))}
+        for key, label in names.items()
+    }
+    payload: dict[str, object] = dict(names)
+    payload["schema"] = "holdridge_legend_v1"
+    payload["title"] = "Holdridge"
+    payload["classes"] = classes
+    return payload
+
+
 def humanize_zone_label(raw: str) -> str:
     """Pass through display names; legacy ``boreal__humid`` still readable."""
     text = str(raw).strip()

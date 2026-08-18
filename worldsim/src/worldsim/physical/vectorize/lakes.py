@@ -24,6 +24,44 @@ class Lake:
     water_state: str = "endorheic"
     spill_elevation: float | None = None
     mean_effective_inflow: float = 0.0
+    # C0: topographic identity vs current liquid object; three independent axes.
+    feature_id: int = 0
+    water_body_id: int = 0
+    outlet_type: str = ""
+    hydroperiod: str = ""
+    ice_regime: str = ""
+    envelope_area_km2: float = 0.0
+    mean_wet_area_km2: float = 0.0
+
+    def __post_init__(self) -> None:
+        from worldsim.physical.hydrology.lakes_meta import (
+            apply_lake_identity,
+            derive_lake_axes,
+        )
+
+        axes = derive_lake_axes(
+            water_state=self.water_state,
+            closed_basin=self.closed_basin,
+            outlet_type=self.outlet_type,
+            hydroperiod=self.hydroperiod,
+            ice_regime=self.ice_regime,
+        )
+        self.outlet_type = axes["outlet_type"]
+        self.hydroperiod = axes["hydroperiod"]
+        self.ice_regime = axes["ice_regime"]
+        if axes["water_state"]:
+            self.water_state = axes["water_state"]
+        ident = apply_lake_identity(
+            {
+                "id": self.id,
+                "basin_id": self.basin_id,
+                "water_state": self.water_state,
+                "feature_id": self.feature_id,
+                "water_body_id": self.water_body_id,
+            }
+        )
+        self.feature_id = int(ident["feature_id"])
+        self.water_body_id = int(ident["water_body_id"])
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -38,7 +76,24 @@ class Lake:
             "water_state": self.water_state,
             "spill_elevation": self.spill_elevation,
             "mean_effective_inflow": self.mean_effective_inflow,
+            "feature_id": int(self.feature_id),
+            "water_body_id": int(self.water_body_id),
+            "outlet_type": self.outlet_type,
+            "hydroperiod": self.hydroperiod,
+            "ice_regime": self.ice_regime,
+            "envelope_area_km2": float(self.envelope_area_km2),
+            "mean_wet_area_km2": float(self.mean_wet_area_km2),
         }
+
+
+def lake_atlas_properties(lake: Lake) -> dict[str, Any]:
+    """GeoJSON properties for atlas lakes (no geometry)."""
+    from worldsim.physical.hydrology.lakes_meta import LAKE_VECTOR_SCHEMA
+
+    props = lake.to_dict()
+    props.pop("polygon", None)
+    props["lake_vector_schema"] = LAKE_VECTOR_SCHEMA
+    return props
 
 
 def _sanitize_ring(ring: list[tuple[float, float]]) -> list[tuple[float, float]]:
@@ -208,6 +263,13 @@ def build_lakes(
                     else None
                 ),
                 mean_effective_inflow=float(rec.get("mean_effective_inflow", 0.0)),
+                feature_id=int(rec.get("feature_id") or 0),
+                water_body_id=int(rec.get("water_body_id") or 0),
+                outlet_type=str(rec.get("outlet_type") or ""),
+                hydroperiod=str(rec.get("hydroperiod") or ""),
+                ice_regime=str(rec.get("ice_regime") or ""),
+                envelope_area_km2=float(rec.get("envelope_area_km2") or 0.0),
+                mean_wet_area_km2=float(rec.get("mean_wet_area_km2") or 0.0),
             )
         )
     return lakes

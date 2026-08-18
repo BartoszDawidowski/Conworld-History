@@ -21,6 +21,10 @@ const _NEIGH_ODD := [
 var visible_overlay: bool = false
 var _hex_env: Dictionary = {}
 var _holdridge_legend: Dictionary = {}
+var _biome_legend: Dictionary = {}
+var _landform_legend: Dictionary = {}
+var _inspect_schema: Dictionary = {}
+var _inspect_blob: PackedByteArray = PackedByteArray()
 var _hex_w: int = 256
 var _hex_h: int = 128
 var _tex_size: Vector2 = Vector2.ZERO
@@ -54,6 +58,27 @@ func load_atlas(atlas_dir: String, tex_size: Vector2) -> void:
 		var leg = JSON.parse_string(FileAccess.get_file_as_string(legend_path))
 		if typeof(leg) == TYPE_DICTIONARY:
 			_holdridge_legend = leg
+	_biome_legend.clear()
+	var biome_path := atlas_dir.path_join("biome_v2_legend.json")
+	if FileAccess.file_exists(biome_path):
+		var bleg = JSON.parse_string(FileAccess.get_file_as_string(biome_path))
+		if typeof(bleg) == TYPE_DICTIONARY:
+			_biome_legend = bleg
+	_landform_legend.clear()
+	var lf_path := atlas_dir.path_join("landform_legend.json")
+	if FileAccess.file_exists(lf_path):
+		var lleg = JSON.parse_string(FileAccess.get_file_as_string(lf_path))
+		if typeof(lleg) == TYPE_DICTIONARY:
+			_landform_legend = lleg
+	_inspect_schema = {}
+	_inspect_blob = PackedByteArray()
+	var ig_json := atlas_dir.path_join("inspection_grid.json")
+	var ig_bin := atlas_dir.path_join("inspection_grid.bin")
+	if FileAccess.file_exists(ig_json) and FileAccess.file_exists(ig_bin):
+		var sch = JSON.parse_string(FileAccess.get_file_as_string(ig_json))
+		if typeof(sch) == TYPE_DICTIONARY:
+			_inspect_schema = sch
+		_inspect_blob = FileAccess.get_file_as_bytes(ig_bin)
 	queue_redraw()
 
 
@@ -205,17 +230,17 @@ func hex_at(map_xy: Vector2) -> int:
 	return best_r * _hex_w + best_q
 
 
-func hex_info(hex_id: int) -> Dictionary:
+func hex_info(hex_id: int, month: int = 1) -> Dictionary:
 	if hex_id < 0:
 		return {}
-	var cx: Array = _hex_env.get("center_x", [])
+	var cx: Array = _as_array(_hex_env.get("center_x", []))
 	if hex_id >= cx.size():
 		return {"hex_id": hex_id}
-	var counts: Array = _hex_env.get("cell_count", [])
+	var counts: Array = _as_array(_hex_env.get("cell_count", []))
 	## Legacy atlas JSON had no cell_count — do not treat as empty coverage.
 	var has_counts := counts.size() > hex_id
 	var cell_count := int(counts[hex_id]) if has_counts else -1
-	var zone_id := int(_hex_env.get("holdridge_dominant", [])[hex_id])
+	var zone_id := int(_arr_num(_as_array(_hex_env.get("holdridge_dominant", [])), hex_id, -1))
 	var info := {
 		"hex_id": hex_id,
 		"holdridge_id": zone_id,
@@ -227,29 +252,131 @@ func hex_info(hex_id: int) -> Dictionary:
 		info["holdridge"] = "No data (hex outside climate coverage)"
 	else:
 		info["holdridge"] = holdridge_label(zone_id)
-	var ocean_f: Array = _hex_env.get("ocean_fraction", [])
-	if hex_id < ocean_f.size():
-		info["ocean_fraction"] = float(ocean_f[hex_id])
-	var land_f: Array = _hex_env.get("land_fraction", [])
-	if hex_id < land_f.size():
-		info["land_fraction"] = float(land_f[hex_id])
-	var lake_f: Array = _hex_env.get("lake_fraction", [])
-	if hex_id < lake_f.size():
-		info["lake_fraction"] = float(lake_f[hex_id])
-	var elev: Array = _hex_env.get("elevation_mean", [])
-	if hex_id < elev.size():
-		info["elevation_mean_m"] = float(elev[hex_id])
-	var t_ann: Array = _hex_env.get("temperature_annual_c", [])
-	if hex_id < t_ann.size():
-		info["temperature_annual_c"] = float(t_ann[hex_id])
-	var p_ann: Array = _hex_env.get("precipitation_annual", [])
-	if hex_id < p_ann.size():
-		info["precipitation_annual"] = float(p_ann[hex_id])
-	var perm: Array = _hex_env.get("permeability_mean", [])
-	if hex_id < perm.size():
-		info["permeability_mean"] = float(perm[hex_id])
-	info["river_ids"] = _hex_env.get("river_ids_nonempty", {}).get(str(hex_id), [])
+	_copy_num(info, "latitude_deg", hex_id)
+	_copy_num(info, "land_fraction", hex_id)
+	_copy_num(info, "ocean_fraction", hex_id)
+	_copy_num(info, "lake_fraction", hex_id)
+	_copy_num(info, "elevation_mean_m", hex_id)
+	if not info.has("elevation_mean_m"):
+		_copy_num(info, "elevation_mean", hex_id)
+		if info.has("elevation_mean"):
+			info["elevation_mean_m"] = info["elevation_mean"]
+	_copy_num(info, "elevation_min_m", hex_id)
+	_copy_num(info, "elevation_max_m", hex_id)
+	_copy_num(info, "elevation_std_m", hex_id)
+	_copy_num(info, "local_relief_mean_m", hex_id)
+	_copy_num(info, "slope_mean_deg", hex_id)
+	_copy_num(info, "temperature_annual_c", hex_id)
+	_copy_num(info, "precipitation_annual_mm", hex_id)
+	if not info.has("precipitation_annual_mm"):
+		_copy_num(info, "precipitation_annual", hex_id)
+	_copy_num(info, "frost_months_mean", hex_id)
+	_copy_num(info, "growing_season_months_mean", hex_id)
+	_copy_num(info, "water_deficit_mm_mean", hex_id)
+	_copy_int(info, "biome_v2_dominant", hex_id)
+	_copy_int(info, "soil_state_dominant", hex_id)
+	_copy_int(info, "context_dominant", hex_id)
+	_copy_int(info, "local_form_dominant", hex_id)
+	_copy_num(info, "mountain_score_mean", hex_id)
+	_copy_num(info, "plateau_score_mean", hex_id)
+	_copy_num(info, "mountain_terrain_fraction", hex_id)
+	_copy_num(info, "mountain_range_fraction", hex_id)
+	_copy_num(info, "plateau_context_fraction", hex_id)
+	_copy_num(info, "plateau_object_fraction", hex_id)
+	_copy_num(info, "terrain_barrier_strength", hex_id)
+	_copy_num(info, "permanent_water_fraction", hex_id)
+	_copy_num(info, "seasonal_water_fraction", hex_id)
+	_copy_num(info, "perennial_river_fraction", hex_id)
+	_copy_num(info, "seasonal_river_fraction", hex_id)
+	_copy_num(info, "wadi_fraction", hex_id)
+	_copy_num(info, "mean_effective_discharge", hex_id)
+	_copy_num(info, "permeability_mean", hex_id)
+	var rivers: Array = _id_list("river_ids", hex_id)
+	if rivers.is_empty():
+		rivers = _hex_env.get("river_ids_nonempty", {}).get(str(hex_id), [])
+	info["river_ids"] = rivers
+	info["lake_ids"] = _id_list("lake_ids", hex_id)
+	info["basin_ids"] = _id_list("basin_ids", hex_id)
+	info["mountain_range_ids"] = _id_list("mountain_range_ids", hex_id)
+	info["plateau_ids"] = _id_list("plateau_ids", hex_id)
+	var month_i := clampi(month, 1, 12) - 1
+	info["temperature_month_c"] = _inspect_value("temperature_c", month_i, hex_id)
+	info["precipitation_month_mm"] = _inspect_value("precipitation_mm_or_proxy", month_i, hex_id)
+	info["humidity_month_proxy"] = _inspect_value("humidity_rh_proxy", month_i, hex_id)
 	return info
+
+
+func get_legends() -> Dictionary:
+	return {
+		"holdridge": _holdridge_legend,
+		"biome_v2": _biome_legend,
+		"landform": _landform_legend,
+	}
+
+
+func _as_array(value) -> Array:
+	return value if typeof(value) == TYPE_ARRAY else []
+
+
+func _arr_num(arr, hex_id: int, fallback = null) -> Variant:
+	if typeof(arr) != TYPE_ARRAY or hex_id >= arr.size() or hex_id < 0:
+		return fallback
+	var v = arr[hex_id]
+	if v == null:
+		return fallback
+	return v
+
+
+func _copy_num(info: Dictionary, key: String, hex_id: int) -> void:
+	var v = _arr_num(_hex_env.get(key, []), hex_id, null)
+	if v == null:
+		return
+	if typeof(v) == TYPE_FLOAT and not is_finite(float(v)):
+		return
+	info[key] = float(v)
+
+
+func _copy_int(info: Dictionary, key: String, hex_id: int) -> void:
+	var v = _arr_num(_hex_env.get(key, []), hex_id, null)
+	if v == null:
+		return
+	var iv := int(v)
+	if iv < 0:
+		return
+	info[key] = iv
+
+
+func _id_list(key: String, hex_id: int) -> Array:
+	var payload = _hex_env.get(key, {})
+	var found = null
+	if typeof(payload) == TYPE_DICTIONARY:
+		found = payload.get(str(hex_id), [])
+	elif typeof(payload) == TYPE_ARRAY and hex_id < payload.size():
+		found = payload[hex_id]
+	if typeof(found) == TYPE_ARRAY:
+		return found
+	return []
+
+
+func _inspect_value(field_id: String, month: int, hex_id: int) -> Variant:
+	if _inspect_blob.is_empty() or _inspect_schema.is_empty():
+		return null
+	var fields = _inspect_schema.get("fields", [])
+	for spec in fields:
+		if typeof(spec) != TYPE_DICTIONARY or str(spec.get("id", "")) != field_id:
+			continue
+		var n_hex := int(_inspect_schema.get("n_hex", 0))
+		var months := int(_inspect_schema.get("months", 12))
+		if month < 0 or month >= months or hex_id < 0 or hex_id >= n_hex:
+			return null
+		var off := int(spec.get("offset_bytes", 0)) + month * n_hex * 4 + hex_id * 4
+		if off < 0 or off + 4 > _inspect_blob.size():
+			return null
+		var v := _inspect_blob.decode_float(off)
+		if not is_finite(v):
+			return null
+		return v
+	return null
 
 
 func holdridge_label(zone_id: int) -> String:

@@ -1,7 +1,7 @@
 # Physical Realism CR-6 — hydrology hotfix (PET, liquid lakes, Godot km)
 
 **Date:** 2026-08-17  
-**Status:** ✅ **Accepted**  
+**Status:** BASELINE IMPLEMENTED — CORRECTION REQUIRED (skipped Atlas 183716 is not production Accepted; see addendum C0–C2)  
 **Authority:** [`docs/PHYSICAL_REALISM_CORRECTIONS.md`](../PHYSICAL_REALISM_CORRECTIONS.md) §5 CR-6  
 **Defects closed:** **F-09** (PET×12); **F-15** (playa/ice as liquid); **F-16** (closed vs land outlet); **F-19** (Godot continentality km); **F-20** (centroid-star polygons)  
 **Partial:** **F-17** (`river_acc_fraction` 0.035; km² still often inert on Atlas); **F-18** (liquid mask + fraction; hydro not rebuilt after ecology moisture — **CR-8**)
@@ -51,4 +51,4 @@ Atlas 183716 full regen was **not** re-run this milestone (fixtures + suite). Ex
 - Landform score / erosion `cell_scale_m` (**CR-9**)  
 - Precipitation / `orographic_frac` / `folding_ratio` / SST / `lake_min_depth_m` frozen  
 
-**Decision:** accept CR-6; stop. Next when instructed: **CR-7** only.
+**Decision:** CR-6 remains a fixture baseline. A skipped Atlas run is not production Accepted. Remainder → addendum **C0–C2**.

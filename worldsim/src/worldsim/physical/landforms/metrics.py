@@ -8,14 +8,24 @@ from numpy.typing import NDArray
 from worldsim.spatial.metrics import GridMetrics, grid_metrics
 
 
-def _radius_cells(metrics: GridMetrics, radius_km: float) -> tuple[int, int]:
+def scale_window(metrics: GridMetrics, radius_km: float) -> dict[str, float | int]:
+    """Requested km radius → effective 1-cell-minimum E–W/N–S window."""
     mid = int(metrics.height // 2)
-    rx = int(max(2, round(metrics.cells_from_km_ew(radius_km, mid))))
-    ry = int(max(2, round(metrics.cells_from_km_ns(radius_km, mid))))
-    # Cap so windows stay tractable on large grids.
+    raw_x = float(metrics.cells_from_km_ew(radius_km, mid))
+    raw_y = float(metrics.cells_from_km_ns(radius_km, mid))
+    rx = 1 if not np.isfinite(raw_x) else int(max(1, round(raw_x)))
+    ry = 1 if not np.isfinite(raw_y) else int(max(1, round(raw_y)))
     rx = min(rx, max(1, metrics.width // 4))
     ry = min(ry, max(1, metrics.height // 4))
-    return rx, ry
+    return {
+        "requested_km": float(radius_km),
+        "effective_rx_cells": int(rx),
+        "effective_ry_cells": int(ry),
+        "effective_ew_km": float(metrics.km_from_cells_ew(rx, row=mid)),
+        "effective_ns_km": float(metrics.km_from_cells_ns(ry, row=mid)),
+        "raw_cells_ew": float(raw_x) if np.isfinite(raw_x) else float("inf"),
+        "raw_cells_ns": float(raw_y) if np.isfinite(raw_y) else float("inf"),
+    }
 
 
 def box_mean_cylindrical(
@@ -103,8 +113,12 @@ def compute_metric_fields(
     macro_radius_km: float,
     planet_radius_km: float = 6371.0,
     metrics: GridMetrics | None = None,
-) -> dict[str, NDArray[np.float64]]:
-    """Fine / meso / macro metric layers on the analysis grid."""
+) -> tuple[dict[str, NDArray[np.float64]], dict[str, dict[str, float | int]]]:
+    """Fine / meso / macro metric layers on the analysis grid.
+
+    Coastal roughness and mean slope are divided by the window land fraction so
+    ocean zeros do not dilute the statistic. Returns ``(fields, scale_windows)``.
+    """
     elev = np.asarray(elevation_m, dtype=np.float64)
     ocean = np.asarray(ocean_mask, dtype=bool)
     h, w = elev.shape
@@ -115,6 +129,7 @@ def compute_metric_fields(
 
     # Land-only elevation so ocean cliffs do not inflate relief windows.
     elev_land = np.where(ocean, np.nan, elev)
+    land_w = (~ocean).astype(np.float64)
 
     scales = {
         "fine": fine_radius_km,
@@ -124,27 +139,31 @@ def compute_metric_fields(
     out: dict[str, NDArray[np.float64]] = {
         "slope": slope.astype(np.float64),
     }
+    scale_windows: dict[str, dict[str, float | int]] = {}
 
     for name, r_km in scales.items():
-        rx, ry = _radius_cells(metrics, r_km)
-        # Mean uses ocean filled with 0 contribution via land mask average:
-        mean = box_mean_cylindrical(np.where(ocean, 0.0, elev), rx=rx, ry=ry)
-        # Approximate land fraction in window for unbiased mean
-        land_f = box_mean_cylindrical((~ocean).astype(np.float64), rx=rx, ry=ry)
-        mean = np.where(land_f > 1e-6, mean / np.maximum(land_f, 1e-6), elev)
+        win = scale_window(metrics, r_km)
+        scale_windows[name] = win
+        rx = int(win["effective_rx_cells"])
+        ry = int(win["effective_ry_cells"])
+        land_f = box_mean_cylindrical(land_w, rx=rx, ry=ry)
+        land_f_safe = np.maximum(land_f, 1e-6)
+
+        def _land_mean(field: NDArray[np.floating]) -> NDArray[np.float64]:
+            acc = box_mean_cylindrical(np.where(ocean, 0.0, field), rx=rx, ry=ry)
+            return np.where(land_f > 1e-6, acc / land_f_safe, 0.0)
+
+        mean = _land_mean(elev)
+        mean = np.where(land_f > 1e-6, mean, elev)
         relief = box_max_cylindrical(elev_land, rx=rx, ry=ry) - box_min_cylindrical(
             elev_land, rx=rx, ry=ry
         )
         relief = np.where(ocean | ~np.isfinite(relief), 0.0, relief)
-        tpi = elev - mean
-        tpi = np.where(ocean, 0.0, tpi)
+        tpi = np.where(ocean, 0.0, elev - mean)
         resid = np.where(ocean, 0.0, elev - mean)
-        rough = np.sqrt(
-            np.maximum(box_mean_cylindrical(resid * resid, rx=rx, ry=ry), 0.0)
-        )
+        rough = np.sqrt(np.maximum(_land_mean(resid * resid), 0.0))
         rough = np.where(ocean, 0.0, rough)
-        mean_slope = box_mean_cylindrical(slope, rx=rx, ry=ry)
-        mean_slope = np.where(ocean, 0.0, mean_slope)
+        mean_slope = np.where(ocean, 0.0, _land_mean(slope))
         out[f"relief_{name}"] = relief
         out[f"tpi_{name}"] = tpi
         out[f"roughness_{name}"] = rough
@@ -154,4 +173,4 @@ def compute_metric_fields(
     out["flatness_meso"] = np.where(
         ocean, 0.0, 1.0 / (1.0 + 40.0 * out["mean_slope_meso"])
     )
-    return out
+    return out, scale_windows

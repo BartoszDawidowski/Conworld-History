@@ -23,6 +23,7 @@ var _use_mask_coast: bool = false
 var _lakes: Array = []
 ## Pixel-space rings used for draw + point-in-lake tests.
 var _lake_rings_px: Array = []
+var _lake_feats: Array = []
 ## Highest Strahler in loaded GeoJSON (≥2 so order 1 vs 2 still tapers).
 var _strahler_max: float = 2.0
 ## log(1 + max mean_discharge) for B7 stroke scaling.
@@ -34,6 +35,7 @@ var show_coast: bool = true
 var show_lakes: bool = true
 var lakes_skipped_degenerate: int = 0
 var _camera: Camera2D
+var _lake_schema_warned: bool = false
 
 
 func set_camera(cam: Camera2D) -> void:
@@ -89,6 +91,7 @@ func river_width_for_strahler(order: float) -> float:
 
 
 func river_width_for_feature(feat: Dictionary) -> float:
+	## Stroke from Strahler + discharge only. Channel state is diagnostic, never width.
 	## B7: stroke ∝ log(1+discharge), blended with Strahler so tiny stubs stay readable.
 	var order := float(feat.get("strahler_order", 1))
 	var by_order := river_width_for_strahler(order)
@@ -120,14 +123,41 @@ func _polyline_length(pts: PackedVector2Array) -> float:
 	return total
 
 
+func _lake_is_liquid(poly: Dictionary) -> bool:
+	## C0 fail-closed: missing state must not mean permanent liquid water.
+	var ice := str(poly.get("ice_regime", ""))
+	var hydro := str(poly.get("hydroperiod", ""))
+	var state := str(poly.get("water_state", ""))
+	if ice == "perennially_frozen" or hydro == "ephemeral_or_dry":
+		return false
+	if state == "open" or state == "endorheic":
+		return true
+	if hydro == "permanent" or hydro == "seasonal":
+		if ice == "" or ice == "normally_liquid" or ice == "seasonally_frozen":
+			var outlet := str(poly.get("outlet_type", ""))
+			return outlet == "ocean_draining" or outlet == "open_lake" or outlet == "closed_endorheic"
+	return false
+
+
+func _warn_lake_schema_once() -> void:
+	if _lake_schema_warned:
+		return
+	_lake_schema_warned = true
+	push_warning(
+		"Lake GeoJSON missing water_state/hydroperiod; fail-closed — not drawn as liquid water."
+	)
+
+
 func _rebuild_lake_rings_px() -> void:
 	_lake_rings_px.clear()
+	_lake_feats.clear()
 	lakes_skipped_degenerate = 0
 	for poly in _lakes:
-		var state := str(poly.get("water_state", ""))
-		# CR-6: fill only open water + watered endorheic. Playa/ice stay in
-		# geojson for diagnostics but are not drawn as liquid.
-		if state != "" and state != "open" and state != "endorheic":
+		if not _lake_is_liquid(poly):
+			var state := str(poly.get("water_state", ""))
+			var hydro := str(poly.get("hydroperiod", ""))
+			if state == "" and hydro == "":
+				_warn_lake_schema_once()
 			continue
 		var best := PackedVector2Array()
 		for piece in _to_pixel_polylines(poly.get("coords", [])):
@@ -147,6 +177,7 @@ func _rebuild_lake_rings_px() -> void:
 			lakes_skipped_degenerate += 1
 			continue
 		_lake_rings_px.append(drawn)
+		_lake_feats.append(poly)
 
 
 func _ring_triangulates(ring: PackedVector2Array) -> bool:
@@ -577,6 +608,8 @@ func _rebuild_shallow_water(atlas_dir: String) -> void:
 
 
 func pick_river(local_pos: Vector2, max_dist: float = 4.0) -> Dictionary:
+	if not show_rivers:
+		return {}
 	var best := {}
 	var best_d := max_dist
 	for feat in _rivers:
@@ -587,6 +620,20 @@ func pick_river(local_pos: Vector2, max_dist: float = 4.0) -> Dictionary:
 					best_d = d
 					best = feat
 	return best
+
+
+func pick_lake(local_pos: Vector2) -> Dictionary:
+	if not show_lakes:
+		return {}
+	for i in range(_lake_rings_px.size()):
+		var ring: PackedVector2Array = _lake_rings_px[i]
+		var open := ring
+		if open.size() >= 2 and open[0].distance_to(open[open.size() - 1]) < 0.5:
+			open = open.duplicate()
+			open.remove_at(open.size() - 1)
+		if open.size() >= 3 and Geometry2D.is_point_in_polygon(local_pos, open):
+			return _lake_feats[i] if i < _lake_feats.size() else {"kind": "lake"}
+	return {}
 
 
 func _sanitize_polygon_ring(pts: PackedVector2Array) -> PackedVector2Array:
@@ -643,6 +690,8 @@ func _load_lines(path: String) -> Array:
 			"monthly_discharge": props.get("monthly_discharge", []),
 			"from_lake_id": int(props.get("from_lake_id", 0)),
 			"to_lake_id": int(props.get("to_lake_id", 0)),
+			"channel_state": str(props.get("channel_state", "")),
+			"catchment_km2": float(props.get("catchment_km2", 0.0)),
 			"coords": geom.get("coordinates", []),
 		})
 	return out
@@ -663,14 +712,21 @@ func _load_polygons(path: String) -> Array:
 		var rings: Array = geom.get("coordinates", [])
 		if rings.is_empty():
 			continue
-		out.append({
+		var rec := {
 			"id": int(props.get("id", 0)),
+			"kind": "lake",
 			"closed_basin": bool(props.get("closed_basin", true)),
 			"water_state": str(props.get("water_state", "")),
-			"area_cells": int(props.get("area_cells", 0)),
-			"surface_elevation": float(props.get("surface_elevation", 0.0)),
+			"outlet_type": str(props.get("outlet_type", "")),
+			"hydroperiod": str(props.get("hydroperiod", "")),
+			"ice_regime": str(props.get("ice_regime", "")),
 			"coords": rings[0],
-		})
+		}
+		for k in props.keys():
+			if k == "polygon" or rec.has(k):
+				continue
+			rec[k] = props[k]
+		out.append(rec)
 	return out
 
 

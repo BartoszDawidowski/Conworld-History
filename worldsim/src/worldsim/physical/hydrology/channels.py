@@ -1,7 +1,8 @@
-"""Physical channel mask and perennial / seasonal / wadi states (CR-7)."""
+"""Physical channel mask and perennial / seasonal / wadi states (CR-7 / C2)."""
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import numpy as np
@@ -18,6 +19,69 @@ CHANNEL_STATE_NAME = {
     CHANNEL_SEASONAL: "seasonal",
     CHANNEL_PERENNIAL: "perennial",
 }
+
+
+def effective_channel_min_cells(
+    *,
+    cell_area_km2: float,
+    river_min_catchment_km2: float | None,
+    river_min_accumulation_cells: int,
+) -> tuple[int, dict[str, Any]]:
+    """Physical catchment floor in cells (addendum §5.2).
+
+    ``effective_min_cells = max(ceil(km² / cell_area), accumulation_cells)``.
+    A catchment smaller than one cell is still representable as one cell, but
+    diagnostics must report that the km² floor is below grid resolution.
+    """
+    area = max(float(cell_area_km2), 1e-12)
+    acc_floor = max(int(river_min_accumulation_cells), 1)
+    catchment_km2: float | None
+    from_area = 1
+    smaller_than_cell = False
+    if river_min_catchment_km2 is not None and float(river_min_catchment_km2) > 0.0:
+        catchment_km2 = float(river_min_catchment_km2)
+        from_area = max(1, int(math.ceil(catchment_km2 / area)))
+        smaller_than_cell = catchment_km2 < area
+    else:
+        catchment_km2 = None
+    effective = max(from_area, acc_floor)
+    return effective, {
+        "river_min_catchment_km2": catchment_km2,
+        "cell_area_km2": float(area),
+        "river_min_accumulation_cells": acc_floor,
+        "catchment_cells_from_km2": int(from_area),
+        "effective_min_cells": int(effective),
+        "catchment_smaller_than_cell": bool(smaller_than_cell),
+    }
+
+
+def river_water_fraction(
+    channel_mask: NDArray[np.bool_],
+    channel_length_km: NDArray[np.floating],
+    *,
+    cell_area_km2: float,
+    width_m: NDArray[np.floating] | float,
+) -> NDArray[np.float64]:
+    """Fractional river-water area in each cell (width × length / cell area)."""
+    mask = np.asarray(channel_mask, dtype=np.bool_)
+    length = np.maximum(np.asarray(channel_length_km, dtype=np.float64), 0.0)
+    width = np.maximum(np.asarray(width_m, dtype=np.float64), 0.0)
+    water_km2 = (width / 1000.0) * length
+    frac = water_km2 / max(float(cell_area_km2), 1e-12)
+    return np.where(mask, np.clip(frac, 0.0, 1.0), 0.0)
+
+
+def channel_width_m_from_discharge(
+    discharge_m3s: NDArray[np.floating],
+    channel_mask: NDArray[np.bool_],
+    *,
+    coeff: float = 8.0,
+    max_width_m: float = 400.0,
+) -> NDArray[np.float64]:
+    """Reduced-order width from effective Q; dry channels contribute no area."""
+    q = np.maximum(np.asarray(discharge_m3s, dtype=np.float64), 0.0)
+    width = np.clip(float(coeff) * np.sqrt(q), 0.0, float(max_width_m))
+    return np.where(np.asarray(channel_mask, dtype=np.bool_), width, 0.0)
 
 
 def physical_channel_mask(

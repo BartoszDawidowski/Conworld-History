@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from heapq import heappop, heappush
 from typing import Any
 
 import numpy as np
@@ -67,6 +68,7 @@ class Plateau:
     provenance_mode: int
     confidence: float
     crosses_ew_seam: bool
+    rim_line: list[list[float]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -83,6 +85,7 @@ class Plateau:
             "provenance_mode": self.provenance_mode,
             "confidence": self.confidence,
             "crosses_ew_seam": self.crosses_ew_seam,
+            "rim_line": list(self.rim_line),
         }
 
 
@@ -162,42 +165,156 @@ def _components_sorted(
     return rows
 
 
+def _contiguous_ew_shift(mask: NDArray[np.bool_]) -> int:
+    """Shift so a wrapping component becomes a single interior blob when possible."""
+    col = np.any(np.asarray(mask, dtype=bool), axis=0)
+    w = int(col.size)
+    if w == 0 or not (bool(col[0]) and bool(col[-1])):
+        return 0
+    a = 0
+    while a < w and col[a]:
+        a += 1
+    if a >= w:
+        return 0
+    return int(a)
+
+
+def _cell_xy(i: float, j: float, h: int, w: int) -> list[float]:
+    return [
+        (float(i) + 0.5) / float(w),
+        1.0 - 2.0 * (float(j) + 0.5) / float(h),
+    ]
+
+
+def _prune_polyline(points: list[list[float]]) -> list[list[float]]:
+    out: list[list[float]] = []
+    for pt in points:
+        if out and abs(out[-1][0] - pt[0]) < 1e-12 and abs(out[-1][1] - pt[1]) < 1e-12:
+            continue
+        out.append([float(pt[0]), float(pt[1])])
+    return out
+
+
+def _split_polyline_at_seam(line: list[list[float]]) -> list[list[list[float]]]:
+    if len(line) < 2:
+        return [line] if len(line) == 1 else []
+    parts: list[list[list[float]]] = []
+    cur = [line[0]]
+    for prev, nxt in zip(line, line[1:]):
+        if abs(float(prev[0]) - float(nxt[0])) > 0.5:
+            if len(cur) >= 2:
+                parts.append(cur)
+            cur = [nxt]
+        else:
+            cur.append(nxt)
+    if len(cur) >= 2:
+        parts.append(cur)
+    return parts
+
+
 def _ridge_centerline(
     mask: NDArray[np.bool_],
     elevation_m: NDArray[np.floating],
 ) -> list[list[float]]:
-    """Highest cells along the PCA long axis, as normalised (x, y) vertices."""
-    ys, xs = np.where(mask)
-    h, w = mask.shape
-    if ys.size < 2:
-        if ys.size == 1:
-            return [[(float(xs[0]) + 0.5) / w, 1.0 - 2.0 * (float(ys[0]) + 0.5) / h]]
-        return []
-    pts = np.column_stack([xs.astype(np.float64), ys.astype(np.float64)])
-    mean = pts.mean(axis=0)
-    cov = np.cov(pts.T)
-    if cov.size < 4 or not np.all(np.isfinite(cov)):
-        return []
-    axis = np.linalg.eigh(cov)[1][:, -1]
-    proj = (pts - mean) @ axis
-    n_bins = int(max(4, min(48, ys.size // 2)))
-    line: list[list[float]] = []
+    """Geodesic longest-path spine on the range mask; PCA is not used for the path."""
+    sel = np.asarray(mask, dtype=bool)
     elev = np.asarray(elevation_m, dtype=np.float64)
-    for b in range(n_bins):
-        lo = float(np.quantile(proj, b / n_bins))
-        hi = float(np.quantile(proj, (b + 1) / n_bins))
-        sel = (proj >= lo) & (proj <= hi + 1e-12)
-        if not np.any(sel):
-            continue
-        idx = np.flatnonzero(sel)
-        best = int(idx[np.argmax(elev[ys[idx], xs[idx]])])
-        line.append(
-            [
-                (float(xs[best]) + 0.5) / float(w),
-                1.0 - 2.0 * (float(ys[best]) + 0.5) / float(h),
-            ]
-        )
-    return line
+    h, w = sel.shape
+    ys, xs = np.where(sel)
+    if ys.size == 0:
+        return []
+    if ys.size == 1:
+        return [_cell_xy(float(xs[0]), float(ys[0]), h, w)]
+
+    shift = _contiguous_ew_shift(sel)
+    sel_u = np.roll(sel, -shift, axis=1) if shift else sel
+    elev_u = np.roll(elev, -shift, axis=1) if shift else elev
+    ys_u, xs_u = np.where(sel_u)
+    n = int(ys_u.size)
+    index = -np.ones((h, w), dtype=np.int32)
+    index[ys_u, xs_u] = np.arange(n, dtype=np.int32)
+
+    def neighbours(k: int) -> list[int]:
+        j, i = int(ys_u[k]), int(xs_u[k])
+        out: list[int] = []
+        for dj in (-1, 0, 1):
+            jj = j + dj
+            if jj < 0 or jj >= h:
+                continue
+            for di in (-1, 0, 1):
+                if dj == 0 and di == 0:
+                    continue
+                ii = i + di
+                if ii < 0 or ii >= w:
+                    continue
+                nb = int(index[jj, ii])
+                if nb >= 0:
+                    out.append(nb)
+        return out
+
+    def farthest(start: int) -> tuple[int, list[int]]:
+        dist = np.full(n, np.inf, dtype=np.float64)
+        prev = np.full(n, -1, dtype=np.int32)
+        dist[start] = 0.0
+        heap: list[tuple[float, int]] = [(0.0, start)]
+        while heap:
+            d, u = heappop(heap)
+            if d > dist[u]:
+                continue
+            uj, ui = int(ys_u[u]), int(xs_u[u])
+            for v in neighbours(u):
+                vj, vi = int(ys_u[v]), int(xs_u[v])
+                step = float(np.hypot(vj - uj, vi - ui))
+                nd = d + step
+                if nd + 1e-12 < dist[v]:
+                    dist[v] = nd
+                    prev[v] = u
+                    heappush(heap, (nd, v))
+        finite = np.where(np.isfinite(dist))[0]
+        end = int(finite[int(np.argmax(dist[finite]))])
+        path = [end]
+        while prev[path[-1]] >= 0:
+            path.append(int(prev[path[-1]]))
+        path.reverse()
+        return end, path
+
+    seed = int(np.argmax(elev_u[ys_u, xs_u]))
+    a, _ = farthest(seed)
+    _b, path = farthest(a)
+    # Prefer higher cells: if the path has tiny stubs, keep the diameter path only.
+    line: list[list[float]] = []
+    for k in path:
+        i_orig = (int(xs_u[k]) + shift) % w
+        line.append(_cell_xy(float(i_orig), float(ys_u[k]), h, w))
+    return _prune_polyline(line)
+
+
+def _ridge_samples_in_mask(
+    line: list[list[float]], mask: NDArray[np.bool_]
+) -> bool:
+    if not line:
+        return True
+    h, w = mask.shape
+    for x, y in line:
+        i = int(np.floor(float(x) * w)) % w
+        j = int(np.clip(np.floor((1.0 - float(y)) * 0.5 * h), 0, h - 1))
+        if not bool(mask[j, i]):
+            return False
+    return True
+
+
+def ridge_geometry_ok(
+    line: list[list[float]], mask: NDArray[np.bool_]
+) -> dict[str, bool]:
+    dup = False
+    for a, b in zip(line, line[1:]):
+        if abs(a[0] - b[0]) < 1e-12 and abs(a[1] - b[1]) < 1e-12:
+            dup = True
+            break
+    return {
+        "in_mask": _ridge_samples_in_mask(line, mask),
+        "no_consecutive_duplicates": not dup,
+    }
 
 
 def extract_mountain_ranges(
@@ -246,9 +363,9 @@ def extract_mountain_ranges(
         # Orientation from PCA of coordinates
         ys, xsi = np.where(sel)
         if ys.size >= 2:
-            pts = np.column_stack(
-                [xsi.astype(np.float64), ys.astype(np.float64)]
-            )
+            shift = _contiguous_ew_shift(sel)
+            xs_u = (xsi.astype(np.float64) - shift) % elev.shape[1]
+            pts = np.column_stack([xs_u, ys.astype(np.float64)])
             pts -= pts.mean(axis=0)
             cov = pts.T @ pts / max(pts.shape[0] - 1, 1)
             eig = np.linalg.eigvalsh(cov)
@@ -334,6 +451,7 @@ def extract_plateaus(
             provenance_mode=prov,
             confidence=float(np.mean(confidence[sel])),
             crosses_ew_seam=crosses,
+            rim_line=_prune_polyline(_mask_contour_ring(sel)),
         )
         plateaus.append(rec)
         id_map[sel] = new_id
@@ -398,14 +516,32 @@ def components_to_geojson_ridges(
 ) -> list[dict[str, Any]]:
     feats: list[dict[str, Any]] = []
     for rec in records:
-        line = list(rec.ridge_line)
-        if len(line) < 2:
-            continue
-        feats.append(
-            {
-                "type": "Feature",
-                "properties": {"id": rec.id, "kind": "ridge_centerline"},
-                "geometry": {"type": "LineString", "coordinates": line},
-            }
-        )
+        for part in _split_polyline_at_seam(_prune_polyline(list(rec.ridge_line))):
+            if len(part) < 2:
+                continue
+            feats.append(
+                {
+                    "type": "Feature",
+                    "properties": {"id": rec.id, "kind": "ridge_centerline"},
+                    "geometry": {"type": "LineString", "coordinates": part},
+                }
+            )
+    return feats
+
+
+def components_to_geojson_rims(
+    records: list[Plateau],
+) -> list[dict[str, Any]]:
+    feats: list[dict[str, Any]] = []
+    for rec in records:
+        for part in _split_polyline_at_seam(_prune_polyline(list(rec.rim_line))):
+            if len(part) < 2:
+                continue
+            feats.append(
+                {
+                    "type": "Feature",
+                    "properties": {"id": rec.id, "kind": "plateau_rim"},
+                    "geometry": {"type": "LineString", "coordinates": part},
+                }
+            )
     return feats

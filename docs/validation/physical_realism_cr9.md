@@ -1,7 +1,7 @@
 # Physical Realism CR-9 — erosion, landforms, BiomeV2
 
 **Date:** 2026-08-17  
-**Status:** ✅ **Accepted**  
+**Status:** BASELINE IMPLEMENTED — CORRECTION REQUIRED (skipped Atlas 183716 is not production Accepted; see addendum C3/C6/C7)  
 **Authority:** [`docs/PHYSICAL_REALISM_CORRECTIONS.md`](../PHYSICAL_REALISM_CORRECTIONS.md) §5 CR-9  
 **Defects closed:** **F-21** (metric slope + diffusion; micro-depression fill after fluvial).  
 **Partial:** **F-13** (score formula + threshold 0.60 + `calibrated` is a real knob check; Atlas 53.7% leftover until regen); **F-11** remainder (`cell_scale_m=1000` gone; orography still raw Δz).
@@ -53,4 +53,4 @@ Expected production effect after regen: fewer cells scoring as mountain at 0.60;
 - Precipitation / folding / SST calibration  
 - Full memory rewrite (**F-14**)
 
-**Decision:** accept CR-9; stop. CR track **CR-0…CR-9** is complete. Next when instructed: optional atlas **B10** only.
+**Decision:** CR-9 remains a fixture baseline. A skipped Atlas run is not production Accepted. Remainder → addendum **C3 / C6 / C7**. Next when instructed: **C1** after C0.

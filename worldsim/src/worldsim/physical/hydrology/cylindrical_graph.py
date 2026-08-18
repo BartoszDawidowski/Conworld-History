@@ -409,27 +409,50 @@ def classify_outlets(
     }
 
 
+def effective_discharge_and_sink(
+    graph: CylindricalFlowGraph,
+    precip: NDArray[np.floating],
+    sink: NDArray[np.floating],
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Route ``q = available − min(available, sink)``; return ``(q, actual_sink)``.
+
+    ``actual_sink`` never exceeds available channel flow at the cell.
+    """
+    ocean = graph.ocean_mask
+    p = np.where(ocean, 0.0, np.asarray(precip, dtype=np.float64)).ravel()
+    s = np.where(ocean, 0.0, np.asarray(sink, dtype=np.float64)).ravel()
+    ups = _upstream_adjacency(graph)
+    q = np.zeros(graph.size, dtype=np.float64)
+    actual = np.zeros(graph.size, dtype=np.float64)
+    ocean_flat = ocean.ravel()
+    for i in topological_order_upstream_first(graph):
+        if ocean_flat[i]:
+            continue
+        available = float(p[i])
+        for u in ups[i]:
+            available += q[u]
+        if available < 0.0:
+            available = 0.0
+        demand = float(s[i])
+        if demand < 0.0:
+            demand = 0.0
+        lost = demand if demand < available else available
+        actual[i] = lost
+        q[i] = available - lost
+    shape = (graph.height, graph.width)
+    q_out = np.where(ocean, 0.0, q.reshape(shape))
+    actual_out = np.where(ocean, 0.0, actual.reshape(shape))
+    return q_out, actual_out
+
+
 def effective_discharge(
     graph: CylindricalFlowGraph,
     precip: NDArray[np.floating],
     sink: NDArray[np.floating],
 ) -> NDArray[np.float64]:
     """``q = max(0, precip + Σ upstream q − sink)`` on the canonical graph."""
-    ocean = graph.ocean_mask
-    p = np.where(ocean, 0.0, np.asarray(precip, dtype=np.float64)).ravel()
-    s = np.where(ocean, 0.0, np.asarray(sink, dtype=np.float64)).ravel()
-    ups = _upstream_adjacency(graph)
-    q = np.zeros(graph.size, dtype=np.float64)
-    for i in topological_order_upstream_first(graph):
-        if ocean.ravel()[i]:
-            continue
-        total = float(p[i])
-        for u in ups[i]:
-            total += q[u]
-        total -= float(s[i])
-        q[i] = total if total > 0.0 else 0.0
-    out = q.reshape(graph.height, graph.width)
-    return np.where(ocean, 0.0, out)
+    q, _actual = effective_discharge_and_sink(graph, precip, sink)
+    return q
 
 
 def validate_graph(graph: CylindricalFlowGraph) -> dict[str, Any]:

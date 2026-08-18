@@ -11,20 +11,31 @@ import numpy as np
 from numpy.typing import NDArray
 
 from worldsim.physical.erosion.pipeline import ErosionResult
-from worldsim.physical.hydrology.cylindrical_graph import classify_outlets
-from worldsim.physical.hydrology.basins_storage import apply_closed_basin_storage
+from worldsim.physical.hydrology.basins_storage import (
+    apply_basin_storage,
+    liquid_id_from_fraction,
+)
 from worldsim.physical.hydrology.channels import (
     classify_channel_states,
     display_channel_candidates,
+    effective_channel_min_cells,
+    channel_width_m_from_discharge,
     physical_channel_mask,
+    river_water_fraction,
+)
+from worldsim.physical.hydrology.cylindrical_graph import (
+    accumulate_weights,
+    classify_outlets,
+    effective_discharge_and_sink,
 )
 from worldsim.physical.hydrology.discharge import (
+    SECONDS_PER_DAY,
     month_days,
     month_weighted_mean_m3s,
     runoff_proxy_to_m3s,
 )
 from worldsim.physical.hydrology.flow import accuflux_on_land, run_pyflwdir_core
-from worldsim.physical.hydrology.lakes_meta import build_lake_records, liquid_lake_mask
+from worldsim.physical.hydrology.lakes_meta import build_lake_records
 from worldsim.physical.hydrology.rivers import (
     gate_lakes_by_water_supply,
     gate_river_mask_by_discharge,
@@ -33,9 +44,7 @@ from worldsim.physical.hydrology.rivers import (
 from worldsim.physical.hydrology.runoff import build_monthly_runoff
 from worldsim.physical.hydrology.transmission import (
     YEAR_DAYS,
-    effective_discharge_with_transmission,
-    month_pet_fraction,
-    transmission_sink,
+    channel_bed_loss_potential_m3s,
 )
 from worldsim.physical.moisture.pipeline import MoistureResult
 from worldsim.progress import ProgressReporter
@@ -57,9 +66,10 @@ class HydrologyParams:
     lake_arid_precip_land_quantile: float = 0.45
     lake_min_mean_temp_c: float = 1.0
     lake_inflow_land_quantile: float = 0.75
-    # §6.3.1 — channel transmission losses (Nil OK / wadi dies)
+    # §6.3.1 / C2 — channel-bed loss (geometry × rate, capped by available Q)
     transmission_rate: float = 0.45
     transmission_ref_km: float = 50.0
+    bed_loss_m3_per_km_month: float = 2.0e5
     precip_scale_mm: float = 200.0
     # PR-6 snow / runoff
     snow_threshold_c: float = 0.0
@@ -78,6 +88,10 @@ class HydrologyParams:
     channel_q_min_m3s: float = 0.05
     channel_perennial_min_months: int = 8
     channel_seasonal_min_months: int = 3
+    lake_storage_spinup_years: int = 8
+    lake_storage_spinup_tol: float = 0.01
+    lake_storage_curve: str = "discrete_avh_v1"
+    lake_wet_min_fraction: float = 1e-6
 
 
 @dataclass
@@ -97,10 +111,26 @@ class HydrologyResult:
     monthly_runoff: NDArray[np.float64] = field(default_factory=lambda: np.zeros((0,)))
     snow_store: NDArray[np.float64] = field(default_factory=lambda: np.zeros((0,)))
     soil_store: NDArray[np.float64] = field(default_factory=lambda: np.zeros((0,)))
+    soil_store_monthly: NDArray[np.float64] = field(
+        default_factory=lambda: np.zeros((0,), dtype=np.float64)
+    )
     channel_mask: NDArray[np.bool_] = field(default_factory=lambda: np.zeros((0,), dtype=bool))
     channel_state: NDArray[np.uint8] = field(default_factory=lambda: np.zeros((0,), dtype=np.uint8))
+    river_water_fraction: NDArray[np.float64] = field(
+        default_factory=lambda: np.zeros((0,), dtype=np.float64)
+    )
+    monthly_bed_loss: NDArray[np.float64] = field(default_factory=lambda: np.zeros((0,)))
+    bed_loss_potential_m3s: NDArray[np.float64] = field(
+        default_factory=lambda: np.zeros((0,), dtype=np.float64)
+    )
     lake_mask: NDArray[np.bool_] = field(default_factory=lambda: np.zeros((0,), dtype=bool))
     lake_id: NDArray[np.int32] = field(default_factory=lambda: np.zeros((0,), dtype=np.int32))
+    basin_envelope_id: NDArray[np.int32] = field(
+        default_factory=lambda: np.zeros((0,), dtype=np.int32)
+    )
+    water_fraction_mean: NDArray[np.float64] = field(
+        default_factory=lambda: np.zeros((0,), dtype=np.float64)
+    )
     lake_records: list[dict[str, Any]] = field(default_factory=list)
     outlet_points: list[tuple[int, int]] = field(default_factory=list)
     ocean_mask: NDArray[np.bool_] = field(default_factory=lambda: np.zeros((0,), dtype=bool))
@@ -121,6 +151,8 @@ class HydrologyResult:
             "monthly_discharge": self.monthly_discharge,
             "lake_mask": self.lake_mask.astype(np.uint8),
             "lake_id": self.lake_id,
+            "basin_envelope_id": self.basin_envelope_id,
+            "water_fraction_mean": self.water_fraction_mean,
             "ocean_mask": self.ocean_mask.astype(np.uint8),
             "outlet_rows": np.array([p[0] for p in self.outlet_points], dtype=np.int32),
             "outlet_cols": np.array([p[1] for p in self.outlet_points], dtype=np.int32),
@@ -133,10 +165,18 @@ class HydrologyResult:
             payload["snow_store"] = self.snow_store
         if self.soil_store.size:
             payload["soil_store"] = self.soil_store
+        if self.soil_store_monthly.size:
+            payload["soil_store_monthly"] = self.soil_store_monthly
         if self.channel_mask.size:
             payload["channel_mask"] = self.channel_mask.astype(np.uint8)
         if self.channel_state.size:
             payload["channel_state"] = self.channel_state
+        if self.river_water_fraction.size:
+            payload["river_water_fraction"] = self.river_water_fraction
+        if self.monthly_bed_loss.size:
+            payload["monthly_bed_loss"] = self.monthly_bed_loss
+        if self.bed_loss_potential_m3s.size:
+            payload["bed_loss_potential_m3s"] = self.bed_loss_potential_m3s
         np.savez_compressed(directory / "hydrology.npz", **payload)
         (directory / "hydrology_diagnostics.json").write_text(
             json.dumps(self.diagnostics, indent=2, sort_keys=True) + "\n",
@@ -215,7 +255,9 @@ def build_hydrology(
     monthly_runoff = np.asarray(runoff_pack["runoff"], dtype=np.float64)
     snow_store = np.asarray(runoff_pack["snow_store"], dtype=np.float64)
     soil_store = np.asarray(runoff_pack["soil_store"], dtype=np.float64)
-    residual_pet = np.asarray(runoff_pack["residual_pet"], dtype=np.float64)
+    soil_store_monthly = np.asarray(
+        runoff_pack.get("soil_store_monthly", np.zeros((0,))), dtype=np.float64
+    )
     annual_runoff = monthly_runoff.sum(axis=0)
     annual_precip = precip_m.sum(axis=0)
 
@@ -223,10 +265,11 @@ def build_hydrology(
         reporter.progress("hydrology", 0.5)
 
     gm = grid_metrics(w, h, radius_km=params.planet_radius_km)
-    if params.river_min_catchment_km2 is not None and params.river_min_catchment_km2 > 0:
-        river_min_cells = gm.cells_for_area_km2(params.river_min_catchment_km2)
-    else:
-        river_min_cells = int(params.river_min_accumulation_cells)
+    river_min_cells, catchment_diag = effective_channel_min_cells(
+        cell_area_km2=gm.cell_area_km2,
+        river_min_catchment_km2=params.river_min_catchment_km2,
+        river_min_accumulation_cells=params.river_min_accumulation_cells,
+    )
     cell_len_km = float(np.sqrt(max(gm.cell_area_km2, 0.0)))
     path_length_km = np.maximum(
         gm.d8_step_length_km_field(core["flow_direction"]),
@@ -249,65 +292,41 @@ def build_hydrology(
         min_depth_m=params.lake_min_depth_m,
     )
 
+    bed_loss_potential = channel_bed_loss_potential_m3s(
+        path_length_km,
+        loss_rate_m3_per_km_month=params.bed_loss_m3_per_km_month,
+        channel_mask=channel_mask,
+        ocean_mask=ocean,
+    )
+
     discharge_gross = accuflux_on_land(
         flw, pad=pad, width=w, ocean_mask=ocean, weights=annual_runoff, graph=graph
     )
-    sink_annual = transmission_sink(
+    local_annual_m3s = runoff_proxy_to_m3s(
         annual_runoff,
-        annual_temp,
-        ocean,
-        transmission_rate=params.transmission_rate,
-        precip_scale_mm=params.precip_scale_mm,
-        pet_year_fraction=1.0,
-        path_length_km=path_length_km,
-        transmission_ref_km=params.transmission_ref_km,
-        residual_pet_proxy=residual_pet.sum(axis=0),
-    )
-    discharge_eff_independent_proxy = effective_discharge_with_transmission(
-        flw,
-        pad=pad,
-        width=w,
-        ocean_mask=ocean,
-        precip=annual_runoff,
-        sink=sink_annual,
-        graph=graph,
-    )
-    discharge_eff_independent = runoff_proxy_to_m3s(
-        discharge_eff_independent_proxy,
         cell_area_km2=gm.cell_area_km2,
         precip_scale_mm=params.precip_scale_mm,
         days=float(YEAR_DAYS),
     )
+    discharge_eff_independent, _sink_ind = effective_discharge_and_sink(
+        graph, local_annual_m3s, bed_loss_potential
+    )
 
     monthly_gross = np.zeros((0,), dtype=np.float64)
     monthly_eff = np.zeros((months, h, w), dtype=np.float64)
+    monthly_bed_loss = np.zeros((months, h, w), dtype=np.float64)
     for m in range(months):
-        sink_m = transmission_sink(
+        local_m3s = runoff_proxy_to_m3s(
             monthly_runoff[m],
-            temp_m[m],
-            ocean,
-            transmission_rate=params.transmission_rate,
-            precip_scale_mm=params.precip_scale_mm,
-            pet_year_fraction=month_pet_fraction(m),
-            path_length_km=path_length_km,
-            transmission_ref_km=params.transmission_ref_km,
-            residual_pet_proxy=residual_pet[m],
-        )
-        q_proxy = effective_discharge_with_transmission(
-            flw,
-            pad=pad,
-            width=w,
-            ocean_mask=ocean,
-            precip=monthly_runoff[m],
-            sink=sink_m,
-            graph=graph,
-        )
-        monthly_eff[m] = runoff_proxy_to_m3s(
-            q_proxy,
             cell_area_km2=gm.cell_area_km2,
             precip_scale_mm=params.precip_scale_mm,
             days=float(month_days(m)),
         )
+        q_m, lost_m = effective_discharge_and_sink(
+            graph, local_m3s, bed_loss_potential
+        )
+        monthly_eff[m] = q_m
+        monthly_bed_loss[m] = lost_m
         if params.store_monthly_gross:
             if monthly_gross.size == 0:
                 monthly_gross = np.zeros((months, h, w), dtype=np.float64)
@@ -369,7 +388,7 @@ def build_hydrology(
         precip_annual=annual_precip,
         frozen_temp_c=params.lake_min_mean_temp_c,
     )
-    storage_diag = apply_closed_basin_storage(
+    storage_diag = apply_basin_storage(
         graph=graph,
         lake_id=lake_id,
         lake_records=lake_records,
@@ -377,14 +396,47 @@ def build_hydrology(
         monthly_q_m3s=monthly_eff,
         temperature_c=temp_m,
         cell_area_km2=gm.cell_area_km2,
+        monthly_precip=precip_m,
+        precip_scale_mm=params.precip_scale_mm,
         lake_min_depth_m=params.lake_min_depth_m,
         frozen_temp_c=params.lake_min_mean_temp_c,
+        spinup_years=params.lake_storage_spinup_years,
+        spinup_rel_tol=params.lake_storage_spinup_tol,
+        storage_curve=params.lake_storage_curve,
     )
-    liquid_mask = liquid_lake_mask(lake_id, lake_records)
-    lake_cell_all = int(np.count_nonzero(lake_mask))
+    water_fraction_mean = np.asarray(
+        storage_diag.pop("water_fraction_mean"), dtype=np.float64
+    )
+    basin_envelope_id = np.asarray(lake_id, dtype=np.int32).copy()
+    lake_id, liquid_mask = liquid_id_from_fraction(
+        basin_envelope_id,
+        water_fraction_mean,
+        lake_records,
+        min_fraction=params.lake_wet_min_fraction,
+    )
+    lake_cell_all = int(np.count_nonzero(basin_envelope_id > 0))
     lake_mask = liquid_mask
 
-    state_network = river_candidates | river_mask
+    for m in range(months):
+        spill_w = np.zeros((h, w), dtype=np.float64)
+        seconds = float(month_days(m)) * SECONDS_PER_DAY
+        for rec in lake_records:
+            series = rec.get("spill_m3") or []
+            if m >= len(series):
+                continue
+            spilled = float(series[m])
+            if spilled <= 0.0:
+                continue
+            rr = rec.get("outlet_row", rec.get("sink_row"))
+            cc = rec.get("outlet_col", rec.get("sink_col"))
+            if rr is None or cc is None:
+                continue
+            spill_w[int(rr), int(cc)] += spilled / max(seconds, 1.0)
+        if np.any(spill_w):
+            monthly_eff[m] += accumulate_weights(graph, spill_w)
+    discharge_eff = month_weighted_mean_m3s(monthly_eff)
+
+    state_network = channel_mask
     channel_state, channel_diag = classify_channel_states(
         monthly_eff,
         state_network,
@@ -392,6 +444,18 @@ def build_hydrology(
         perennial_min_months=params.channel_perennial_min_months,
         seasonal_min_months=params.channel_seasonal_min_months,
     )
+    width_m = channel_width_m_from_discharge(discharge_eff, channel_mask)
+    river_frac = river_water_fraction(
+        channel_mask,
+        path_length_km,
+        cell_area_km2=gm.cell_area_km2,
+        width_m=width_m,
+    )
+    # Lakes occupy river water area only where actual liquid exists.
+    if water_fraction_mean.size:
+        river_frac = np.minimum(
+            river_frac, np.maximum(0.0, 1.0 - np.clip(water_fraction_mean, 0.0, 1.0))
+        )
 
     if reporter is not None:
         reporter.progress("hydrology", 0.85)
@@ -444,6 +508,19 @@ def build_hydrology(
         else {}
     )
 
+    n_land = int(np.count_nonzero(land))
+    physical_n = int(np.count_nonzero(channel_mask))
+    display_n = int(np.count_nonzero(river_candidates))
+    hidden_n = int(np.count_nonzero(channel_mask & ~river_mask))
+    bed_loss_mean = month_weighted_mean_m3s(monthly_bed_loss)
+    loss_minus_potential = monthly_bed_loss - bed_loss_potential[np.newaxis, :, :]
+    max_loss_over_potential = float(np.max(loss_minus_potential)) if loss_minus_potential.size else 0.0
+    # available ≈ q + actual_loss; actual must not exceed that (identity).
+    available_proxy = monthly_eff + monthly_bed_loss
+    max_loss_over_available = (
+        float(np.max(monthly_bed_loss - available_proxy)) if monthly_bed_loss.size else 0.0
+    )
+
     diagnostics: dict[str, Any] = {
         "width": w,
         "height": h,
@@ -455,7 +532,12 @@ def build_hydrology(
         "basin_count": int(len(np.unique(core["basin_id"][core["basin_id"] > 0]))),
         "max_stream_order": int(core["stream_order"].max()),
         "river_cell_count": int(np.count_nonzero(river_mask)),
-        "channel_physical_cell_count": int(np.count_nonzero(channel_mask)),
+        "channel_physical_cell_count": physical_n,
+        "channel_display_candidate_cell_count": display_n,
+        "channel_physical_not_display_count": hidden_n,
+        "channel_physical_land_fraction": (
+            float(physical_n / n_land) if n_land else 0.0
+        ),
         "lake_count": lake_count,
         "lake_cell_count": int(np.count_nonzero(lake_mask)),
         "lake_classified_cell_count": lake_cell_all,
@@ -469,6 +551,9 @@ def build_hydrology(
         "precip_gate": True,
         "transmission_rate": float(params.transmission_rate),
         "transmission_ref_km": float(params.transmission_ref_km),
+        "transmission_rate_unused_by": "c2_channel_bed_loss_v1",
+        "bed_loss_m3_per_km_month": float(params.bed_loss_m3_per_km_month),
+        "channel_loss_algorithm": "bed_loss_m3_v1",
         "fill_max_depth_m": float(params.fill_max_depth_m),
         "river_min_catchment_km2": params.river_min_catchment_km2,
         "river_min_accumulation_cells_effective": int(river_min_cells),
@@ -479,9 +564,12 @@ def build_hydrology(
         "discharge_effective_mean_land": float(discharge_eff[land].mean())
         if np.any(land)
         else 0.0,
-        "transmission_sink_mean_land": float(sink_annual[land].mean())
+        "bed_loss_mean_land_m3s": float(bed_loss_mean[land].mean())
         if np.any(land)
         else 0.0,
+        "bed_loss_max_over_potential_m3s": max_loss_over_potential,
+        "bed_loss_max_over_available_m3s": max_loss_over_available,
+        "bed_loss_never_exceeds_q": bool(max_loss_over_available <= 1e-9),
         "monthly_vs_annual_eff_rel_diff": rel_diff,
         "monthly_annual_consistent": True,
         "q_canonical": "mean_monthly_m3s",
@@ -491,8 +579,19 @@ def build_hydrology(
         "lake_playa_count": playa_lakes,
         "lake_frozen_count": frozen_lakes,
         "lake_liquid_cell_count": int(np.count_nonzero(lake_mask)),
+        "lake_envelope_cell_count": lake_cell_all,
+        "lake_reported_wet_area_km2": float(
+            sum(
+                float(r.get("mean_wet_area_km2") or 0.0)
+                for r in lake_records
+                if int(r.get("water_body_id") or 0) > 0
+            )
+        ),
+        "lake_raster_wet_area_km2": float(np.sum(water_fraction_mean)) * float(gm.cell_area_km2),
         "river_acc_fraction": float(params.river_acc_fraction),
-        "hydrology_algorithm": "cr7_soil_q_m3s_km_loss_v1",
+        "planet_radius_km": float(params.planet_radius_km),
+        "hydrology_algorithm": "c2_channel_bed_loss_v1",
+        **catchment_diag,
         **runoff_diag,
         **graph_diag,
         **river_gate_diag,
@@ -505,6 +604,11 @@ def build_hydrology(
             if k != "outlet_labels"
         },
     }
+    reported = float(diagnostics["lake_reported_wet_area_km2"])
+    rastered = float(diagnostics["lake_raster_wet_area_km2"])
+    diagnostics["lake_raster_vs_reported_wet_ratio"] = (
+        rastered / reported if reported > 1e-9 else 0.0
+    )
 
     if reporter is not None:
         reporter.progress("hydrology", 1.0)
@@ -526,10 +630,16 @@ def build_hydrology(
         monthly_runoff=monthly_runoff,
         snow_store=snow_store,
         soil_store=soil_store,
+        soil_store_monthly=soil_store_monthly,
         channel_mask=channel_mask,
         channel_state=channel_state,
+        river_water_fraction=river_frac,
+        monthly_bed_loss=monthly_bed_loss,
+        bed_loss_potential_m3s=bed_loss_potential,
         lake_mask=lake_mask,
         lake_id=lake_id,
+        basin_envelope_id=basin_envelope_id,
+        water_fraction_mean=water_fraction_mean,
         lake_records=lake_records,
         outlet_points=core["outlet_points"],
         ocean_mask=ocean,

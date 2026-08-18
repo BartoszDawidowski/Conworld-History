@@ -96,7 +96,8 @@ def test_lee_sink_not_in_monthly_budget() -> None:
     assert budget["annual_lee_sink_sum"] == pytest.approx(0.0)
     precip = abs(float(budget["annual_precipitation_sum"])) + 1e-9
     assert float(budget["annual_lee_inhibited_sum"]) / precip < 0.5
-    assert budget["advect_algorithm"] == "finite_volume_cfl_v1"
+    assert budget["advect_algorithm"] == "face_flux_cfl_v1"
+    assert int(budget["advect_max_substeps"]) == 8
     assert int(budget["advect_steps_used_max"]) <= 8
 
 
@@ -125,7 +126,7 @@ def test_monsoon_anomalies_flip_when_land_always_cooler() -> None:
     assert diag["monsoon_sign_gate_on"] is True
     assert onshore[5] > 0.05
     assert onshore[11] < -0.05
-    assert diag["algorithm"] == "monsoon_anomaly_gate_v1"
+    assert diag["algorithm"] == "monsoon_sector_gate_v1"
     coast_nh = nh_land & (np.arange(ocean.shape[1])[None, :] < 26)
     assert float(np.mean(u[5][coast_nh] - wu0[5][coast_nh])) > 0.0
 
@@ -160,4 +161,5 @@ def test_config_cr8_frozen_moisture_knobs() -> None:
     assert mp.monsoon_strength == pytest.approx(0.35)
     assert mp.monsoon_regional_mean_km == pytest.approx(500.0)
     assert mp.advect_steps == 32
+    assert mp.advect_max_substeps == 32
     assert FinalRecalcParams().hydro_evap_blend == pytest.approx(0.5)

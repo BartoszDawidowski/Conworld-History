@@ -69,7 +69,7 @@ def precip_vs_available_q_overshoot(
     dt = 1.0 / float(steps)
     for _ in range(steps):
         q = _upwind_advect(q, wu, wv, dt=dt, wind_scale=0.2)
-        q = _diffuse_moisture(q, dt=dt, mix_per_month=0.08)
+        q, _clip = _diffuse_moisture(q, dt=dt, mix_per_month=0.08)
 
     q_available = q.copy()
     capacity = saturation_capacity(temp)

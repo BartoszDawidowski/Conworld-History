@@ -89,6 +89,11 @@ def test_erosion_from_small_world(tmp_path: Path) -> None:
     assert result.elevation_m.shape == terrain.elevation_m.shape
     assert result.diagnostics["macro_relief_preserved"] is True
     assert result.diagnostics["drainage_quality_improved"] is True
-    assert result.diagnostics["acceptance_ok"] is True
+    assert result.diagnostics["ocean_unchanged"] is True
+    # Production k on a 128×64 grid is a metric no-op; C3 forbids corr-only pass.
+    if not result.diagnostics["erosion_nontrivial"]:
+        assert result.diagnostics["acceptance_ok"] is False
+    else:
+        assert result.diagnostics["acceptance_ok"] is True
     result.save(tmp_path / "erosion")
     assert (tmp_path / "erosion" / "erosion_pass1.npz").is_file()
