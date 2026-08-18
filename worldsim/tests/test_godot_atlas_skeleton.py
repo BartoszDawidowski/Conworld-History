@@ -189,6 +189,8 @@ def test_godot_project_skeleton_exists() -> None:
     assert "_save_last_world" in main_gd
     assert "last_world_path.txt" in main_gd
     assert "_sync_landform_overlay_visibility" in main_gd
+    legend_gd = (GODOT / "atlas" / "LegendPanel.gd").read_text(encoding="utf-8")
+    assert "Always store body" in legend_gd
     assert "ZOOM_MAX" in main_gd
     assert "width: %d" in main_gd
     assert "PROFILE_QUICK" in main_gd

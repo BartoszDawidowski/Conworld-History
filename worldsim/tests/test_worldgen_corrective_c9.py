@@ -205,6 +205,13 @@ def test_godot_c9_display_contract() -> None:
     lf = (GODOT / "atlas" / "LandformLayerRenderer.gd").read_text(encoding="utf-8")
     assert "_chaikin_open_px" in lf
     assert "_chaikin_closed_px" in lf
+    assert "fill_rings" in lf
+    assert "_ring_triangulates" in lf
+    assert "draw_colored_polygon(ring" in lf
+    assert "var tri :=" not in lf
+    legend = (GODOT / "atlas" / "LegendPanel.gd").read_text(encoding="utf-8")
+    set_fn = legend[legend.find("func set_legend") :]
+    assert set_fn.find("_last_body") < set_fn.find("if _collapsed")
     atlas = (GODOT / "atlas" / "WorldAtlas.gd").read_text(encoding="utf-8")
     assert "inspect_feature" in atlas
     lake_i = atlas.find("pick_lake")

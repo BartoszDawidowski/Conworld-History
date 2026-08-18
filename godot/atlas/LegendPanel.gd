@@ -39,13 +39,6 @@ func sync_layout(width: float, max_height: float) -> void:
 
 func set_legend(title: String, entries: Array, overlay_lines: Array = []) -> void:
 	_last_title = title if title != "" else "Legend"
-	if _collapsed:
-		visible = true
-		_set_header_text()
-		if _scroll:
-			_scroll.visible = false
-		_apply_size()
-		return
 	var lines: PackedStringArray = []
 	for item in entries:
 		if typeof(item) != TYPE_DICTIONARY:
@@ -61,13 +54,28 @@ func set_legend(title: String, entries: Array, overlay_lines: Array = []) -> voi
 		var color := str(item.get("color", "#888888"))
 		var label := str(item.get("label", ""))
 		lines.append("[color=%s]—[/color]  %s" % [color, label])
+	# Always store body so expanding after a no-legend mode still has entries.
 	_last_body = "\n".join(lines)
 	visible = lines.size() > 0 or title != ""
-	if _scroll:
-		_scroll.visible = visible and not _collapsed
-	if _text:
-		_text.text = _last_body if visible else ""
 	_set_header_text()
+	if not visible:
+		if _scroll:
+			_scroll.visible = false
+		if _text:
+			_text.text = ""
+		_apply_size()
+		return
+	if _collapsed:
+		if _scroll:
+			_scroll.visible = false
+		if _text:
+			_text.text = ""
+		_apply_size()
+		return
+	if _scroll:
+		_scroll.visible = true
+	if _text:
+		_text.text = _last_body
 	_apply_size()
 
 

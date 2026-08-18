@@ -188,38 +188,43 @@ func _load_features(path: String) -> Array:
 		var gtype := str(geom.get("type", ""))
 		if gtype == "Point":
 			continue
-		out.append({
+		var coords = geom.get("coordinates", [])
+		var rec := {
 			"id": int(props.get("id", -1)),
 			"kind": str(props.get("kind", "")),
 			"properties": props,
 			"type": gtype,
-			"rings": _coords_to_rings(gtype, geom.get("coordinates", [])),
-		})
+			"rings": _coords_to_rings(gtype, coords, true),
+			"fill_rings": [],
+		}
+		if gtype == "Polygon" or gtype == "MultiPolygon":
+			rec["fill_rings"] = _coords_to_rings(gtype, coords, false)
+		out.append(rec)
 	return out
 
 
-func _coords_to_rings(gtype: String, coords) -> Array[PackedVector2Array]:
+func _coords_to_rings(gtype: String, coords, smooth: bool = true) -> Array[PackedVector2Array]:
 	var out: Array[PackedVector2Array] = []
 	if typeof(coords) != TYPE_ARRAY:
 		return out
 	match gtype:
 		"LineString":
-			out.append_array(_to_pixel_polylines(coords as Array, false))
+			out.append_array(_to_pixel_polylines(coords as Array, false, smooth))
 		"MultiLineString":
 			for part in coords:
 				if typeof(part) == TYPE_ARRAY:
-					out.append_array(_to_pixel_polylines(part as Array, false))
+					out.append_array(_to_pixel_polylines(part as Array, false, smooth))
 		"Polygon":
 			if coords.size() > 0 and typeof(coords[0]) == TYPE_ARRAY:
-				out.append_array(_to_pixel_polylines(coords[0] as Array, true))
+				out.append_array(_to_pixel_polylines(coords[0] as Array, true, smooth))
 		"MultiPolygon":
 			for poly in coords:
 				if typeof(poly) == TYPE_ARRAY and poly.size() > 0 and typeof(poly[0]) == TYPE_ARRAY:
-					out.append_array(_to_pixel_polylines(poly[0] as Array, true))
+					out.append_array(_to_pixel_polylines(poly[0] as Array, true, smooth))
 	return out
 
 
-func _to_pixel_polylines(coords: Array, closed: bool = false) -> Array[PackedVector2Array]:
+func _to_pixel_polylines(coords: Array, closed: bool = false, smooth: bool = true) -> Array[PackedVector2Array]:
 	## Split on the dateline so a wrap does not become a screen-wide chord.
 	var pieces: Array[PackedVector2Array] = []
 	var pts := PackedVector2Array()
@@ -240,7 +245,10 @@ func _to_pixel_polylines(coords: Array, closed: bool = false) -> Array[PackedVec
 	var out: Array[PackedVector2Array] = []
 	var use_closed := closed and pieces.size() == 1
 	for piece in pieces:
-		out.append(_smooth_line(piece, use_closed))
+		if smooth:
+			out.append(_smooth_line(piece, use_closed))
+		else:
+			out.append(piece)
 	return out
 
 
@@ -314,19 +322,51 @@ func _draw_outline_feat(feat: Dictionary, color: Color, width: float) -> void:
 
 
 func _draw_polygon_feat(feat: Dictionary, color: Color) -> void:
-	for pts: PackedVector2Array in _rings(feat):
-		var open: PackedVector2Array = _open_ring(pts)
-		if open.size() < 3:
-			continue
-		var idx := Geometry2D.triangulate_polygon(open)
-		if idx.is_empty():
-			continue
-		var tri := PackedVector2Array()
-		for i in idx:
-			if int(i) >= 0 and int(i) < open.size():
-				tri.append(open[i])
-		if tri.size() >= 3:
-			draw_colored_polygon(tri, color)
+	## draw_colored_polygon triangulates a ring. Never pass a triangle soup.
+	var fills := _named_rings(feat, "fill_rings")
+	var outlines := _rings(feat)
+	var n := maxi(fills.size(), outlines.size())
+	for i in range(n):
+		var candidates: Array[PackedVector2Array] = []
+		if i < fills.size():
+			candidates.append(_sanitize_fill_ring(_open_ring(fills[i])))
+		if i < outlines.size():
+			candidates.append(_sanitize_fill_ring(_open_ring(outlines[i])))
+		for ring in candidates:
+			if _ring_triangulates(ring):
+				draw_colored_polygon(ring, color)
+				break
+
+
+func _named_rings(feat: Dictionary, key: String) -> Array[PackedVector2Array]:
+	var raw = feat.get(key, [])
+	var out: Array[PackedVector2Array] = []
+	if typeof(raw) != TYPE_ARRAY:
+		return out
+	for pts in raw:
+		if typeof(pts) == TYPE_PACKED_VECTOR2_ARRAY:
+			out.append(pts)
+	return out
+
+
+func _sanitize_fill_ring(pts: PackedVector2Array) -> PackedVector2Array:
+	if pts.size() < 3:
+		return PackedVector2Array()
+	var cleaned := PackedVector2Array()
+	for p in pts:
+		if cleaned.is_empty() or cleaned[cleaned.size() - 1].distance_to(p) > 0.05:
+			cleaned.append(p)
+	if cleaned.size() >= 2 and cleaned[0].distance_to(cleaned[cleaned.size() - 1]) <= 0.05:
+		cleaned.remove_at(cleaned.size() - 1)
+	if cleaned.size() < 3:
+		return PackedVector2Array()
+	return cleaned
+
+
+func _ring_triangulates(ring: PackedVector2Array) -> bool:
+	if ring.size() < 3:
+		return false
+	return not Geometry2D.triangulate_polygon(ring).is_empty()
 
 
 func _min_line_dist(feat: Dictionary, pos: Vector2) -> float:
