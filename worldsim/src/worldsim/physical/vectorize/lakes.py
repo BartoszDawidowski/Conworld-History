@@ -32,6 +32,9 @@ class Lake:
     ice_regime: str = ""
     envelope_area_km2: float = 0.0
     mean_wet_area_km2: float = 0.0
+    wet_area_km2_monthly: list[float] = field(default_factory=list)
+    ice_area_km2_monthly: list[float] = field(default_factory=list)
+    storage_periodic: bool | None = None
 
     def __post_init__(self) -> None:
         from worldsim.physical.hydrology.lakes_meta import (
@@ -83,6 +86,10 @@ class Lake:
             "ice_regime": self.ice_regime,
             "envelope_area_km2": float(self.envelope_area_km2),
             "mean_wet_area_km2": float(self.mean_wet_area_km2),
+            "wet_area_km2_monthly": [float(v) for v in self.wet_area_km2_monthly],
+            "ice_area_km2_monthly": [float(v) for v in self.ice_area_km2_monthly],
+            "storage_periodic": self.storage_periodic,
+            "fractions_are_monthly": True,
         }
 
 
@@ -270,6 +277,17 @@ def build_lakes(
                 ice_regime=str(rec.get("ice_regime") or ""),
                 envelope_area_km2=float(rec.get("envelope_area_km2") or 0.0),
                 mean_wet_area_km2=float(rec.get("mean_wet_area_km2") or 0.0),
+                wet_area_km2_monthly=[
+                    float(v) for v in (rec.get("wet_area_km2_monthly") or [])
+                ],
+                ice_area_km2_monthly=[
+                    float(v) for v in (rec.get("ice_area_km2_monthly") or [])
+                ],
+                storage_periodic=(
+                    bool(rec["storage_periodic"])
+                    if rec.get("storage_periodic") is not None
+                    else None
+                ),
             )
         )
     return lakes

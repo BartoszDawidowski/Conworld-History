@@ -18,7 +18,35 @@ from worldsim.physical.hydrology.channels import CHANNEL_STATE_NAME
 from worldsim.physical.vectorize.coords import polyline_length_norm
 from worldsim.spatial.extent import SpatialExtent
 
-NodeType = Literal["source", "confluence", "lake_inlet", "lake_outlet", "mouth", "junction"]
+NodeType = Literal[
+    "source",
+    "confluence",
+    "lake_inlet",
+    "lake_outlet",
+    "ocean_mouth",
+    "endorheic_sink",
+    "lod_cutoff",
+    "junction",
+    "mouth",  # legacy alias of ocean_mouth only
+]
+CANONICAL_TERMINALS = (
+    "ocean_mouth",
+    "lake_inlet",
+    "lake_outlet",
+    "endorheic_sink",
+    "lod_cutoff",
+)
+_TERMINAL_HINTS = frozenset(
+    {
+        "lake_inlet",
+        "lake_outlet",
+        "ocean_mouth",
+        "mouth",
+        "source",
+        "lod_cutoff",
+        "endorheic_sink",
+    }
+)
 
 
 @dataclass
@@ -32,15 +60,19 @@ class RiverNode:
     lake_id: int = 0
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        kind = "ocean_mouth" if self.type == "mouth" else str(self.type)
+        payload: dict[str, Any] = {
             "id": self.id,
             "x": self.x,
             "y": self.y,
-            "type": self.type,
+            "type": kind,
             "row": self.row,
             "col": self.col,
             "lake_id": self.lake_id,
         }
+        if kind == "ocean_mouth":
+            payload["legacy_type"] = "mouth"
+        return payload
 
 
 @dataclass
@@ -139,15 +171,88 @@ def _midpoint_norm(
     return float(mx), float(my)
 
 
-def _lake_id_at(
-    x: float,
-    y: float,
+def _ocean_adjacent(row: int, col: int, ocean: NDArray[np.bool_]) -> bool:
+    h, w = ocean.shape
+    for dr in (-1, 0, 1):
+        for dc in (-1, 0, 1):
+            if dr == 0 and dc == 0:
+                continue
+            rr = int(row) + dr
+            if rr < 0 or rr >= h:
+                continue
+            if bool(ocean[rr, (int(col) + dc) % w]):
+                return True
+    return False
+
+
+def _canonical_node_type(hint: str) -> NodeType:
+    if hint == "mouth":
+        return "ocean_mouth"
+    return hint  # type: ignore[return-value]
+
+
+def classify_display_terminus(
+    row: int,
+    col: int,
+    *,
+    graph: Any,
+    ocean: NDArray[np.bool_],
+    lakes: NDArray[np.bool_],
     lake_id: NDArray[np.integer],
-    height: int,
-    width: int,
-) -> int:
-    r, c = _norm_to_row_col(x, y, height, width)
-    return int(lake_id[r, c])
+    display_mask: NDArray[np.bool_],
+    physical_mask: NDArray[np.bool_] | None,
+) -> tuple[NodeType, int]:
+    """Terminal vocabulary for the last *display* channel cell (C9.1.3)."""
+    from worldsim.physical.hydrology.cylindrical_graph import unravel
+
+    r, c = int(row), int(col)
+    to_lid = int(lake_id[r, c]) if lakes[r, c] else 0
+    if to_lid > 0:
+        return "lake_inlet", to_lid
+    if _ocean_adjacent(r, c, ocean):
+        return "ocean_mouth", 0
+    j = int(graph.downstream_flat[r * graph.width + c])
+    if j >= 0:
+        nr, nc = unravel(j, graph.width)
+        if ocean[nr, nc]:
+            return "ocean_mouth", 0
+        if lakes[nr, nc]:
+            return "lake_inlet", int(lake_id[nr, nc])
+        phys = bool(physical_mask[nr, nc]) if physical_mask is not None else False
+        if phys and not bool(display_mask[nr, nc]):
+            return "lod_cutoff", 0
+    return "endorheic_sink", 0
+
+
+def terminal_type_counts(network: RiverNetwork) -> dict[str, int]:
+    counts = {k: 0 for k in CANONICAL_TERMINALS}
+    counts["source"] = 0
+    counts["confluence"] = 0
+    counts["junction"] = 0
+    counts["mouth_legacy"] = 0
+    for node in network.nodes:
+        kind = _canonical_node_type(str(node.type))
+        if kind == "ocean_mouth":
+            counts["ocean_mouth"] += 1
+            if str(node.type) == "mouth":
+                counts["mouth_legacy"] += 1
+        elif kind in counts:
+            counts[kind] += 1
+    return counts
+
+
+def ocean_mouth_ocean_adjacent_fraction(
+    network: RiverNetwork, ocean: NDArray[np.bool_]
+) -> float:
+    mouths = [
+        n
+        for n in network.nodes
+        if _canonical_node_type(str(n.type)) == "ocean_mouth"
+    ]
+    if not mouths:
+        return 1.0
+    ok = sum(1 for n in mouths if _ocean_adjacent(n.row, n.col, ocean))
+    return float(ok) / float(len(mouths))
 
 
 def clip_polyline_outside_lakes(
@@ -231,6 +336,7 @@ def build_river_network(
     extent: SpatialExtent,
     lake_id: NDArray[np.integer] | None = None,
     channel_state: NDArray[np.integer] | None = None,
+    channel_mask: NDArray[np.bool_] | None = None,
     flow_accumulation: NDArray[np.floating] | None = None,
     cell_area_km2: float | None = None,
     path_length_km: NDArray[np.floating] | None = None,
@@ -257,6 +363,11 @@ def build_river_network(
         if lake_id is not None
         else lakes.astype(np.int32)
     )
+    physical = (
+        np.asarray(channel_mask, dtype=np.bool_)
+        if channel_mask is not None and np.asarray(channel_mask).size
+        else None
+    )
     h, w = mask.shape
     if not np.any(mask):
         return RiverNetwork()
@@ -282,11 +393,11 @@ def build_river_network(
             node = nodes_by_key[key]
             if node_lake_id and not node.lake_id:
                 node.lake_id = node_lake_id
-            if hint in ("lake_inlet", "lake_outlet", "mouth", "source") and node.type in (
+            if hint in _TERMINAL_HINTS and node.type in (
                 "junction",
                 "source",
             ):
-                node.type = hint
+                node.type = _canonical_node_type(str(hint))
             return node
         if row is None or col is None:
             col_i = int(np.clip(np.floor((nx % 1.0) * w), 0, w - 1))
@@ -297,7 +408,7 @@ def build_river_network(
             id=len(nodes) + 1,
             x=float(nx % 1.0) if np.isfinite(nx) else 0.0,
             y=ny,
-            type=hint,
+            type=_canonical_node_type(str(hint)),
             row=row_i,
             col=col_i,
             lake_id=int(node_lake_id),
@@ -364,13 +475,20 @@ def build_river_network(
         width_est = float(min(400.0, 8.0 * math.sqrt(max(mean_q, 0.0))))
 
         start_t: NodeType = "lake_outlet" if from_lid else "source"
-        end_t: NodeType = "lake_inlet" if to_lid else "junction"
-        for dj, di in ((0, 1), (0, -1), (1, 0), (-1, 0)):
-            rr, cc = er + dj, (ec + di) % w
-            if 0 <= rr < h and ocean[rr, cc]:
-                end_t = "mouth"
-                to_lid = 0
-                break
+        end_t, end_lid = classify_display_terminus(
+            er,
+            ec,
+            graph=graph,
+            ocean=ocean,
+            lakes=lakes,
+            lake_id=lid_raster,
+            display_mask=mask,
+            physical_mask=physical,
+        )
+        if end_lid:
+            to_lid = end_lid
+        if end_t == "ocean_mouth":
+            to_lid = 0
 
         p0 = get_node(
             geom[0][0], geom[0][1], start_t, node_lake_id=from_lid, row=sr, col=sc
@@ -419,7 +537,19 @@ def build_river_network(
             elif inc == 0 and out >= 1:
                 node.type = "source"
             elif out == 0 and inc >= 1:
-                node.type = "mouth"
+                kind, lid = classify_display_terminus(
+                    node.row,
+                    node.col,
+                    graph=graph,
+                    ocean=ocean,
+                    lakes=lakes,
+                    lake_id=lid_raster,
+                    display_mask=mask,
+                    physical_mask=physical,
+                )
+                node.type = kind
+                if lid and not node.lake_id:
+                    node.lake_id = lid
 
     return RiverNetwork(nodes=nodes, segments=segments)
 

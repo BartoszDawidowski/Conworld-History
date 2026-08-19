@@ -271,6 +271,8 @@ Do not call the mean of `mountain_score` a `mountain_fraction`. `mountain_terrai
 
 # 6. Corrective work packages
 
+C0–C9 below are the original post-CR9 programme (**delivered**). After the Atlas `183716` audit on `9ebca51`, **C10 is blocked**. The successor is C9.1 in [`WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](WORLDGEN_CORRECTIVE_C91_ADDENDUM.md).
+
 ## C0 — Product-contract hotfixes and failing regression tests
 
 **Priority:** P0  
@@ -776,12 +778,23 @@ Implement the display and inspector contracts in sections 7 and 8 as one isolate
 - no classification threshold or palette duplication exists in Godot;
 - create `docs/validation/worldgen_corrective_c9.md` with screenshots and stop.
 
+## C9.1 — Production closure (inserted after C9 audit)
+
+**Status:** Plan accepted; implementation not started.  
+**Authority:** [`WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](WORLDGEN_CORRECTIVE_C91_ADDENDUM.md)
+
+Do not proceed to C10. Execute C9.1.1–C9.1.6 in that file, one subpackage at a time.
+
 ## C10 — Multi-seed calibration, Full memory gate, and release decision
 
+**Status:** **Blocked** until C9.1 production closure.  
+**Plan:** [`WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](WORLDGEN_CORRECTIVE_C91_ADDENDUM.md)  
 **Priority:** P1  
-**Dependencies:** C0–C9, including C3T state integrity
+**Dependencies:** C0–C9 **and C9.1** (lake-aware routing, periodic storage, BiomeV2, terminals, landform structure, canonical `acceptance_ok`)
 
-Only after every correctness and integration gate passes:
+Do **not** start this package merely because C0–C9 are delivered. An Atlas `183716` audit on `9ebca51` showed that calibration would currently fit doubled lake Q, non-periodic storage, BiomeV2 Growing–Moist-on-ice, double-filtered rivers, mislabelled mouths, and glued ranges.
+
+Only after every C9.1 correctness gate passes:
 
 1. run the declared Quick and Atlas regression suite;
 2. run at least one Full seed with peak-RSS measurement;

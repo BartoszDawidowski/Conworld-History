@@ -70,9 +70,9 @@ These strips are generated with `paint_categorical_rgb` (the same function that 
 
 ## Explicitly not done
 
-- **C10** multi-seed calibration, Full RSS, landform threshold retune
+- **C10** multi-seed calibration, Full RSS, landform threshold retune — **blocked** until C9.1
 - Atlas `183716` regeneration
 - YAML / folding / Holdridge / `mountain_score_threshold` changes
 - Live Godot Fit/4× screenshots of a generated world (requires leftover regen)
 
-**Decision:** accept C9 display/inspector integration; stop. Next when instructed: **C10** only.
+**Decision:** accept C9 display/inspector integration; stop. Next when instructed: **C9.1.1** only ([`WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](../WORLDGEN_CORRECTIVE_C91_ADDENDUM.md)). **C10 is blocked.**

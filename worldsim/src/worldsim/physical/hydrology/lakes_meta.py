@@ -110,6 +110,9 @@ def apply_lake_identity(rec: dict[str, Any]) -> dict[str, Any]:
     lid = int(rec.get("lake_id") or rec.get("id") or 0)
     basin = int(rec.get("basin_id") or 0)
     rec["feature_id"] = int(rec.get("feature_id") or (basin if basin else lid))
+    if bool(rec.get("storage_unstable")):
+        rec["water_body_id"] = 0
+        return rec
     state = str(rec.get("water_state") or "")
     if int(rec.get("water_body_id") or 0) > 0:
         return rec

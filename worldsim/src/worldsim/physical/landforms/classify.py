@@ -225,8 +225,9 @@ def classify_layers(
     local[land & (tpi_n > 0.32) & convex & (slope < 0.12)] = int(LocalForm.SUMMIT)
 
     plat_mask = context == int(BroadContext.PLATEAU)
-    near_plat = plat_mask.copy()
-    near_plat = _dilate_cylindrical(_dilate_cylindrical(near_plat))
+    plat_rim = plat_mask & _dilate_cylindrical(~plat_mask)
+    plat_interior = plat_mask & ~plat_rim
+    near_plat = _dilate_cylindrical(_dilate_cylindrical(plat_mask))
     low_side = ((elev_above_sea < 220.0) & land) | ocean
     step = (
         land
@@ -234,8 +235,13 @@ def classify_layers(
         & (drop >= 80.0)
         & (elev_above_sea > 250.0)
         & _dilate_cylindrical(low_side)
+        & ~plat_interior
     )
-    esc = (land & near_plat & (drop >= 80.0)) | step
+    esc = (land & ~plat_interior & near_plat & (drop >= 80.0)) | step
+    esc = esc | (
+        plat_rim
+        & ((drop >= 80.0) | (slope >= params.escarpment_slope))
+    )
     if np.any(land):
         drop_cut = float(np.quantile(drop[land], 0.98))
         lap_cut = float(np.quantile(np.abs(lap)[land], 0.90))
@@ -249,6 +255,16 @@ def classify_layers(
         )
         esc = esc | extra
     local[esc] = int(LocalForm.ESCARPMENT)
+    # Interior of a plateau stays interior (flat/slope/etc.), never escarpment.
+    local[plat_interior] = np.where(
+        local[plat_interior] == int(LocalForm.ESCARPMENT),
+        np.where(
+            slope[plat_interior] < params.flat_slope,
+            int(LocalForm.FLAT),
+            int(LocalForm.SLOPE),
+        ),
+        local[plat_interior],
+    )
 
     prov = np.full(ocean.shape, int(Provenance.UNKNOWN), dtype=np.uint8)
     if orogenic is not None and tectonic_activity is not None:

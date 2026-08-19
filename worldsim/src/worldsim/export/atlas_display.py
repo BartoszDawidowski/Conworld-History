@@ -574,27 +574,35 @@ def _climate_summary(
     model: WorldSpatialModel, *, display_overlap: int = 0
 ) -> dict[str, Any]:
     extra = dict(model.manifest.extra or {})
-    rasters = model.rasters
     warnings: list[str] = []
-    biome_ok = bool(rasters.has("ecology/biome_v2_class"))
-    landforms_ok = bool(rasters.has("landforms/context_id"))
-    if not biome_ok:
-        warnings.append("ecology/biome_v2_class missing")
-    if not landforms_ok:
-        warnings.append("landforms/context_id missing")
+    report = extra.get("canonical_acceptance")
+    if not isinstance(report, dict):
+        report = {
+            "version": extra.get("canonical_acceptance_version"),
+            "gates": {
+                "moisture_spinup_ok": bool(extra.get("moisture_spinup_ok", False)),
+                "moisture_budget_ok": bool(extra.get("moisture_budget_ok", False)),
+                "hydrology_ok": bool(extra.get("hydrology_coupling_ok", False)),
+                "biome_v2_ok": bool(extra.get("biome_v2_ok", False)),
+                "landforms_ok": bool(extra.get("landforms_ok", False)),
+                "hex_layout_ok": bool(extra.get("hex_layout_ok", False)),
+            },
+            "failed_gates": list(extra.get("failed_gates") or []),
+            "overall_acceptance_ok": bool(
+                extra.get("overall_acceptance_ok", model.manifest.acceptance_ok)
+            ),
+        }
     if display_overlap:
         warnings.append(f"range/plateau object overlap: {display_overlap} cells")
-    return {
-        "temperature_integrity_ok": bool(
-            extra.get("temperature_integrity_ok", extra.get("climate_acceptance_ok", True))
+    from worldsim.spatial.canonical_acceptance import climate_summary_from_report
+
+    summary = climate_summary_from_report(
+        report,
+        temperature_integrity_ok=bool(
+            extra.get(
+                "temperature_integrity_ok", extra.get("climate_acceptance_ok", True)
+            )
         ),
-        "moisture_spinup_ok": bool(extra.get("moisture_spinup_ok", extra.get("moisture_acceptance_ok", False))),
-        "moisture_budget_ok": bool(extra.get("moisture_budget_ok", extra.get("moisture_acceptance_ok", False))),
-        "hydrology_coupling_ok": bool(
-            extra.get("hydrology_coupling_ok", extra.get("hydrology_acceptance_ok", False))
-        ),
-        "biome_v2_ok": biome_ok,
-        "landforms_ok": landforms_ok,
-        "overall_acceptance_ok": bool(model.manifest.acceptance_ok),
-        "warnings": warnings,
-    }
+        warnings=warnings,
+    )
+    return summary

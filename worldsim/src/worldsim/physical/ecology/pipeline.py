@@ -14,6 +14,7 @@ from worldsim.physical.climate.pipeline import (
     ClimateResult,
     climate_grid_land_elevation,
     downsample_mean,
+    downsample_mode_bool,
 )
 from worldsim.physical.ecology.biome_v2 import (
     CLASS_NAMES,
@@ -31,6 +32,7 @@ from worldsim.physical.ecology.holdridge import (
     classify_holdridge,
 )
 from worldsim.physical.ecology.soils import build_soil_layers
+from worldsim.physical.erosion.pass_one import slope_magnitude
 from worldsim.physical.hydrology.pipeline import HydrologyResult
 from worldsim.physical.moisture.pipeline import MoistureResult
 from worldsim.progress import ProgressReporter
@@ -219,7 +221,29 @@ def biome_v2_acceptance(
     land = ~ocean_b
     land_ok = bool(np.all(klass[land] != int(BiomeV2Class.OCEAN))) if np.any(land) else True
     all_classified = bool(np.all((klass >= 0) & (klass <= int(BiomeV2Class.WETLAND))))
-    ok = bool(finite and coverage and legend_exact and ocean_ok and land_ok and all_classified)
+    growing_ok = True
+    if np.any(land):
+        growing_ok = bool(
+            np.all(
+                (np.asarray(growing_months)[land] >= 1)
+                | ~np.isin(
+                    klass[land],
+                    [
+                        int(BiomeV2Class.GROWING_MOIST),
+                        int(BiomeV2Class.GROWING_DEFICIT),
+                    ],
+                )
+            )
+        )
+    ok = bool(
+        finite
+        and coverage
+        and legend_exact
+        and ocean_ok
+        and land_ok
+        and all_classified
+        and growing_ok
+    )
     return {
         "biome_v2_finite": finite,
         "biome_v2_coverage_ok": coverage,
@@ -227,6 +251,7 @@ def biome_v2_acceptance(
         "biome_v2_ocean_mask_ok": ocean_ok,
         "biome_v2_land_not_ocean": land_ok,
         "biome_v2_all_classified": all_classified,
+        "biome_v2_zero_growing_not_growing_class": growing_ok,
         "biome_v2_ok": ok,
     }
 
@@ -305,12 +330,39 @@ def build_ecology(
     soil_m = climatological_soil_monthly(moisture, hydrology, w, h)
     if soil_m is not None:
         soil_m = np.where(ocean, 0.0, soil_m)
+    water_frac = None
+    water_frac_m = None
+    river_m = None
+    if hydrology is not None:
+        frac_src = getattr(hydrology, "water_fraction_mean", None)
+        if frac_src is not None and np.asarray(frac_src).size:
+            water_frac = _to_climate_2d(np.asarray(frac_src, dtype=np.float64), w, h)
+        frac_m = getattr(hydrology, "water_fraction_monthly", None)
+        if frac_m is not None and np.asarray(frac_m).ndim == 3 and np.asarray(frac_m).size:
+            water_frac_m = _to_climate_monthly(np.asarray(frac_m, dtype=np.float64), w, h)
+        riv = getattr(hydrology, "river_mask", None)
+        if riv is not None and np.asarray(riv).size:
+            riv_b = np.asarray(riv, dtype=bool)
+            river_m = (
+                riv_b
+                if riv_b.shape == (h, w)
+                else downsample_mode_bool(riv_b, w, h)
+            )
+    radius_km = 6371.0
+    if hydrology is not None and isinstance(hydrology.diagnostics, dict):
+        radius_km = float(hydrology.diagnostics.get("planet_radius_km") or 6371.0)
+    slope = slope_magnitude(elev, planet_radius_km=radius_km)
     biome = classify_biome_v2(
         temperature_c=climate.temperature_c[: monthly_p.shape[0]],
         precipitation=monthly_p,
         ocean_mask=ocean,
         soil_moisture=soil_m,
         precip_scale_mm=params.precip_scale_mm,
+        water_fraction=water_frac,
+        water_fraction_monthly=water_frac_m,
+        lake_mask=lake_mask,
+        river_mask=river_m,
+        slope=slope,
     )
 
     if reporter is not None:

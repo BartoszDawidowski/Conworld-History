@@ -10,7 +10,7 @@
 > **Execution rule:** Convert this annex into small implementation milestones. Complete, validate, document, and stop after each milestone before starting the next one.  
 > **Operational tracker:** [`docs/PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md) (PR + CR status, conflict register).  
 > **Production defects / CR-0…CR-9:** [`docs/PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md).  
-> **Post–CR-9 repairs / C0…C10:** [`docs/WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md`](WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md).
+> **Post–CR-9 repairs / C0…C9:** [`docs/WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md`](WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md). **C9.1 production closure (C10 blocked):** [`docs/WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](WORLDGEN_CORRECTIVE_C91_ADDENDUM.md).
 
 ---
 

@@ -64,7 +64,7 @@ def _load_rivers(path: Path) -> RiverNetwork:
             id=int(n["id"]),
             x=float(n["x"]),
             y=float(n["y"]),
-            type=n["type"],
+            type=("ocean_mouth" if n.get("type") == "mouth" else n["type"]),
             row=int(n["row"]),
             col=int(n["col"]),
             lake_id=int(n.get("lake_id", 0)),
@@ -129,6 +129,17 @@ def _load_lakes(path: Path) -> list[Lake]:
                 ice_regime=str(item.get("ice_regime", "")),
                 envelope_area_km2=float(item.get("envelope_area_km2", 0.0)),
                 mean_wet_area_km2=float(item.get("mean_wet_area_km2", 0.0)),
+                wet_area_km2_monthly=[
+                    float(v) for v in (item.get("wet_area_km2_monthly") or [])
+                ],
+                ice_area_km2_monthly=[
+                    float(v) for v in (item.get("ice_area_km2_monthly") or [])
+                ],
+                storage_periodic=(
+                    bool(item["storage_periodic"])
+                    if item.get("storage_periodic") is not None
+                    else None
+                ),
             )
         )
     return lakes
@@ -246,6 +257,17 @@ class VectorStore:
         (directory / "river_network.json").write_text(
             json.dumps(self.rivers.to_dict(), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
+        )
+        _dump_feature_collection(
+            directory / "river_nodes.geojson",
+            [
+                {
+                    "type": "Feature",
+                    "properties": n.to_dict(),
+                    "geometry": {"type": "Point", "coordinates": [n.x, n.y]},
+                }
+                for n in self.rivers.nodes
+            ],
         )
         (directory / "lakes.json").write_text(
             json.dumps(

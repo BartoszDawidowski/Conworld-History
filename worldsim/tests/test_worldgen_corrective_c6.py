@@ -106,8 +106,10 @@ def test_wetland_requires_growing_season_climatology_not_wet_december() -> None:
         ocean_mask=ocean,
         soil_moisture=soil,
     )
-    assert np.all(wet["biome_v2_class"] == int(BiomeV2Class.WETLAND))
     assert np.all(wet["moisture_regime_id"] == int(MoistureRegime.WET))
+    assert np.all(wet["biome_v2_class"] == int(BiomeV2Class.GROWING_MOIST))
+    assert np.all(wet["biome_v2_class"] != int(BiomeV2Class.WETLAND))
+    assert np.all(wet["wetland_potential"])
 
 
 def test_climatology_ignores_2d_last_month_hydrology_store() -> None:

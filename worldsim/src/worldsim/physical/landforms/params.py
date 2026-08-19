@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-LANDFORM_ALGORITHM_VERSION = "landform_v3_c7"
+LANDFORM_ALGORITHM_VERSION = "landform_v3_c91_5"
 # Production CR-9 band: threshold must be in this range to claim calibrated.
 CALIBRATED_MOUNTAIN_THRESHOLD_MIN = 0.58
 CALIBRATED_MOUNTAIN_THRESHOLD_MAX = 0.65
@@ -22,6 +22,44 @@ def min_object_cells(
         area = max(float(cell_area_km2), 1e-12)
         return max(1, int(math.ceil(float(min_km2) / area)))
     return max(1, int(min_cells))
+
+
+def effective_min_cells_honest(
+    *,
+    min_km2: float | None,
+    min_cells: int,
+    cell_area_km2: float,
+    min_component_cells: int,
+) -> tuple[int, dict[str, float | bool]]:
+    """Area floor in cells without silently raising km² above the configured request."""
+    area = max(float(cell_area_km2), 1e-12)
+    floor = min_object_cells(
+        min_km2=min_km2, min_cells=min_cells, cell_area_km2=cell_area_km2
+    )
+    configured_km2 = float(min_km2) if min_km2 is not None and float(min_km2) > 0.0 else float("nan")
+    representable_ok = True
+    honesty_ok = True
+    applied = floor
+    if min_km2 is not None and float(min_km2) > 0.0:
+        if area > float(min_km2) + 1e-9:
+            representable_ok = False
+            applied = floor
+        else:
+            bumped = max(floor, int(min_component_cells))
+            if bumped * area > float(min_km2) * 1.05 + area:
+                # Refuse the silent min_component bump; keep the km² floor.
+                applied = floor
+            else:
+                applied = bumped
+    else:
+        applied = max(floor, int(min_component_cells))
+    return int(applied), {
+        "configured_km2": float(configured_km2),
+        "representable_km2": float(applied) * area,
+        "floor_cells": int(applied),
+        "honesty_ok": bool(honesty_ok),
+        "representable_ok": bool(representable_ok),
+    }
 
 
 @dataclass(frozen=True)

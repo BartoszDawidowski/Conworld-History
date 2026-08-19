@@ -24,9 +24,10 @@ from worldsim.physical.hydrology.channels import (
     river_water_fraction,
 )
 from worldsim.physical.hydrology.cylindrical_graph import (
-    accumulate_weights,
+    accumulate_weights_lake_aware,
     classify_outlets,
     effective_discharge_and_sink,
+    first_downstream_outside_lake,
 )
 from worldsim.physical.hydrology.discharge import (
     SECONDS_PER_DAY,
@@ -92,6 +93,8 @@ class HydrologyParams:
     lake_storage_spinup_tol: float = 0.01
     lake_storage_curve: str = "discrete_avh_v1"
     lake_wet_min_fraction: float = 1e-6
+    runoff_spinup_years: int = 8
+    runoff_spinup_tol: float = 0.01
 
 
 @dataclass
@@ -131,6 +134,12 @@ class HydrologyResult:
     water_fraction_mean: NDArray[np.float64] = field(
         default_factory=lambda: np.zeros((0,), dtype=np.float64)
     )
+    water_fraction_monthly: NDArray[np.float64] = field(
+        default_factory=lambda: np.zeros((0,), dtype=np.float64)
+    )
+    ice_fraction_monthly: NDArray[np.float64] = field(
+        default_factory=lambda: np.zeros((0,), dtype=np.float64)
+    )
     lake_records: list[dict[str, Any]] = field(default_factory=list)
     outlet_points: list[tuple[int, int]] = field(default_factory=list)
     ocean_mask: NDArray[np.bool_] = field(default_factory=lambda: np.zeros((0,), dtype=bool))
@@ -167,6 +176,10 @@ class HydrologyResult:
             payload["soil_store"] = self.soil_store
         if self.soil_store_monthly.size:
             payload["soil_store_monthly"] = self.soil_store_monthly
+        if self.water_fraction_monthly.size:
+            payload["water_fraction_monthly"] = self.water_fraction_monthly
+        if self.ice_fraction_monthly.size:
+            payload["ice_fraction_monthly"] = self.ice_fraction_monthly
         if self.channel_mask.size:
             payload["channel_mask"] = self.channel_mask.astype(np.uint8)
         if self.channel_state.size:
@@ -251,6 +264,8 @@ def build_hydrology(
         precip_scale_mm=params.precip_scale_mm,
         soil_capacity=params.soil_capacity,
         soil_quickflow_frac=params.soil_quickflow_frac,
+        spinup_years=params.runoff_spinup_years,
+        spinup_rel_tol=params.runoff_spinup_tol,
     )
     monthly_runoff = np.asarray(runoff_pack["runoff"], dtype=np.float64)
     snow_store = np.asarray(runoff_pack["snow_store"], dtype=np.float64)
@@ -388,6 +403,26 @@ def build_hydrology(
         precip_annual=annual_precip,
         frozen_temp_c=params.lake_min_mean_temp_c,
     )
+    basin_envelope_id = np.asarray(lake_id, dtype=np.int32).copy()
+    # C9.1.1: lakes are storage nodes. Re-route so through-flow does not leave
+    # the envelope; storage then reads that inflow once; spill is injected
+    # *outside* the envelope.
+    # Rebuild monthly_eff with lake-aware routing and refresh discharge_eff.
+    for m in range(months):
+        local_m3s = runoff_proxy_to_m3s(
+            monthly_runoff[m],
+            cell_area_km2=gm.cell_area_km2,
+            precip_scale_mm=params.precip_scale_mm,
+            days=float(month_days(m)),
+        )
+        q_m, lost_m = effective_discharge_and_sink(
+            graph, local_m3s, bed_loss_potential, lake_id=basin_envelope_id
+        )
+        monthly_eff[m] = q_m
+        monthly_bed_loss[m] = lost_m
+    # Recompute the canonical annual Q from the lake-aware monthly field.
+    discharge_eff = month_weighted_mean_m3s(monthly_eff)
+
     storage_diag = apply_basin_storage(
         graph=graph,
         lake_id=lake_id,
@@ -407,7 +442,12 @@ def build_hydrology(
     water_fraction_mean = np.asarray(
         storage_diag.pop("water_fraction_mean"), dtype=np.float64
     )
-    basin_envelope_id = np.asarray(lake_id, dtype=np.int32).copy()
+    water_fraction_monthly = np.asarray(
+        storage_diag.pop("water_fraction_monthly", np.zeros((0,))), dtype=np.float64
+    )
+    ice_fraction_monthly = np.asarray(
+        storage_diag.pop("ice_fraction_monthly", np.zeros((0,))), dtype=np.float64
+    )
     lake_id, liquid_mask = liquid_id_from_fraction(
         basin_envelope_id,
         water_fraction_mean,
@@ -418,7 +458,7 @@ def build_hydrology(
     lake_mask = liquid_mask
 
     for m in range(months):
-        spill_w = np.zeros((h, w), dtype=np.float64)
+        inject = np.zeros((h, w), dtype=np.float64)
         seconds = float(month_days(m)) * SECONDS_PER_DAY
         for rec in lake_records:
             series = rec.get("spill_m3") or []
@@ -427,13 +467,21 @@ def build_hydrology(
             spilled = float(series[m])
             if spilled <= 0.0:
                 continue
+            lid = int(rec.get("lake_id") or 0)
             rr = rec.get("outlet_row", rec.get("sink_row"))
             cc = rec.get("outlet_col", rec.get("sink_col"))
-            if rr is None or cc is None:
+            if rr is None or cc is None or lid <= 0:
                 continue
-            spill_w[int(rr), int(cc)] += spilled / max(seconds, 1.0)
-        if np.any(spill_w):
-            monthly_eff[m] += accumulate_weights(graph, spill_w)
+            loc = first_downstream_outside_lake(
+                graph, int(rr), int(cc), basin_envelope_id, lid
+            )
+            if loc is None:
+                continue
+            inject[int(loc[0]), int(loc[1])] += spilled / max(seconds, 1.0)
+        if np.any(inject):
+            monthly_eff[m] += accumulate_weights_lake_aware(
+                graph, inject, lake_id=basin_envelope_id
+            )
     discharge_eff = month_weighted_mean_m3s(monthly_eff)
 
     state_network = channel_mask
@@ -545,6 +593,12 @@ def build_hydrology(
         "flow_acc_max": float(core["flow_accumulation"].max()),
         "river_acc_mean": riv_mean,
         "land_acc_mean": land_mean,
+        "q_gross": "river_discharge_gross",
+        "q_effective": "river_discharge_proxy",
+        "q_through_lake_once": True,
+        "q_effective_gt_gross_count": 0,
+        "q_effective_gt_gross_material_count": 0,
+        "q_effective_gt_gross_material_rule": "q_eff > q_gross * 1.25 + 1.0 m3/s",
         "acceptance_ok": bool(
             drainage_valid and downstream_ok and sensible_acc and typed_ok
         ),
@@ -590,7 +644,7 @@ def build_hydrology(
         "lake_raster_wet_area_km2": float(np.sum(water_fraction_mean)) * float(gm.cell_area_km2),
         "river_acc_fraction": float(params.river_acc_fraction),
         "planet_radius_km": float(params.planet_radius_km),
-        "hydrology_algorithm": "c2_channel_bed_loss_v1",
+        "hydrology_algorithm": "c91_2_periodic_runoff_storage_v1",
         **catchment_diag,
         **runoff_diag,
         **graph_diag,
@@ -608,6 +662,31 @@ def build_hydrology(
     rastered = float(diagnostics["lake_raster_wet_area_km2"])
     diagnostics["lake_raster_vs_reported_wet_ratio"] = (
         rastered / reported if reported > 1e-9 else 0.0
+    )
+    if np.any(land) and discharge_gross.size and discharge_eff.size:
+        any_ex = land & (discharge_eff > discharge_gross * 1.01 + 0.05)
+        mat_ex = land & (discharge_eff > discharge_gross * 1.25 + 1.0)
+        diagnostics["q_effective_gt_gross_count"] = int(np.count_nonzero(any_ex))
+        diagnostics["q_effective_gt_gross_material_count"] = int(np.count_nonzero(mat_ex))
+        # C9.1.1 double-counting check: cells *inside* a lake envelope should not
+        # accumulate flow from upstream (lake_aware routing stops flow there).
+        # Cells *outside* (downstream of an open-lake outlet) legitimately receive
+        # spill that was never present in discharge_gross, so gross<eff is expected
+        # and must not trigger the gate.
+        env_mask = land & (basin_envelope_id > 0)
+        if np.any(env_mask):
+            env_double = env_mask & (discharge_eff > discharge_gross * 1.25 + 1.0)
+            q_through_once = int(np.count_nonzero(env_double)) == 0
+        else:
+            q_through_once = True
+        diagnostics["q_through_lake_once"] = q_through_once
+        diagnostics["acceptance_ok"] = bool(
+            diagnostics["acceptance_ok"] and q_through_once
+        )
+    runoff_periodic = bool(diagnostics.get("runoff_periodic", False))
+    withheld = int(diagnostics.get("basin_storage_nonperiodic_liquid_published_count") or 0)
+    diagnostics["acceptance_ok"] = bool(
+        diagnostics["acceptance_ok"] and runoff_periodic and withheld == 0
     )
 
     if reporter is not None:
@@ -640,6 +719,8 @@ def build_hydrology(
         lake_id=lake_id,
         basin_envelope_id=basin_envelope_id,
         water_fraction_mean=water_fraction_mean,
+        water_fraction_monthly=water_fraction_monthly,
+        ice_fraction_monthly=ice_fraction_monthly,
         lake_records=lake_records,
         outlet_points=core["outlet_points"],
         ocean_mask=ocean,

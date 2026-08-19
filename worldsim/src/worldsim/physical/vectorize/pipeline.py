@@ -24,7 +24,9 @@ from worldsim.physical.vectorize.lakes import Lake, build_lakes, lake_raster_con
 from worldsim.physical.vectorize.rivers import (
     RiverNetwork,
     build_river_network,
+    ocean_mouth_ocean_adjacent_fraction,
     river_raster_consistency,
+    terminal_type_counts,
     topology_valid,
 )
 from worldsim.progress import ProgressReporter
@@ -84,6 +86,16 @@ class VectorGeographyResult:
             for s in self.rivers.segments
         ]
         _save_geojson_features(directory / "rivers.geojson", river_feats)
+
+        node_feats = [
+            {
+                "type": "Feature",
+                "properties": n.to_dict(),
+                "geometry": {"type": "Point", "coordinates": [n.x, n.y]},
+            }
+            for n in self.rivers.nodes
+        ]
+        _save_geojson_features(directory / "river_nodes.geojson", node_feats)
 
         (directory / "river_network.json").write_text(
             json.dumps(self.rivers.to_dict(), indent=2, sort_keys=True) + "\n",
@@ -174,6 +186,7 @@ def build_vector_geography(
         monthly_discharge=hydrology.monthly_discharge,
         extent=extent,
         channel_state=getattr(hydrology, "channel_state", None),
+        channel_mask=getattr(hydrology, "channel_mask", None),
         flow_accumulation=hydrology.flow_accumulation,
         cell_area_km2=float(hydrology.diagnostics.get("cell_area_km2") or 0.0) or None,
         path_length_km=path_length_km,
@@ -222,6 +235,10 @@ def build_vector_geography(
     topo_ok = topology_valid(rivers)
     # Vectors are hex-independent by construction (no hex types in payloads).
     hex_independent = True
+    term_counts = terminal_type_counts(rivers)
+    mouth_frac = ocean_mouth_ocean_adjacent_fraction(rivers, hydrology.ocean_mask)
+    mouths_ok = mouth_frac >= 1.0 - 1e-12
+    hydro_diag = hydrology.diagnostics if isinstance(hydrology.diagnostics, dict) else {}
 
     diagnostics: dict[str, Any] = {
         "width": extent.width,
@@ -238,10 +255,19 @@ def build_vector_geography(
         "lake_raster_consistency_ok": lake_ok,
         "river_topology_valid": topo_ok,
         "hex_independent": hex_independent,
+        "terminal_type_counts": term_counts,
+        "ocean_mouth_ocean_adjacent_fraction": float(mouth_frac),
+        "channel_physical_cell_count": int(
+            hydro_diag.get("channel_physical_cell_count")
+            or np.count_nonzero(getattr(hydrology, "channel_mask", np.array([])))
+        ),
+        "channel_display_cell_count": int(np.count_nonzero(hydrology.river_mask)),
+        "vector_algorithm": "c91_3_honest_terminals_v1",
         "acceptance_ok": bool(
             coast_ok and river_ok and lake_ok and topo_ok and hex_independent
             and len(coastline) > 0
             and len(rivers.segments) > 0
+            and mouths_ok
         ),
     }
 

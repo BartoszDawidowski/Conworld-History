@@ -2,7 +2,7 @@
 
 > **Status:** **B1–B7 complete** (B7: 2026-08-16). Climate/geography defaults **user-retuned** (see §6 / `milestone_b5.md`).  
 > **Next Plan B presentation when instructed:** **B10** (Full land polys) may run independently.  
-> **Next climate physics:** CR-6…CR-9 baseline — correction required. **C9** delivered; next **C10** — [`WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md`](WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md).  
+> **Next climate physics:** CR-6…CR-9 baseline — correction required. **C9** delivered; next **C9.1.1** — [`WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](WORLDGEN_CORRECTIVE_C91_ADDENDUM.md). **C10 blocked.**  
 > **Hydro UX follow-up:** ✅ flow-direction **layer** + channel transmission losses — §6.3.1 / `docs/validation/hydro_flow_and_transmission.md` (2026-08-16). Annex still requires cylindrical graph + lake/wadi semantics (PR-5/PR-6).  
 > **Date:** 2026-08-16  
 > **Authority:** Post-A8 discussion + 2026-08-15 climate/hydro/moisture planning; **amended 2026-08-16** by Physical Realism Annex.  
@@ -538,7 +538,7 @@ When B1–B10 are complete (or a subset explicitly accepted as “B done”):
 ```text
 Plan B presentation: B10 Full land polys when requested (independent of PR/CR track).
 
-Climate physics: **CR-6…CR-9 baseline — correction required**. C9 delivered; next C10.
+Climate physics: **CR-6…CR-9 baseline — correction required**. C9 delivered; next **C9.1.1** (C10 blocked).
 Use PHYSICAL_REALISM_PLAN.md + PHYSICAL_REALISM_CORRECTIONS.md + WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md.
 Do not retune B8/B9 knobs or precipitation to hide fake lakes / PET×12.
 ```

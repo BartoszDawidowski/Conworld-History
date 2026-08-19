@@ -226,18 +226,60 @@ def accumulate_weights(
     weights: NDArray[np.floating],
 ) -> NDArray[np.float64]:
     """Route ``weights`` downstream (includes local contribution)."""
+    return accumulate_weights_lake_aware(graph, weights, lake_id=None)
+
+
+def accumulate_weights_lake_aware(
+    graph: CylindricalFlowGraph,
+    weights: NDArray[np.floating],
+    lake_id: NDArray[np.integer] | None = None,
+) -> NDArray[np.float64]:
+    """Route ``weights`` downstream, stopping at lake exits (C9.1.1).
+
+    A cell with ``lake_id > 0`` does not transmit into a different lake id or
+    into ordinary land. Flow stays at the lake outlet until spill is injected
+    *outside* the envelope.
+    """
     w = np.asarray(weights, dtype=np.float64)
     if w.shape != (graph.height, graph.width):
         raise ValueError("weights shape mismatch")
     ocean = graph.ocean_mask
     acc = np.where(ocean, 0.0, w).ravel().copy()
     ds = graph.downstream_flat
+    lid = None if lake_id is None else np.asarray(lake_id, dtype=np.int32).ravel()
     for i in topological_order_upstream_first(graph):
         j = int(ds[i])
-        if j >= 0:
-            acc[j] += acc[i]
+        if j < 0:
+            continue
+        if lid is not None:
+            src = int(lid[i])
+            if src > 0 and src != int(lid[j]):
+                continue
+        acc[j] += acc[i]
     out = acc.reshape(graph.height, graph.width)
     return np.where(ocean, 0.0, out)
+
+
+def first_downstream_outside_lake(
+    graph: CylindricalFlowGraph,
+    row: int,
+    col: int,
+    lake_id: NDArray[np.integer],
+    lake_key: int,
+) -> tuple[int, int] | None:
+    """First cell downstream of ``(row, col)`` whose lake id is not ``lake_key``."""
+    key = int(lake_key)
+    if key <= 0:
+        return None
+    ids = np.asarray(lake_id, dtype=np.int32)
+    w = graph.width
+    j = int(graph.downstream_flat[flat_index(int(row), int(col), w)])
+    while j >= 0:
+        r, c = unravel(j, w)
+        if int(ids[r, c]) != key:
+            return r, c
+        j = int(graph.downstream_flat[j])
+    return None
 
 
 def accumulate_cells(graph: CylindricalFlowGraph) -> NDArray[np.float64]:
@@ -413,10 +455,13 @@ def effective_discharge_and_sink(
     graph: CylindricalFlowGraph,
     precip: NDArray[np.floating],
     sink: NDArray[np.floating],
+    lake_id: NDArray[np.integer] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Route ``q = available − min(available, sink)``; return ``(q, actual_sink)``.
 
     ``actual_sink`` never exceeds available channel flow at the cell.
+    When ``lake_id`` is set, upstream discharge does not leave a lake envelope
+    into a different id (C9.1.1 lake storage node).
     """
     ocean = graph.ocean_mask
     p = np.where(ocean, 0.0, np.asarray(precip, dtype=np.float64)).ravel()
@@ -425,11 +470,16 @@ def effective_discharge_and_sink(
     q = np.zeros(graph.size, dtype=np.float64)
     actual = np.zeros(graph.size, dtype=np.float64)
     ocean_flat = ocean.ravel()
+    lid = None if lake_id is None else np.asarray(lake_id, dtype=np.int32).ravel()
     for i in topological_order_upstream_first(graph):
         if ocean_flat[i]:
             continue
         available = float(p[i])
         for u in ups[i]:
+            if lid is not None:
+                lu = int(lid[u])
+                if lu > 0 and lu != int(lid[i]):
+                    continue
             available += q[u]
         if available < 0.0:
             available = 0.0

@@ -246,7 +246,8 @@ def apply_basin_storage(
 ) -> dict[str, Any]:
     """Monthly storage for every retained basin envelope (open and closed).
 
-    Mutates ``lake_records``. Returns diagnostics plus ``water_fraction_mean``.
+    Mutates ``lake_records``. Returns diagnostics plus liquid/ice fraction rasters.
+    Non-periodic liquid lakes are withheld from the published liquid product.
     """
     q = np.asarray(monthly_q_m3s, dtype=np.float64)
     if q.ndim != 3:
@@ -265,11 +266,15 @@ def apply_basin_storage(
         precip_m = np.asarray(monthly_precip, dtype=np.float64)
 
     area_m2_cell = float(cell_area_km2) * 1e6
-    water_sum = np.zeros((h, w), dtype=np.float64)
+    water_monthly = np.zeros((months, h, w), dtype=np.float64)
+    ice_monthly = np.zeros((months, h, w), dtype=np.float64)
     stepped = 0
     reclass_playa = 0
     reclass_endorheic = 0
     periodic_count = 0
+    liquid_count = 0
+    liquid_periodic_count = 0
+    withheld_count = 0
     years = max(int(spinup_years), 1)
     builder = (
         build_linear_avh_fallback
@@ -321,7 +326,8 @@ def apply_basin_storage(
         frozen_flags: list[bool] = []
         used_years = years
         periodic = False
-        month_fracs: list[NDArray[np.float64]] = []
+        month_liquid: list[NDArray[np.float64]] = []
+        month_ice: list[NDArray[np.float64]] = []
         for year in range(years):
             storage.clear()
             level.clear()
@@ -330,7 +336,8 @@ def apply_basin_storage(
             inflow_m3.clear()
             evap_m3.clear()
             frozen_flags.clear()
-            month_fracs = []
+            month_liquid = []
+            month_ice = []
             for m in range(months):
                 days = float(month_days(m))
                 seconds = days * SECONDS_PER_DAY
@@ -360,8 +367,9 @@ def apply_basin_storage(
                     volume = avh.v_spill
                 z_w, area = avh.lookup(volume)
                 frac = avh.raster_wet_fraction(volume, (h, w))
+                ice_frac = frac if frozen else np.zeros_like(frac)
+                liquid_frac = np.zeros_like(frac) if frozen else frac
                 if frozen:
-                    frac = np.zeros_like(frac)
                     area = 0.0
                 storage.append(volume)
                 level.append(max(z_w - avh.z_floor, 0.0))
@@ -369,7 +377,8 @@ def apply_basin_storage(
                 spill.append(spilled)
                 inflow_m3.append(inflow + precip_vol)
                 evap_m3.append(loss)
-                month_fracs.append(frac)
+                month_liquid.append(liquid_frac)
+                month_ice.append(ice_frac)
             if prev_storage is not None and prev_storage:
                 denom = max(float(np.mean(prev_storage)), 1.0)
                 rel = float(np.max(np.abs(np.array(storage) - np.array(prev_storage)))) / denom
@@ -392,12 +401,20 @@ def apply_basin_storage(
         rec["storage_periodic"] = bool(periodic)
         rec["storage_spinup_years_used"] = int(used_years)
         rec["surface_elevation_m"] = float(avh.z_floor + (np.mean(level) if level else 0.0))
+        rec["wet_area_km2_monthly"] = [float(v) for v in wet_area]
+        rec["ice_area_km2_monthly"] = [
+            float(np.sum(f) * float(cell_area_km2)) for f in month_ice
+        ]
+        rec["liquid_fraction_monthly"] = [
+            float(np.mean(f[body])) if n_cells else 0.0 for f in month_liquid
+        ]
+        rec["ice_fraction_monthly"] = [
+            float(np.mean(f[body])) if n_cells else 0.0 for f in month_ice
+        ]
+        rec["fractions_are_monthly"] = True
         stepped += 1
         if periodic:
             periodic_count += 1
-        if month_fracs:
-            mean_frac = np.mean(np.stack(month_fracs, axis=0), axis=0)
-            water_sum += mean_frac
 
         prev_state = str(rec.get("water_state") or "")
         _reclass_storage_axes(
@@ -411,6 +428,24 @@ def apply_basin_storage(
             reclass_playa += 1
         if new_state == "endorheic" and prev_state != "endorheic":
             reclass_endorheic += 1
+        if new_state in ("open", "endorheic"):
+            liquid_count += 1
+            if periodic:
+                liquid_periodic_count += 1
+            else:
+                rec["storage_unstable"] = True
+                rec["water_body_id"] = 0
+                withheld_count += 1
+                apply_lake_identity(rec)
+        publish = not bool(rec.get("storage_unstable"))
+        if publish and month_liquid:
+            for m, (liq, ice) in enumerate(zip(month_liquid, month_ice, strict=True)):
+                water_monthly[m] += liq
+                ice_monthly[m] += ice
+
+    water_monthly = np.clip(water_monthly, 0.0, 1.0)
+    ice_monthly = np.clip(ice_monthly, 0.0, 1.0)
+    water_sum = water_monthly.mean(axis=0) if months else np.zeros((h, w), dtype=np.float64)
 
     return {
         "basin_storage_stepped_count": stepped,
@@ -418,8 +453,15 @@ def apply_basin_storage(
         "basin_storage_reclass_endorheic": reclass_endorheic,
         "basin_storage_spinup_years": int(spinup_years),
         "basin_storage_periodic_count": periodic_count,
+        "basin_storage_liquid_count": liquid_count,
+        "basin_storage_liquid_periodic_count": liquid_periodic_count,
+        "basin_storage_nonperiodic_liquid_withheld_count": withheld_count,
+        "basin_storage_nonperiodic_liquid_published_count": 0,
         "basin_storage_curve": str(storage_curve),
         "water_fraction_mean": water_sum,
+        "water_fraction_monthly": water_monthly,
+        "ice_fraction_monthly": ice_monthly,
+        "lake_fractions_are_monthly": True,
     }
 
 
@@ -443,6 +485,7 @@ def liquid_id_from_fraction(
         int(rec["lake_id"])
         for rec in lake_records
         if int(rec.get("water_body_id") or 0) > 0
+        and not bool(rec.get("storage_unstable"))
         and str(rec.get("water_state") or "") not in ("seasonal_or_playa", "frozen_or_ice_covered")
     }
     lake_id = np.where(wet & np.isin(env, list(liquid_ids) or [0]), env, 0).astype(np.int32)

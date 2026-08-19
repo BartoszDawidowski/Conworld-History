@@ -3,7 +3,7 @@
 > **Status:** **PR-0–PR-9 foundation delivered**; **CR-0–CR-9** baseline implemented — **correction required** ([`WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md`](WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md)).  
 > **Authority:** [`docs/WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md) (design) + corrections doc + addendum (production defects / repair order).  
 > **Rule:** One milestone at a time. Validate → stop.  
-> **Next when instructed:** **C10**. C9 delivered (Godot BiomeV2 / landform modes). Atlas 183716 leftover until regen.
+> **Next when instructed:** **C9.1.1** (production closure). C9 delivered. **C10 blocked** until C9.1 — [`WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](WORLDGEN_CORRECTIVE_C91_ADDENDUM.md). Atlas 183716 leftover until regen.
 
 ---
 
@@ -13,6 +13,7 @@ This document is the **execution index** for scientific hardening of the physica
 
 - Full design, algorithms, acceptance, and prohibitions live in the annex.
 - **Post–PR-9 production gaps** and the repair sequence live in [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md).
+- **C9.1 production closure** (blocks C10) lives in [`WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](WORLDGEN_CORRECTIVE_C91_ADDENDUM.md).
 - This tracker records order, status, and **conflicts** with earlier plans.
 - Atlas presentation work (**B10**) may proceed independently of PR/CR physics when explicitly requested.
 
@@ -27,7 +28,8 @@ This document is the **execution index** for scientific hardening of the physica
 | `ATLAS_PLAN_B.md` | Atlas UX B1–B7 done; **B8/B9 mechanisms and order amended** by annex |
 | `WORLDGEN_PHYSICAL_REALISM_ANNEX.md` | Normative corrective design + PR-0…PR-9 sequence |
 | `PHYSICAL_REALISM_CORRECTIONS.md` | Post–PR-9 defect register + **CR-0…CR-9** repair order |
-| `WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md` | Post–CR-9 production repairs **C0…C10**; precedence when CR production gates fail |
+| `WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md` | Post–CR-9 production repairs **C0…C9**; C10 blocked |
+| `WORLDGEN_CORRECTIVE_C91_ADDENDUM.md` | **C9.1** production closure (routing, storage, BiomeV2, terminals, landforms, `acceptance_ok`); precedence until closed |
 | This file | Living status + conflict register + next milestone |
 
 Where the annex identifies a demonstrated correctness problem, its corrective requirement **takes precedence** over an earlier qualitative “milestone complete” acceptance statement. Where the **corrections** document shows production failure of an accepted PR, the CR track **takes precedence** until the defect is closed. Unrelated architectural decisions remain valid.
@@ -48,7 +50,7 @@ Where the annex identifies a demonstrated correctness problem, its corrective re
 | C-08 | Cell-based climate scales (`*_cells`) as permanent params | Godot omits `continentality_scale_km` (**F-19**, closed CR-6); `advect_steps` is CFL cap (**CR-8**); erosion metric slope (**CR-9**). |
 | C-09 | Single max land normalisation / every seed hits `land_scale_m` | **power_tail_v2** production default (**CR-5**); `tail_softness` real (**F-12**). |
 | C-10 | Moisture #2 labeled as if it caused hydrology | Provenance split: `moisture_hydrology_input` vs `moisture_ecology` (D-13); diagnostics must not mislabel. |
-| C-11 | PR-0…PR-9 “complete” ⇒ production-ready climate | **Superseded.** CR-0…CR-9 baseline implemented; addendum C0…C10 required. |
+| C-11 | PR-0…PR-9 “complete” ⇒ production-ready climate | **Superseded.** CR-0…CR-9 baseline + C0…C9 delivered; **C9.1** required before C10. |
 
 ---
 
@@ -77,7 +79,14 @@ PR-0 … PR-9   Foundation (delivered; see honest status in corrections §6)
   → C7  Landform scales / classes / objects  ✅
   → C8  Canonical WorldSpatialModel / hex / query  ✅
   → C9  Godot BiomeV2 / landform modes  ✅
-  → C10 Multi-seed calibration / Full RSS / release decision  (next)
+  → C9.1 Production closure (lake routing, periodic storage, BiomeV2, terminals, landforms, acceptance)  ← NEXT
+       C9.1.1 lake-aware routing
+       C9.1.2 periodic runoff / storage
+       C9.1.3 river terminals
+       C9.1.4 BiomeV2 NON_GROWING / wetland
+       C9.1.5 plateau interior/rim + range split
+       C9.1.6 canonical acceptance_ok
+  → C10 Multi-seed calibration / Full RSS / release decision  **BLOCKED** until C9.1
 
 Parallel (atlas presentation only, when requested):
   B10  Full-resolution land polygons  — no PR/CR dependency
@@ -131,6 +140,8 @@ Detail: annex §§7–19. Production defects: corrections §3 (F-01…).
 | C7 | Landform scales / classes / objects | ✅ Complete (threshold 0.60 not retuned) | [`docs/validation/worldgen_corrective_c7.md`](validation/worldgen_corrective_c7.md) |
 | C8 | Canonical WorldSpatialModel / hex / query / export | ✅ Complete (Godot display leftover → C9) | [`docs/validation/worldgen_corrective_c8.md`](validation/worldgen_corrective_c8.md) |
 | C9 | Godot BiomeV2 / landform modes / legends / inspector | ✅ Complete (Fit/4× leftover until regen) | [`docs/validation/worldgen_corrective_c9.md`](validation/worldgen_corrective_c9.md) |
+| C9.1 | Production closure | ⏳ Not started — plan accepted | [`docs/WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](WORLDGEN_CORRECTIVE_C91_ADDENDUM.md) |
+| C10 | Multi-seed calibration / Full RSS | **Blocked** until C9.1 | addendum C10 |
 
 ---
 
@@ -156,10 +167,10 @@ Landforms (**PR-9** / **CR-5**) feed hex caches and `EnvironmentAdapter` later; 
 ## 7. Suggested human instructions
 
 ```text
-Worldgen corrective addendum: execute C10 only.
+Worldgen corrective C9.1: execute C9.1.1 only.
 ```
 
-C9 delivered (Godot BiomeV2 / landform display / legends / inspector). Atlas 183716 leftovers remain until regen. Optional atlas **B10** remains independent presentation.
+C9 delivered. **C10 is blocked** until C9.1 production closure ([`WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](WORLDGEN_CORRECTIVE_C91_ADDENDUM.md)). Do not retune precip, river LOD, mountain/plateau thresholds, or folding. Optional atlas **B10** remains independent presentation.
 
 ---
 

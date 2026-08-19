@@ -15,6 +15,7 @@ from worldsim.physical.climate.pipeline import downsample_land_elevation_mean
 from worldsim.physical.landforms.classify import (
     BroadContext,
     LocalForm,
+    _dilate_cylindrical,
     classify_layers,
     compute_scores,
     legend_payload,
@@ -33,7 +34,7 @@ from worldsim.physical.landforms.objects import (
 from worldsim.physical.landforms.params import (
     LANDFORM_ALGORITHM_VERSION,
     LandformParams,
-    min_object_cells,
+    effective_min_cells_honest,
     params_are_calibrated,
 )
 from worldsim.progress import ProgressReporter
@@ -250,6 +251,7 @@ def build_landform_analysis(
         relief_meso=mfields["relief_meso"],
         params=params,
         cell_area_km2=float(metrics_grid.cell_area_km2),
+        tpi=mfields.get("tpi_fine"),
     )
     plat_id, plateaus = extract_plateaus(
         context_id=layers["context_id"],
@@ -323,11 +325,35 @@ def build_landform_analysis(
         esc_frac = float(
             np.mean(layers["local_form_id"][land] == int(LocalForm.ESCARPMENT))
         )
+        plat_mask = layers["context_id"] == int(BroadContext.PLATEAU)
+        plat_ctx = plat_mask[land]
+        if np.any(plat_ctx):
+            plat_esc_frac = float(
+                np.mean(
+                    layers["local_form_id"][land][plat_ctx]
+                    == int(LocalForm.ESCARPMENT)
+                )
+            )
+        else:
+            plat_esc_frac = 0.0
+        plat_rim = plat_mask & _dilate_cylindrical(~plat_mask)
+        plat_interior = plat_mask & ~plat_rim
+        if np.any(plat_interior):
+            plat_interior_esc_frac = float(
+                np.mean(
+                    layers["local_form_id"][plat_interior]
+                    == int(LocalForm.ESCARPMENT)
+                )
+            )
+        else:
+            plat_interior_esc_frac = 0.0
     else:
         scores_finite = True
         mountain_frac = 0.0
         plateau_frac = 0.0
         esc_frac = 0.0
+        plat_esc_frac = 0.0
+        plat_interior_esc_frac = 0.0
     structural_ok = bool(
         aw >= 8
         and ah >= 8
@@ -361,22 +387,22 @@ def build_landform_analysis(
         ridge_no_dup = ridge_no_dup and chk["no_consecutive_duplicates"]
     esc_alarm_ok = bool(esc_frac < 0.20)
     cell_area = float(metrics_grid.cell_area_km2)
-    min_range_cells_eff = max(
-        min_object_cells(
-            min_km2=params.min_range_km2,
-            min_cells=params.min_range_cells,
-            cell_area_km2=cell_area,
-        ),
-        int(params.min_component_cells),
+    min_range_cells_eff, range_floor = effective_min_cells_honest(
+        min_km2=params.min_range_km2,
+        min_cells=params.min_range_cells,
+        cell_area_km2=cell_area,
+        min_component_cells=params.min_component_cells,
     )
-    min_plat_cells_eff = max(
-        min_object_cells(
-            min_km2=params.min_plateau_km2,
-            min_cells=params.min_plateau_cells,
-            cell_area_km2=cell_area,
-        ),
-        int(params.min_component_cells),
+    min_plat_cells_eff, plat_floor = effective_min_cells_honest(
+        min_km2=params.min_plateau_km2,
+        min_cells=params.min_plateau_cells,
+        cell_area_km2=cell_area,
+        min_component_cells=params.min_component_cells,
     )
+    plateau_honesty_ok = bool(plat_floor["honesty_ok"]) if calibrated else True
+    # Interior cells must not be painted escarpment. All-rim specks (no interior)
+    # can be 100% escarpment without failing this gate.
+    interior_ok = bool(plat_interior_esc_frac < 0.15)
     diagnostics: dict[str, Any] = {
         "enabled": True,
         "algorithm": LANDFORM_ALGORITHM_VERSION,
@@ -394,16 +420,25 @@ def build_landform_analysis(
         "mountain_score_threshold": float(params.mountain_score_threshold),
         "min_range_km2": params.min_range_km2,
         "min_plateau_km2": params.min_plateau_km2,
+        "min_plateau_km2_configured": (
+            float(params.min_plateau_km2) if params.min_plateau_km2 is not None else None
+        ),
         "cell_area_km2": cell_area,
         "min_range_cells_effective": int(min_range_cells_eff),
         "min_plateau_cells_effective": int(min_plat_cells_eff),
         "min_range_km2_representable": float(min_range_cells_eff) * cell_area,
         "min_plateau_km2_representable": float(min_plat_cells_eff) * cell_area,
+        "plateau_area_floor_honesty_ok": plateau_honesty_ok,
+        "min_plateau_km2_representable_ok": bool(plat_floor["representable_ok"]),
         "mountain_range_count": len(ranges),
+        "mountain_system_count": int(len({int(r.system_id or r.id) for r in ranges})),
         "plateau_count": len(plateaus),
         "mountain_land_fraction": mountain_frac,
         "plateau_context_land_fraction": plateau_frac,
         "escarpment_land_fraction": esc_frac,
+        "plateau_context_escarpment_fraction": float(plat_esc_frac),
+        "plateau_interior_escarpment_fraction": float(plat_interior_esc_frac),
+        "plateau_interior_not_escarpment_ok": interior_ok,
         "mountain_fraction_alarm_band": [0.10, 0.30],
         "plateau_fraction_alarm_band": [0.01, 0.08],
         "escarpment_alarm_max": 0.20,
@@ -433,6 +468,8 @@ def build_landform_analysis(
             and local_coverage_ok
             and ridge_in_mask
             and ridge_no_dup
+            and plateau_honesty_ok
+            and interior_ok
         ),
         "ridge_centerlines": int(sum(1 for r in ranges if len(r.ridge_line) >= 2)),
         "plateau_rims": int(sum(1 for p in plateaus if len(p.rim_line) >= 2)),

@@ -6,7 +6,7 @@
 > **Tracker:** [`PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md).  
 > **Rule:** One **CR-N** / **C-N** milestone at a time. Validate → stop.  
 > **Do not** retune precipitation, `folding_ratio`, SST, or `lake_min_depth_m` to hide the defects below.  
-> **Next when instructed:** **C10** (C9 delivered; landform threshold 0.60 unchanged; Atlas 183716 leftover).
+> **Next when instructed:** **C9.1.1** (C9 delivered; **C10 blocked**). Landform threshold 0.60 unchanged. Atlas 183716 leftover. Plan: [`WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](WORLDGEN_CORRECTIVE_C91_ADDENDUM.md).
 
 ---
 
@@ -153,7 +153,8 @@ CR-0 … CR-5   Foundation repair (notes stand; several defects reopened)
   → C7    Landforms ✅ (scales / classes / objects; threshold 0.60)
   → C8    WorldSpatialModel / hex / query ✅
   → C9    Godot BiomeV2 / landform modes ✅
-  → C10   Multi-seed calibration / Full RSS (next)
+  → C9.1  Production closure (next: C9.1.1 lake routing)
+  → C10   Multi-seed calibration / Full RSS **BLOCKED** until C9.1
 ```
 
 **Hard gate:** do not calibrate precipitation until conservative transport (C4) is in place. Atlas seed `183716` spin-up is an honest leftover until regen.
@@ -412,8 +413,10 @@ Physical realism corrections: execute CR-1 only.
 After C9:
 
 ```text
-Worldgen corrective addendum: execute C10 only.
+Worldgen corrective C9.1: execute C9.1.1 only.
 ```
+
+Do **not** execute C10 until C9.1 roll-up is accepted.
 
 ---
 

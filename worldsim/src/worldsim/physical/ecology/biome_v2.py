@@ -79,6 +79,25 @@ def soil_moisture_growing_mean(
     return np.where(denom > 0.0, numer / np.maximum(denom, 1e-12), annual)
 
 
+def _dilate8_ew(mask: NDArray[np.bool_]) -> NDArray[np.bool_]:
+    """8-neighbour dilation with E–W wrap, no N–S wrap."""
+    m = np.asarray(mask, dtype=bool)
+    h, w = m.shape
+    out = np.zeros((h, w), dtype=bool)
+    for dr in (-1, 0, 1):
+        src = np.zeros((h, w), dtype=bool)
+        if dr == 0:
+            src = m
+        elif dr < 0:
+            src[-dr:] = m[: h + dr]
+        else:
+            src[: h - dr] = m[dr:]
+        out |= src
+        out |= np.roll(src, 1, axis=1)
+        out |= np.roll(src, -1, axis=1)
+    return out
+
+
 def classify_biome_v2(
     *,
     temperature_c: NDArray[np.floating],
@@ -88,6 +107,13 @@ def classify_biome_v2(
     precip_scale_mm: float = 200.0,
     frost_c: float = 0.0,
     growing_c: float = 5.0,
+    water_fraction: NDArray[np.floating] | None = None,
+    water_fraction_monthly: NDArray[np.floating] | None = None,
+    lake_mask: NDArray[np.bool_] | None = None,
+    river_mask: NDArray[np.bool_] | None = None,
+    slope: NDArray[np.floating] | None = None,
+    wetland_min_water_fraction: float = 0.10,
+    wetland_max_slope: float = 0.02,
 ) -> dict[str, NDArray | dict[str, Any]]:
     """Seasonal fields: frost, growing season, deficit, climatological soil, axes, class.
 
@@ -144,27 +170,81 @@ def classify_biome_v2(
     moisture[wet] = int(MoistureRegime.WET)
     moisture[ocean] = int(MoistureRegime.OCEAN)
 
-    # Display class from axes. Wetland needs climatological saturation + growing
-    # season, not a wet final month. Seasonal frost stays visible on dry land.
-    klass = np.full(ocean.shape, int(BiomeV2Class.GROWING_MOIST), dtype=np.uint8)
-    klass[moisture == int(MoistureRegime.ARID)] = int(BiomeV2Class.ARID)
-    klass[moisture == int(MoistureRegime.DEFICIT)] = int(BiomeV2Class.GROWING_DEFICIT)
+    # Never seed Growing–Moist. NON_GROWING / zero growing months stay frost.
+    klass = np.full(ocean.shape, int(BiomeV2Class.FROST_SEASONAL), dtype=np.uint8)
+    klass[ice] = int(BiomeV2Class.ICE)
+    can_grow = (growing_months >= 1) & ~ocean & ~ice
+    klass[can_grow & (moisture == int(MoistureRegime.ARID))] = int(BiomeV2Class.ARID)
+    klass[can_grow & (moisture == int(MoistureRegime.DEFICIT))] = int(
+        BiomeV2Class.GROWING_DEFICIT
+    )
+    klass[can_grow & (moisture == int(MoistureRegime.MOIST))] = int(
+        BiomeV2Class.GROWING_MOIST
+    )
+    klass[can_grow & (moisture == int(MoistureRegime.WET))] = int(
+        BiomeV2Class.GROWING_MOIST
+    )
+    # Seasonal frost stays visible on dry/arid land (axes, not soil paint).
     klass[thermal == int(ThermalRegime.FROST_SEASONAL)] = int(BiomeV2Class.FROST_SEASONAL)
-    klass[thermal == int(ThermalRegime.ICE)] = int(BiomeV2Class.ICE)
+    klass[thermal == int(ThermalRegime.NON_GROWING)] = int(BiomeV2Class.FROST_SEASONAL)
+    klass[ice] = int(BiomeV2Class.ICE)
+
+    frac = (
+        np.asarray(water_fraction, dtype=np.float64)
+        if water_fraction is not None and np.asarray(water_fraction).shape == ocean.shape
+        else np.zeros(ocean.shape, dtype=np.float64)
+    )
+    if (
+        water_fraction_monthly is not None
+        and np.asarray(water_fraction_monthly).ndim == 3
+        and np.asarray(water_fraction_monthly).shape[1:] == ocean.shape
+    ):
+        frac = np.maximum(frac, np.max(np.asarray(water_fraction_monthly, dtype=np.float64), axis=0))
+    lakes = (
+        np.asarray(lake_mask, dtype=bool)
+        if lake_mask is not None and np.asarray(lake_mask).shape == ocean.shape
+        else np.zeros(ocean.shape, dtype=bool)
+    )
+    rivers = (
+        np.asarray(river_mask, dtype=bool)
+        if river_mask is not None and np.asarray(river_mask).shape == ocean.shape
+        else np.zeros(ocean.shape, dtype=bool)
+    )
+    slp = (
+        np.asarray(slope, dtype=np.float64)
+        if slope is not None and np.asarray(slope).shape == ocean.shape
+        else np.full(ocean.shape, np.inf, dtype=np.float64)
+    )
+    inundated = (frac >= float(wetland_min_water_fraction)) | lakes
+    near_water = _dilate8_ew(lakes | rivers)
+    low_slope = slp <= float(wetland_max_slope)
+    wetland_potential = wet & ~ocean
     wetland = (
-        (moisture == int(MoistureRegime.WET))
+        inundated
+        & low_slope
+        & near_water
         & (growing_months >= 3)
-        & (thermal != int(ThermalRegime.ICE))
+        & ~ice
+        & ~arid
         & ~ocean
+        & (thermal != int(ThermalRegime.NON_GROWING))
+        & (thermal != int(ThermalRegime.FROST_SEASONAL))
+        & (thermal != int(ThermalRegime.ICE))
     )
     klass[wetland] = int(BiomeV2Class.WETLAND)
     klass[ocean] = int(BiomeV2Class.OCEAN)
+    growing_classes = {
+        int(BiomeV2Class.GROWING_MOIST),
+        int(BiomeV2Class.GROWING_DEFICIT),
+    }
+    bad_grow = (~ocean) & (growing_months == 0) & np.isin(klass, list(growing_classes))
+    klass[bad_grow] = int(BiomeV2Class.FROST_SEASONAL)
 
     land = ~ocean
     legend = {str(k): v for k, v in CLASS_NAMES.items()}
     unique_classes = {int(v) for v in np.unique(klass)}
     diag: dict[str, Any] = {
-        "algorithm": "biome_v2_climatology_c6",
+        "algorithm": "biome_v2_c91_4_v1",
         "holdridge_role": "annual_diagnostic",
         "soil_moisture_statistic": SOIL_MOISTURE_STATISTIC,
         "frost_c": float(frost_c),
@@ -182,6 +262,21 @@ def classify_biome_v2(
         "legend_exact": legend == {str(i): CLASS_NAMES[i] for i in range(len(CLASS_NAMES))},
         "unique_classes_in_legend": unique_classes.issubset(set(CLASS_NAMES)),
         "soil_input_ndim": int(np.asarray(soil_moisture).ndim) if soil_moisture is not None else 0,
+        "wetland_min_water_fraction": float(wetland_min_water_fraction),
+        "wetland_max_slope": float(wetland_max_slope),
+        "wetland_land_fraction": (
+            float(np.count_nonzero(wetland) / max(int(np.count_nonzero(land)), 1))
+        ),
+        "wetland_potential_land_fraction": (
+            float(np.count_nonzero(wetland_potential) / max(int(np.count_nonzero(land)), 1))
+        ),
+        "growing_moist_zero_growing_months": int(
+            np.count_nonzero(
+                land
+                & (growing_months == 0)
+                & (klass == int(BiomeV2Class.GROWING_MOIST))
+            )
+        ),
     }
     return {
         "frost_months": frost_months,
@@ -194,6 +289,7 @@ def classify_biome_v2(
         "thermal_regime_id": thermal,
         "moisture_regime_id": moisture,
         "biome_v2_class": klass,
+        "wetland_potential": wetland_potential,
         "diagnostics": diag,
     }
 
@@ -208,7 +304,7 @@ BIOME_V2_DISPLAY_CLASSES: dict[int, dict[str, str]] = {
     3: {"key": "growing_moist", "label": "Growing — moist", "color": "#5E8B57"},
     4: {"key": "growing_deficit", "label": "Growing — moisture deficit", "color": "#AAA05A"},
     5: {"key": "arid", "label": "Arid", "color": "#D1A466"},
-    6: {"key": "wetland_potential", "label": "Wetland potential", "color": "#397A72"},
+    6: {"key": "wetland", "label": "Wetland", "color": "#397A72"},
 }
 
 

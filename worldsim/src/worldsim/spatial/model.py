@@ -21,6 +21,10 @@ from worldsim.physical.hydrology.pipeline import HydrologyResult
 from worldsim.physical.moisture.pipeline import MoistureResult
 from worldsim.physical.vectorize.pipeline import VectorGeographyResult
 from worldsim.progress import ProgressReporter
+from worldsim.spatial.canonical_acceptance import (
+    aggregate_canonical_acceptance,
+    conjunction_from_gates,
+)
 from worldsim.spatial.coordinates import CoordinateSystem
 from worldsim.spatial.extent import SpatialExtent
 from worldsim.spatial.hex_grid.intersections import river_edge_mask
@@ -261,6 +265,16 @@ def _fill_rasters(
                 "hydrology/water_fraction_mean",
                 hydrology.water_fraction_mean.astype(np.float32),
             )
+        if getattr(hydrology, "water_fraction_monthly", None) is not None and hydrology.water_fraction_monthly.size:
+            store.put(
+                "hydrology/water_fraction_monthly",
+                hydrology.water_fraction_monthly.astype(np.float32),
+            )
+        if getattr(hydrology, "ice_fraction_monthly", None) is not None and hydrology.ice_fraction_monthly.size:
+            store.put(
+                "hydrology/ice_fraction_monthly",
+                hydrology.ice_fraction_monthly.astype(np.float32),
+            )
         if getattr(hydrology, "river_water_fraction", None) is not None and hydrology.river_water_fraction.size:
             store.put(
                 "hydrology/river_water_fraction",
@@ -374,23 +388,64 @@ def build_world_spatial_model(
 
     lengths = config.resolve_length_units(source_profile="atlas")
     emit_length_migration_warnings(lengths)
+    extra_meta = dict(metadata or {})
+    report = aggregate_canonical_acceptance(
+        moisture=moisture,
+        hydrology=hydrology,
+        vectors=vectors,
+        ecology=ecology,
+        landforms=landforms,
+        hex_grid=hex_grid,
+        erosion=extra_meta.get("erosion_diagnostics"),
+        final=extra_meta.get("final_diagnostics"),
+    )
+
+    def _stage_ok(obj: Any) -> bool:
+        diag = getattr(obj, "diagnostics", None) if obj is not None else None
+        if not isinstance(diag, dict):
+            return False
+        return bool(diag.get("acceptance_ok"))
+
+    hex_diag = getattr(hex_grid, "diagnostics", None)
+    hex_prod = (
+        hex_diag.get("production_acceptance_ok") if isinstance(hex_diag, dict) else None
+    )
+    extra = {
+        k: extra_meta[k]
+        for k in extra_meta
+        if k not in {"erosion_diagnostics", "final_diagnostics"}
+    }
+    extra.update(
+        {
+            "hex_production_acceptance_ok": hex_prod,
+            "vector_acceptance_ok": _stage_ok(vectors),
+            "ecology_acceptance_ok": _stage_ok(ecology),
+            "moisture_acceptance_ok": _stage_ok(moisture),
+            "hydrology_acceptance_ok": _stage_ok(hydrology),
+            "landforms_acceptance_ok": _stage_ok(landforms),
+            "hex_layout_algorithm_version": HEX_LAYOUT_ALGORITHM_VERSION,
+            "length_units": lengths.to_dict(),
+            "planet_radius_km": float(config.planet_radius_km),
+            "canonical_acceptance_version": report["version"],
+            "canonical_acceptance": report,
+            "overall_acceptance_ok": report["overall_acceptance_ok"],
+            "moisture_spinup_ok": report["gates"]["moisture_spinup_ok"],
+            "moisture_budget_ok": report["gates"]["moisture_budget_ok"],
+            "hydrology_coupling_ok": report["gates"]["hydrology_ok"],
+            "biome_v2_ok": report["gates"]["biome_v2_ok"],
+            "landforms_ok": report["gates"]["landforms_ok"],
+            "hex_layout_ok": report["gates"]["hex_layout_ok"],
+            "failed_gates": list(report["failed_gates"]),
+        }
+    )
     manifest = WorldManifest(
         world_model_schema_version=WORLD_MODEL_SCHEMA_VERSION,
         master_seed=master_seed,
         stage="world",
         resolutions=resolutions,
         hex_n_cells=hex_grid.n_cells,
-        acceptance_ok=bool(hex_grid.diagnostics.get("acceptance_ok")),
-        extra={
-            "hex_production_acceptance_ok": hex_grid.diagnostics.get(
-                "production_acceptance_ok"
-            ),
-            "vector_acceptance_ok": vectors.diagnostics.get("acceptance_ok"),
-            "ecology_acceptance_ok": ecology.diagnostics.get("acceptance_ok"),
-            "hex_layout_algorithm_version": HEX_LAYOUT_ALGORITHM_VERSION,
-            "length_units": lengths.to_dict(),
-            "planet_radius_km": float(config.planet_radius_km),
-        },
+        acceptance_ok=bool(report["overall_acceptance_ok"]),
+        extra=extra,
     )
 
     model = WorldSpatialModel(
@@ -465,7 +520,31 @@ def rebuild_hex_analysis_cache(
     model.hex_grid = hex_grid
     model._queries = None
     model.manifest.hex_n_cells = hex_grid.n_cells
-    model.manifest.acceptance_ok = bool(hex_grid.diagnostics.get("acceptance_ok"))
+    extra = dict(model.manifest.extra or {})
+    prev = dict(extra.get("canonical_acceptance") or {})
+    gates = dict(prev.get("gates") or {})
+    if gates:
+        gates["hex_layout_ok"] = bool(hex_grid.diagnostics.get("acceptance_ok"))
+        report = conjunction_from_gates(gates)
+    else:
+        report = aggregate_canonical_acceptance(
+            hex_grid=hex_grid,
+            moisture=moisture,
+            ecology=ecology,
+            hydrology=hydrology,
+            landforms=landforms,
+            erosion=extra.get("erosion_diagnostics"),
+            final=extra.get("final_diagnostics"),
+        )
+    extra["canonical_acceptance"] = report
+    extra["overall_acceptance_ok"] = report["overall_acceptance_ok"]
+    extra["hex_layout_ok"] = report["gates"]["hex_layout_ok"]
+    extra["failed_gates"] = list(report["failed_gates"])
+    extra["hex_production_acceptance_ok"] = hex_grid.diagnostics.get(
+        "production_acceptance_ok"
+    )
+    model.manifest.extra = extra
+    model.manifest.acceptance_ok = bool(report["overall_acceptance_ok"])
     return hex_grid
 
 
@@ -540,6 +619,8 @@ def hydrology_from_rasters(
     )
     return SimpleNamespace(
         water_fraction_mean=_opt("hydrology/water_fraction_mean"),
+        water_fraction_monthly=_opt("hydrology/water_fraction_monthly"),
+        ice_fraction_monthly=_opt("hydrology/ice_fraction_monthly"),
         lake_mask=(_opt("hydrology/lake_mask").astype(bool) if rasters.has("hydrology/lake_mask") else None),
         channel_state=_opt("hydrology/channel_state"),
         river_discharge_proxy=_opt("hydrology/river_discharge_proxy"),

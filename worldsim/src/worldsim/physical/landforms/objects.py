@@ -9,8 +9,11 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from worldsim.physical.landforms.classify import BroadContext
-from worldsim.physical.landforms.params import LandformParams, min_object_cells
+from worldsim.physical.landforms.classify import BroadContext, _dilate_cylindrical
+from worldsim.physical.landforms.params import (
+    LandformParams,
+    effective_min_cells_honest,
+)
 
 
 @dataclass
@@ -31,6 +34,7 @@ class MountainRange:
     confidence: float
     crosses_ew_seam: bool
     ridge_line: list[list[float]] = field(default_factory=list)
+    system_id: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -50,6 +54,7 @@ class MountainRange:
             "confidence": self.confidence,
             "crosses_ew_seam": self.crosses_ew_seam,
             "ridge_line": list(self.ridge_line),
+            "system_id": int(self.system_id or self.id),
         }
 
 
@@ -215,8 +220,9 @@ def _split_polyline_at_seam(line: list[list[float]]) -> list[list[list[float]]]:
 def _ridge_centerline(
     mask: NDArray[np.bool_],
     elevation_m: NDArray[np.floating],
+    tpi: NDArray[np.floating] | None = None,
 ) -> list[list[float]]:
-    """Geodesic longest-path spine on the range mask; PCA is not used for the path."""
+    """High-ground / TPI-weighted spine; geodesic diameter of the mask is not the ridge."""
     sel = np.asarray(mask, dtype=bool)
     elev = np.asarray(elevation_m, dtype=np.float64)
     h, w = sel.shape
@@ -229,10 +235,28 @@ def _ridge_centerline(
     shift = _contiguous_ew_shift(sel)
     sel_u = np.roll(sel, -shift, axis=1) if shift else sel
     elev_u = np.roll(elev, -shift, axis=1) if shift else elev
+    tpi_u = None
+    if tpi is not None and np.asarray(tpi).shape == elev.shape:
+        tpi_u = np.roll(np.asarray(tpi, dtype=np.float64), -shift, axis=1) if shift else np.asarray(
+            tpi, dtype=np.float64
+        )
     ys_u, xs_u = np.where(sel_u)
     n = int(ys_u.size)
     index = -np.ones((h, w), dtype=np.int32)
     index[ys_u, xs_u] = np.arange(n, dtype=np.int32)
+    e_sel = elev_u[ys_u, xs_u]
+    e_min = float(np.min(e_sel))
+    e_span = max(float(np.max(e_sel) - e_min), 1.0)
+    elev_n = (e_sel - e_min) / e_span
+    if tpi_u is not None:
+        t_sel = tpi_u[ys_u, xs_u]
+        t_min = float(np.min(t_sel))
+        t_span = max(float(np.max(t_sel) - t_min), 1.0)
+        tpi_n = (t_sel - t_min) / t_span
+    else:
+        tpi_n = elev_n
+    prefer = np.clip(0.55 * elev_n + 0.45 * tpi_n, 0.0, 1.0)
+    weight = 0.12 + 0.88 * prefer
 
     def neighbours(k: int) -> list[int]:
         j, i = int(ys_u[k]), int(xs_u[k])
@@ -264,7 +288,7 @@ def _ridge_centerline(
             uj, ui = int(ys_u[u]), int(xs_u[u])
             for v in neighbours(u):
                 vj, vi = int(ys_u[v]), int(xs_u[v])
-                step = float(np.hypot(vj - uj, vi - ui))
+                step = float(np.hypot(vj - uj, vi - ui)) / max(float(weight[v]), 0.08)
                 nd = d + step
                 if nd + 1e-12 < dist[v]:
                     dist[v] = nd
@@ -278,10 +302,9 @@ def _ridge_centerline(
         path.reverse()
         return end, path
 
-    seed = int(np.argmax(elev_u[ys_u, xs_u]))
+    seed = int(np.argmax(prefer))
     a, _ = farthest(seed)
     _b, path = farthest(a)
-    # Prefer higher cells: if the path has tiny stubs, keep the diameter path only.
     line: list[list[float]] = []
     for k in path:
         i_orig = (int(xs_u[k]) + shift) % w
@@ -317,6 +340,63 @@ def ridge_geometry_ok(
     }
 
 
+def _split_component_at_saddles(
+    sel: NDArray[np.bool_],
+    elevation_m: NDArray[np.floating],
+    *,
+    min_child_cells: int,
+) -> list[NDArray[np.bool_]]:
+    """Split a range blob at thin saddles / width constrictions."""
+    mask = np.asarray(sel, dtype=bool)
+    elev = np.asarray(elevation_m, dtype=np.float64)
+    ys, xs = np.where(mask)
+    if ys.size < max(int(min_child_cells) * 2, 8):
+        return [mask]
+    line = _ridge_centerline(mask, elev)
+    if len(line) < 5:
+        return [mask]
+    h, w = mask.shape
+    cut = np.zeros_like(mask)
+    cells: list[tuple[int, int]] = []
+    for x, y in line:
+        i = int(np.floor(float(x) * w)) % w
+        j = int(np.clip(np.floor((1.0 - float(y)) * 0.5 * h), 0, h - 1))
+        cells.append((j, i))
+    for k in range(1, len(cells) - 1):
+        j, i = cells[k]
+        j0, i0 = cells[k - 1]
+        j1, i1 = cells[k + 1]
+        if not mask[j, i]:
+            continue
+        thick = 0
+        for dj in (-1, 0, 1):
+            jj = j + dj
+            if jj < 0 or jj >= h:
+                continue
+            for di in (-1, 0, 1):
+                ii = (i + di) % w
+                if mask[jj, ii]:
+                    thick += 1
+        saddle = float(elev[j, i]) + 40.0 <= min(float(elev[j0, i0]), float(elev[j1, i1]))
+        # Width constriction (thin bar) or a true saddle on a slightly thicker neck.
+        if thick <= 3 or (thick <= 4 and saddle):
+            cut[j, i] = True
+    if not np.any(cut):
+        return [mask]
+    remaining = mask & ~cut
+    labels = _label_components_cylindrical(remaining)
+    kids: list[NDArray[np.bool_]] = []
+    for lab in np.unique(labels):
+        if int(lab) <= 0:
+            continue
+        child = labels == int(lab)
+        if int(np.count_nonzero(child)) >= int(min_child_cells):
+            kids.append(child)
+    if len(kids) < 2:
+        return [mask]
+    return kids
+
+
 def extract_mountain_ranges(
     *,
     mountain_score: NDArray[np.floating],
@@ -328,6 +408,7 @@ def extract_mountain_ranges(
     relief_meso: NDArray[np.floating],
     params: LandformParams,
     cell_area_km2: float = 1.0,
+    tpi: NDArray[np.floating] | None = None,
 ) -> tuple[NDArray[np.int32], list[MountainRange]]:
     ocean = np.asarray(ocean_mask, dtype=bool)
     score = np.asarray(mountain_score, dtype=np.float64)
@@ -345,23 +426,38 @@ def extract_mountain_ranges(
     ranges: list[MountainRange] = []
     elev = np.asarray(elevation_m, dtype=np.float64)
     new_id = 1
-    min_cells = max(
-        min_object_cells(
-            min_km2=params.min_range_km2,
-            min_cells=params.min_range_cells,
-            cell_area_km2=cell_area_km2,
-        ),
-        int(params.min_component_cells),
+    min_cells, _meta = effective_min_cells_honest(
+        min_km2=params.min_range_km2,
+        min_cells=params.min_range_cells,
+        cell_area_km2=cell_area_km2,
+        min_component_cells=params.min_component_cells,
     )
+    pieces: list[tuple[NDArray[np.bool_], int]] = []
+    system = 1
     for old, area, cj, ci in ordered:
         if area < min_cells:
             continue
         sel = raw == old
+        children = _split_component_at_saddles(sel, elev, min_child_cells=min_cells)
+        for child in children:
+            pieces.append((child, system))
+        system += 1
+    new_id = 1
+    for sel, sys_id in pieces:
+        area = int(np.count_nonzero(sel))
+        if area < min_cells:
+            continue
         xs = np.where(sel)[1]
         crosses = bool(np.any(xs == 0) and np.any(xs == elev.shape[1] - 1))
         e = elev[sel]
-        # Orientation from PCA of coordinates
         ys, xsi = np.where(sel)
+        cj = float(np.mean(ys))
+        ang = 2.0 * np.pi * xsi.astype(np.float64) / float(elev.shape[1])
+        ci = float(
+            (np.arctan2(np.mean(np.sin(ang)), np.mean(np.cos(ang))) % (2.0 * np.pi))
+            * elev.shape[1]
+            / (2.0 * np.pi)
+        )
         if ys.size >= 2:
             shift = _contiguous_ew_shift(sel)
             xs_u = (xsi.astype(np.float64) - shift) % elev.shape[1]
@@ -391,7 +487,8 @@ def extract_mountain_ranges(
             provenance_mode=prov,
             confidence=float(np.mean(confidence[sel])),
             crosses_ew_seam=crosses,
-            ridge_line=_ridge_centerline(sel, elev),
+            ridge_line=_ridge_centerline(sel, elev, tpi=tpi),
+            system_id=int(sys_id),
         )
         ranges.append(rec)
         id_map[sel] = new_id
@@ -421,13 +518,11 @@ def extract_plateaus(
     plateaus: list[Plateau] = []
     elev = np.asarray(elevation_m, dtype=np.float64)
     new_id = 1
-    min_cells = max(
-        min_object_cells(
-            min_km2=params.min_plateau_km2,
-            min_cells=params.min_plateau_cells,
-            cell_area_km2=cell_area_km2,
-        ),
-        int(params.min_component_cells),
+    min_cells, _meta = effective_min_cells_honest(
+        min_km2=params.min_plateau_km2,
+        min_cells=params.min_plateau_cells,
+        cell_area_km2=cell_area_km2,
+        min_component_cells=params.min_component_cells,
     )
     for old, area, cj, ci in ordered:
         if area < min_cells:
@@ -451,7 +546,7 @@ def extract_plateaus(
             provenance_mode=prov,
             confidence=float(np.mean(confidence[sel])),
             crosses_ew_seam=crosses,
-            rim_line=_prune_polyline(_mask_contour_ring(sel)),
+            rim_line=_plateau_steep_rim_line(sel, slope, params),
         )
         plateaus.append(rec)
         id_map[sel] = new_id
@@ -476,6 +571,20 @@ def _mask_contour_ring(mask: NDArray[np.bool_]) -> list[list[float]]:
     ]
     sanitized = _sanitize_ring([(p[0], p[1]) for p in ring])
     return [[float(x), float(y)] for x, y in sanitized]
+
+
+def _plateau_steep_rim_line(
+    mask: NDArray[np.bool_],
+    slope: NDArray[np.floating],
+    params: LandformParams,
+) -> list[list[float]]:
+    """Rim follows the steep/scarp edge, not a duplicate of the filled outline."""
+    sel = np.asarray(mask, dtype=bool)
+    slp = np.asarray(slope, dtype=np.float64)
+    edge = sel & _dilate_cylindrical(~sel)
+    steep = edge & (slp >= float(params.escarpment_slope))
+    use = steep if int(np.count_nonzero(steep)) >= 3 else edge
+    return _prune_polyline(_mask_contour_ring(use))
 
 
 def components_to_geojson_polygons(

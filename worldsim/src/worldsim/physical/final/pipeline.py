@@ -626,7 +626,12 @@ def build_final_recalculation(
         "hydro_precip_source": coupling.get("hydro_precip_source"),
         "micro_depressions_conditioned": True,
         "slope_algorithm": "metric_gridmetrics_v1",
-        "acceptance_ok": bool(stable and no_catastrophe),
+        "final_stage_acceptance_ok": bool(
+            stable and no_catastrophe and landforms_ok and fluvial_nontrivial
+        ),
+        "acceptance_ok": bool(
+            stable and no_catastrophe and landforms_ok and fluvial_nontrivial
+        ),
     }
 
     if reporter is not None:

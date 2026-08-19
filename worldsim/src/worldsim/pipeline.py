@@ -1703,6 +1703,10 @@ def run_world(
             "tectonics_seed": state.metadata.get("tectonics_seed"),
             "terrain_resolution": [tw, th],
             "climate_resolution": [cw, ch],
+            "erosion_diagnostics": dict(
+                getattr(getattr(state, "erosion", None), "diagnostics", None) or {}
+            ),
+            "final_diagnostics": dict(final.diagnostics),
         },
         reporter=reporter,
     )
@@ -1710,6 +1714,16 @@ def run_world(
     timeline = build_environment_timeline(model)
     model.attach_environment_timeline(timeline)
     model.save(world_root)
+    from worldsim.spatial.canonical_acceptance import stamp_into_diagnostics
+
+    report = model.manifest.extra.get("canonical_acceptance") or {}
+    stamp_into_diagnostics(final.diagnostics, report)
+    final_diag_path = output_dir / "final" / "final_diagnostics.json"
+    if final_diag_path.is_file():
+        final_diag_path.write_text(
+            json.dumps(final.diagnostics, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     atlas_meta = export_atlas_display(model, world_root / "atlas_display")
     _attach_world(state, model)
 
