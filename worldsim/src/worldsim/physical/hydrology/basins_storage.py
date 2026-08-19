@@ -14,6 +14,7 @@ from worldsim.physical.hydrology.lakes_meta import (
     apply_lake_identity,
     derive_lake_axes,
 )
+from worldsim.physical.hydrology.mass_ledger import LakeMonthLedger
 from worldsim.physical.hydrology.transmission import month_pet_fraction
 
 _VOLUME_EPS_M3 = 1.0
@@ -226,6 +227,60 @@ def _reclass_storage_axes(rec: dict[str, Any], *, months_wet: int, months_frozen
     apply_lake_identity(rec)
 
 
+def lake_month_storage_step(
+    *,
+    avh: DiscreteAVH,
+    volume_m3: float,
+    land_inflow_m3: float,
+    upstream_lake_spill_m3: float,
+    body: NDArray[np.bool_],
+    temp_c: NDArray[np.floating],
+    precip_mm_on_water: float,
+    frozen_temp_c: float,
+    seepage_m_per_month: float = 0.0,
+    month_index: int = 0,
+    lake_id: int = 0,
+) -> tuple[float, float, float, float, LakeMonthLedger]:
+    """Advance one lake supernode by one month; return (volume, spill, evap+seep, wet_area_m2, ledger)."""
+    initial = float(volume_m3)
+    frozen = _month_frozen(np.asarray(temp_c), body, frozen_temp_c)
+    _z0, area0 = avh.lookup(initial)
+    channel_inflow = max(float(land_inflow_m3), 0.0)
+    lake_release = max(float(upstream_lake_spill_m3), 0.0)
+    precip_vol = 0.0
+    if area0 > 0.0 and precip_mm_on_water > 0.0:
+        precip_vol = (float(precip_mm_on_water) / 1000.0) * area0
+    volume = max(initial + channel_inflow + lake_release + precip_vol, 0.0)
+    _z1, area1 = avh.lookup(volume)
+    pet_mm = 0.0
+    if not frozen:
+        bio = float(np.clip(np.mean(temp_c[body]), 0.0, 30.0))
+        pet_mm = 58.93 * bio * month_pet_fraction(month_index)
+    evap = (pet_mm / 1000.0) * area1 if not frozen else 0.0
+    seep = max(float(seepage_m_per_month), 0.0) * area1
+    loss = min(volume, evap + seep)
+    volume = max(volume - loss, 0.0)
+    spilled = 0.0
+    if volume > avh.v_spill:
+        spilled = volume - avh.v_spill
+        volume = avh.v_spill
+    _zw, area = avh.lookup(volume)
+    ledger = LakeMonthLedger(
+        lake_id=int(lake_id),
+        month=int(month_index),
+        initial_storage_m3=initial,
+        local_land_runoff_m3=channel_inflow,
+        upstream_channel_inflow_m3=0.0,
+        upstream_lake_release_m3=lake_release,
+        direct_precip_on_water_m3=precip_vol,
+        final_storage_m3=float(volume),
+        downstream_release_m3=float(spilled),
+        open_water_evaporation_m3=float(min(evap, loss)),
+        seepage_m3=float(min(seep, max(loss - evap, 0.0))),
+    )
+    return float(volume), float(spilled), float(loss), float(area), ledger
+
+
 def apply_basin_storage(
     *,
     graph: CylindricalFlowGraph | None,
@@ -266,8 +321,9 @@ def apply_basin_storage(
         precip_m = np.asarray(monthly_precip, dtype=np.float64)
 
     area_m2_cell = float(cell_area_km2) * 1e6
-    water_monthly = np.zeros((months, h, w), dtype=np.float64)
-    ice_monthly = np.zeros((months, h, w), dtype=np.float64)
+    water_present_monthly = np.zeros((months, h, w), dtype=np.float64)
+    open_water_monthly = np.zeros((months, h, w), dtype=np.float64)
+    lake_ice_monthly = np.zeros((months, h, w), dtype=np.float64)
     stepped = 0
     reclass_playa = 0
     reclass_endorheic = 0
@@ -405,12 +461,14 @@ def apply_basin_storage(
         rec["ice_area_km2_monthly"] = [
             float(np.sum(f) * float(cell_area_km2)) for f in month_ice
         ]
-        rec["liquid_fraction_monthly"] = [
+        rec["open_water_fraction_monthly"] = [
             float(np.mean(f[body])) if n_cells else 0.0 for f in month_liquid
         ]
-        rec["ice_fraction_monthly"] = [
+        rec["lake_ice_fraction_monthly"] = [
             float(np.mean(f[body])) if n_cells else 0.0 for f in month_ice
         ]
+        rec["liquid_fraction_monthly"] = list(rec["open_water_fraction_monthly"])
+        rec["ice_fraction_monthly"] = list(rec["lake_ice_fraction_monthly"])
         rec["fractions_are_monthly"] = True
         stepped += 1
         if periodic:
@@ -440,12 +498,14 @@ def apply_basin_storage(
         publish = not bool(rec.get("storage_unstable"))
         if publish and month_liquid:
             for m, (liq, ice) in enumerate(zip(month_liquid, month_ice, strict=True)):
-                water_monthly[m] += liq
-                ice_monthly[m] += ice
+                open_water_monthly[m] += liq
+                lake_ice_monthly[m] += ice
+                water_present_monthly[m] += liq + ice
 
-    water_monthly = np.clip(water_monthly, 0.0, 1.0)
-    ice_monthly = np.clip(ice_monthly, 0.0, 1.0)
-    water_sum = water_monthly.mean(axis=0) if months else np.zeros((h, w), dtype=np.float64)
+    water_present_monthly = np.clip(water_present_monthly, 0.0, 1.0)
+    open_water_monthly = np.clip(open_water_monthly, 0.0, 1.0)
+    lake_ice_monthly = np.clip(lake_ice_monthly, 0.0, 1.0)
+    water_sum = water_present_monthly.mean(axis=0) if months else np.zeros((h, w), dtype=np.float64)
 
     return {
         "basin_storage_stepped_count": stepped,
@@ -459,8 +519,9 @@ def apply_basin_storage(
         "basin_storage_nonperiodic_liquid_published_count": 0,
         "basin_storage_curve": str(storage_curve),
         "water_fraction_mean": water_sum,
-        "water_fraction_monthly": water_monthly,
-        "ice_fraction_monthly": ice_monthly,
+        "water_fraction_monthly": water_present_monthly,
+        "open_water_fraction_monthly": open_water_monthly,
+        "lake_ice_fraction_monthly": lake_ice_monthly,
         "lake_fractions_are_monthly": True,
     }
 

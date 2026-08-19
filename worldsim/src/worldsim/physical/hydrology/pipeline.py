@@ -11,23 +11,22 @@ import numpy as np
 from numpy.typing import NDArray
 
 from worldsim.physical.erosion.pipeline import ErosionResult
-from worldsim.physical.hydrology.basins_storage import (
-    apply_basin_storage,
-    liquid_id_from_fraction,
-)
+from worldsim.physical.hydrology.basins_storage import liquid_id_from_fraction
 from worldsim.physical.hydrology.channels import (
     classify_channel_states,
-    display_channel_candidates,
     effective_channel_min_cells,
     channel_width_m_from_discharge,
     physical_channel_mask,
     river_water_fraction,
 )
 from worldsim.physical.hydrology.cylindrical_graph import (
-    accumulate_weights_lake_aware,
     classify_outlets,
     effective_discharge_and_sink,
-    first_downstream_outside_lake,
+)
+from worldsim.physical.hydrology.network_tiers import (
+    build_display_river_mask,
+    channel_tier_diagnostics,
+    geomorphic_channel_mask,
 )
 from worldsim.physical.hydrology.discharge import (
     SECONDS_PER_DAY,
@@ -39,10 +38,10 @@ from worldsim.physical.hydrology.flow import accuflux_on_land, run_pyflwdir_core
 from worldsim.physical.hydrology.lakes_meta import build_lake_records
 from worldsim.physical.hydrology.rivers import (
     gate_lakes_by_water_supply,
-    gate_river_mask_by_discharge,
     lake_mask_from_fill,
 )
-from worldsim.physical.hydrology.runoff import build_monthly_runoff
+from worldsim.physical.cryosphere.pipeline import build_g0_surface_water
+from worldsim.physical.hydrology.monthly_router import spinup_condensed_lake_routing
 from worldsim.physical.hydrology.transmission import (
     YEAR_DAYS,
     channel_bed_loss_potential_m3s,
@@ -113,11 +112,19 @@ class HydrologyResult:
     monthly_discharge_gross: NDArray[np.float64] = field(default_factory=lambda: np.zeros((0,)))
     monthly_runoff: NDArray[np.float64] = field(default_factory=lambda: np.zeros((0,)))
     snow_store: NDArray[np.float64] = field(default_factory=lambda: np.zeros((0,)))
+    seasonal_snow_swe: NDArray[np.float64] = field(default_factory=lambda: np.zeros((0,)))
+    firn_swe: NDArray[np.float64] = field(default_factory=lambda: np.zeros((0,)))
     soil_store: NDArray[np.float64] = field(default_factory=lambda: np.zeros((0,)))
     soil_store_monthly: NDArray[np.float64] = field(
         default_factory=lambda: np.zeros((0,), dtype=np.float64)
     )
     channel_mask: NDArray[np.bool_] = field(default_factory=lambda: np.zeros((0,), dtype=bool))
+    geomorphic_channel_mask: NDArray[np.bool_] = field(
+        default_factory=lambda: np.zeros((0,), dtype=bool)
+    )
+    display_river_mask: NDArray[np.bool_] = field(
+        default_factory=lambda: np.zeros((0,), dtype=bool)
+    )
     channel_state: NDArray[np.uint8] = field(default_factory=lambda: np.zeros((0,), dtype=np.uint8))
     river_water_fraction: NDArray[np.float64] = field(
         default_factory=lambda: np.zeros((0,), dtype=np.float64)
@@ -137,7 +144,10 @@ class HydrologyResult:
     water_fraction_monthly: NDArray[np.float64] = field(
         default_factory=lambda: np.zeros((0,), dtype=np.float64)
     )
-    ice_fraction_monthly: NDArray[np.float64] = field(
+    open_water_fraction_monthly: NDArray[np.float64] = field(
+        default_factory=lambda: np.zeros((0,), dtype=np.float64)
+    )
+    lake_ice_fraction_monthly: NDArray[np.float64] = field(
         default_factory=lambda: np.zeros((0,), dtype=np.float64)
     )
     lake_records: list[dict[str, Any]] = field(default_factory=list)
@@ -172,16 +182,26 @@ class HydrologyResult:
             payload["monthly_runoff"] = self.monthly_runoff
         if self.snow_store.size:
             payload["snow_store"] = self.snow_store
+        if self.seasonal_snow_swe.size:
+            payload["seasonal_snow_swe"] = self.seasonal_snow_swe
+        if self.firn_swe.size:
+            payload["firn_swe"] = self.firn_swe
         if self.soil_store.size:
             payload["soil_store"] = self.soil_store
         if self.soil_store_monthly.size:
             payload["soil_store_monthly"] = self.soil_store_monthly
         if self.water_fraction_monthly.size:
             payload["water_fraction_monthly"] = self.water_fraction_monthly
-        if self.ice_fraction_monthly.size:
-            payload["ice_fraction_monthly"] = self.ice_fraction_monthly
+        if self.open_water_fraction_monthly.size:
+            payload["open_water_fraction_monthly"] = self.open_water_fraction_monthly
+        if self.lake_ice_fraction_monthly.size:
+            payload["lake_ice_fraction_monthly"] = self.lake_ice_fraction_monthly
         if self.channel_mask.size:
             payload["channel_mask"] = self.channel_mask.astype(np.uint8)
+        if self.geomorphic_channel_mask.size:
+            payload["geomorphic_channel_mask"] = self.geomorphic_channel_mask.astype(np.uint8)
+        if self.display_river_mask.size:
+            payload["display_river_mask"] = self.display_river_mask.astype(np.uint8)
         if self.channel_state.size:
             payload["channel_state"] = self.channel_state
         if self.river_water_fraction.size:
@@ -253,7 +273,7 @@ def build_hydrology(
         annual_temp = np.full((h, w), 15.0, dtype=np.float64)
         temp_m = np.broadcast_to(annual_temp, (months, h, w)).copy()
 
-    runoff_pack = build_monthly_runoff(
+    runoff_pack = build_g0_surface_water(
         precipitation=precip_m,
         temperature_c=temp_m,
         ocean_mask=ocean,
@@ -269,6 +289,8 @@ def build_hydrology(
     )
     monthly_runoff = np.asarray(runoff_pack["runoff"], dtype=np.float64)
     snow_store = np.asarray(runoff_pack["snow_store"], dtype=np.float64)
+    seasonal_snow_swe = np.asarray(runoff_pack.get("seasonal_snow_swe", snow_store), dtype=np.float64)
+    firn_swe = np.asarray(runoff_pack.get("firn_swe", np.zeros_like(snow_store)), dtype=np.float64)
     soil_store = np.asarray(runoff_pack["soil_store"], dtype=np.float64)
     soil_store_monthly = np.asarray(
         runoff_pack.get("soil_store_monthly", np.zeros((0,))), dtype=np.float64
@@ -294,11 +316,6 @@ def build_hydrology(
         core["flow_accumulation"],
         ocean,
         min_cells=river_min_cells,
-    )
-    river_candidates = display_channel_candidates(
-        channel_mask,
-        core["flow_accumulation"],
-        fraction=params.river_acc_fraction,
     )
     lake_raw, lake_id_raw, _lake_count_raw = lake_mask_from_fill(
         elev,
@@ -368,21 +385,12 @@ def build_hydrology(
         days=float(YEAR_DAYS),
     )
 
-    river_mask, river_gate_diag = gate_river_mask_by_discharge(
-        river_candidates,
-        discharge_eff,
-        core["flow_direction"],
-        ocean,
-        candidate_quantile=params.river_discharge_candidate_quantile,
-        min_effective_discharge=params.river_min_effective_discharge,
-        inherit_downstream=False,
-    )
     lake_mask, lake_id, lake_count, lake_gate_diag = gate_lakes_by_water_supply(
         lake_raw,
         lake_id_raw,
         annual_precip,
         ocean,
-        river_mask=river_mask,
+        river_mask=channel_mask,
         discharge_effective=discharge_eff,
         temperature_annual_c=annual_temp,
         precip_land_quantile=params.lake_precip_land_quantile,
@@ -404,31 +412,22 @@ def build_hydrology(
         frozen_temp_c=params.lake_min_mean_temp_c,
     )
     basin_envelope_id = np.asarray(lake_id, dtype=np.int32).copy()
-    # C9.1.1: lakes are storage nodes. Re-route so through-flow does not leave
-    # the envelope; storage then reads that inflow once; spill is injected
-    # *outside* the envelope.
-    # Rebuild monthly_eff with lake-aware routing and refresh discharge_eff.
+    monthly_local_m3s = np.zeros((months, h, w), dtype=np.float64)
     for m in range(months):
-        local_m3s = runoff_proxy_to_m3s(
+        monthly_local_m3s[m] = runoff_proxy_to_m3s(
             monthly_runoff[m],
             cell_area_km2=gm.cell_area_km2,
             precip_scale_mm=params.precip_scale_mm,
             days=float(month_days(m)),
         )
-        q_m, lost_m = effective_discharge_and_sink(
-            graph, local_m3s, bed_loss_potential, lake_id=basin_envelope_id
-        )
-        monthly_eff[m] = q_m
-        monthly_bed_loss[m] = lost_m
-    # Recompute the canonical annual Q from the lake-aware monthly field.
-    discharge_eff = month_weighted_mean_m3s(monthly_eff)
 
-    storage_diag = apply_basin_storage(
+    routing = spinup_condensed_lake_routing(
         graph=graph,
-        lake_id=lake_id,
+        basin_envelope_id=basin_envelope_id,
         lake_records=lake_records,
         elevation_m=elev,
-        monthly_q_m3s=monthly_eff,
+        monthly_land_runoff_m3s=monthly_local_m3s,
+        bed_loss_potential_m3s=bed_loss_potential,
         temperature_c=temp_m,
         cell_area_km2=gm.cell_area_km2,
         monthly_precip=precip_m,
@@ -439,14 +438,32 @@ def build_hydrology(
         spinup_rel_tol=params.lake_storage_spinup_tol,
         storage_curve=params.lake_storage_curve,
     )
-    water_fraction_mean = np.asarray(
-        storage_diag.pop("water_fraction_mean"), dtype=np.float64
-    )
+    monthly_eff = np.asarray(routing["monthly_q_m3s"], dtype=np.float64)
+    monthly_bed_loss = np.asarray(routing["monthly_bed_loss_m3s"], dtype=np.float64)
+    discharge_eff = month_weighted_mean_m3s(monthly_eff)
+    storage_diag = {
+        k: v
+        for k, v in routing.items()
+        if k
+        not in (
+            "monthly_q_m3s",
+            "monthly_bed_loss_m3s",
+            "water_fraction_mean",
+            "water_fraction_monthly",
+            "open_water_fraction_monthly",
+            "lake_ice_fraction_monthly",
+            "condensed_graph",
+        )
+    }
+    water_fraction_mean = np.asarray(routing["water_fraction_mean"], dtype=np.float64)
     water_fraction_monthly = np.asarray(
-        storage_diag.pop("water_fraction_monthly", np.zeros((0,))), dtype=np.float64
+        routing["water_fraction_monthly"], dtype=np.float64
     )
-    ice_fraction_monthly = np.asarray(
-        storage_diag.pop("ice_fraction_monthly", np.zeros((0,))), dtype=np.float64
+    open_water_fraction_monthly = np.asarray(
+        routing["open_water_fraction_monthly"], dtype=np.float64
+    )
+    lake_ice_fraction_monthly = np.asarray(
+        routing["lake_ice_fraction_monthly"], dtype=np.float64
     )
     lake_id, liquid_mask = liquid_id_from_fraction(
         basin_envelope_id,
@@ -457,41 +474,37 @@ def build_hydrology(
     lake_cell_all = int(np.count_nonzero(basin_envelope_id > 0))
     lake_mask = liquid_mask
 
-    for m in range(months):
-        inject = np.zeros((h, w), dtype=np.float64)
-        seconds = float(month_days(m)) * SECONDS_PER_DAY
-        for rec in lake_records:
-            series = rec.get("spill_m3") or []
-            if m >= len(series):
-                continue
-            spilled = float(series[m])
-            if spilled <= 0.0:
-                continue
-            lid = int(rec.get("lake_id") or 0)
-            rr = rec.get("outlet_row", rec.get("sink_row"))
-            cc = rec.get("outlet_col", rec.get("sink_col"))
-            if rr is None or cc is None or lid <= 0:
-                continue
-            loc = first_downstream_outside_lake(
-                graph, int(rr), int(cc), basin_envelope_id, lid
-            )
-            if loc is None:
-                continue
-            inject[int(loc[0]), int(loc[1])] += spilled / max(seconds, 1.0)
-        if np.any(inject):
-            monthly_eff[m] += accumulate_weights_lake_aware(
-                graph, inject, lake_id=basin_envelope_id
-            )
-    discharge_eff = month_weighted_mean_m3s(monthly_eff)
-
-    state_network = channel_mask
     channel_state, channel_diag = classify_channel_states(
         monthly_eff,
-        state_network,
+        channel_mask,
         q_min_m3s=params.channel_q_min_m3s,
         perennial_min_months=params.channel_perennial_min_months,
         seasonal_min_months=params.channel_seasonal_min_months,
     )
+    geomorphic_mask = geomorphic_channel_mask(
+        channel_mask,
+        monthly_eff,
+        channel_state,
+        q_min_m3s=params.channel_q_min_m3s,
+        min_wet_months=params.channel_seasonal_min_months,
+    )
+    river_mask, river_gate_diag = build_display_river_mask(
+        physical_mask=channel_mask,
+        flow_accumulation=core["flow_accumulation"],
+        discharge_effective=discharge_eff,
+        flow_direction=core["flow_direction"],
+        ocean_mask=ocean,
+        acc_fraction=params.river_acc_fraction,
+        candidate_quantile=params.river_discharge_candidate_quantile,
+        min_effective_discharge=params.river_min_effective_discharge,
+        trace_downstream=True,
+    )
+    tier_diag = channel_tier_diagnostics(
+        physical_mask=channel_mask,
+        geomorphic_mask=geomorphic_mask,
+        display_mask=river_mask,
+    )
+
     width_m = channel_width_m_from_discharge(discharge_eff, channel_mask)
     river_frac = river_water_fraction(
         channel_mask,
@@ -558,7 +571,8 @@ def build_hydrology(
 
     n_land = int(np.count_nonzero(land))
     physical_n = int(np.count_nonzero(channel_mask))
-    display_n = int(np.count_nonzero(river_candidates))
+    geomorphic_n = int(np.count_nonzero(geomorphic_mask))
+    display_n = int(np.count_nonzero(river_mask))
     hidden_n = int(np.count_nonzero(channel_mask & ~river_mask))
     bed_loss_mean = month_weighted_mean_m3s(monthly_bed_loss)
     loss_minus_potential = monthly_bed_loss - bed_loss_potential[np.newaxis, :, :]
@@ -581,7 +595,11 @@ def build_hydrology(
         "max_stream_order": int(core["stream_order"].max()),
         "river_cell_count": int(np.count_nonzero(river_mask)),
         "channel_physical_cell_count": physical_n,
-        "channel_display_candidate_cell_count": display_n,
+        "channel_geomorphic_cell_count": geomorphic_n,
+        "channel_display_cell_count": display_n,
+        "channel_display_candidate_cell_count": int(
+            river_gate_diag.get("display_candidate_cell_count", display_n)
+        ),
         "channel_physical_not_display_count": hidden_n,
         "channel_physical_land_fraction": (
             float(physical_n / n_land) if n_land else 0.0
@@ -644,7 +662,9 @@ def build_hydrology(
         "lake_raster_wet_area_km2": float(np.sum(water_fraction_mean)) * float(gm.cell_area_km2),
         "river_acc_fraction": float(params.river_acc_fraction),
         "planet_radius_km": float(params.planet_radius_km),
-        "hydrology_algorithm": "c91_2_periodic_runoff_storage_v1",
+        "hydrology_algorithm": "pc2_final_q_network_v1",
+        "final_q_network_order_ok": True,
+        **tier_diag,
         **catchment_diag,
         **runoff_diag,
         **graph_diag,
@@ -684,9 +704,19 @@ def build_hydrology(
             diagnostics["acceptance_ok"] and q_through_once
         )
     runoff_periodic = bool(diagnostics.get("runoff_periodic", False))
+    g0_state_ok = bool(
+        diagnostics.get("snow_soil_state_periodic_or_firn_transfer_ok", False)
+    )
+    g0_mass_ok = bool(diagnostics.get("snow_soil_firn_mass_balance_ok", False))
     withheld = int(diagnostics.get("basin_storage_nonperiodic_liquid_published_count") or 0)
+    mass_ok = bool(diagnostics.get("hydrology_mass_balance_ok", False))
     diagnostics["acceptance_ok"] = bool(
-        diagnostics["acceptance_ok"] and runoff_periodic and withheld == 0
+        diagnostics["acceptance_ok"]
+        and mass_ok
+        and runoff_periodic
+        and g0_state_ok
+        and g0_mass_ok
+        and withheld == 0
     )
 
     if reporter is not None:
@@ -708,9 +738,13 @@ def build_hydrology(
         monthly_discharge_gross=monthly_gross,
         monthly_runoff=monthly_runoff,
         snow_store=snow_store,
+        seasonal_snow_swe=seasonal_snow_swe,
+        firn_swe=firn_swe,
         soil_store=soil_store,
         soil_store_monthly=soil_store_monthly,
         channel_mask=channel_mask,
+        geomorphic_channel_mask=geomorphic_mask,
+        display_river_mask=river_mask,
         channel_state=channel_state,
         river_water_fraction=river_frac,
         monthly_bed_loss=monthly_bed_loss,
@@ -720,7 +754,8 @@ def build_hydrology(
         basin_envelope_id=basin_envelope_id,
         water_fraction_mean=water_fraction_mean,
         water_fraction_monthly=water_fraction_monthly,
-        ice_fraction_monthly=ice_fraction_monthly,
+        open_water_fraction_monthly=open_water_fraction_monthly,
+        lake_ice_fraction_monthly=lake_ice_fraction_monthly,
         lake_records=lake_records,
         outlet_points=core["outlet_points"],
         ocean_mask=ocean,

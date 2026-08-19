@@ -36,6 +36,15 @@ class MoistureRegime(IntEnum):
 
 
 CLASS_NAMES = {int(v): v.name.lower() for v in BiomeV2Class}
+CLASS_DISPLAY_NAMES: dict[int, str] = {
+    int(BiomeV2Class.OCEAN): "ocean",
+    int(BiomeV2Class.ICE): "ice_climate_potential",
+    int(BiomeV2Class.FROST_SEASONAL): "frost_seasonal",
+    int(BiomeV2Class.GROWING_MOIST): "growing_moist",
+    int(BiomeV2Class.GROWING_DEFICIT): "growing_deficit",
+    int(BiomeV2Class.ARID): "arid",
+    int(BiomeV2Class.WETLAND): "wetland",
+}
 THERMAL_NAMES = {int(v): v.name.lower() for v in ThermalRegime}
 MOISTURE_NAMES = {int(v): v.name.lower() for v in MoistureRegime}
 

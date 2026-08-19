@@ -368,7 +368,7 @@ text = "X"
 unique_name_in_owner = true
 layout_mode = 2
 autowrap_mode = 3
-text = "A6 geography + B5 hypsometry/coupling/moisture. Fewer islands: ocean↑, plates↓, detail↓, folding↓. Defaults = engine."
+text = "A6 geography + B5 coupling/moisture + PC6 physical groups. Defaults = packaged engine."
 
 [node name="AdvScroll" type="ScrollContainer" parent="AdvancedPopup/AdvMargin/AdvOuter"]
 layout_mode = 2

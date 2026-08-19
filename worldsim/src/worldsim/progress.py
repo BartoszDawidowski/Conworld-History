@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from dataclasses import dataclass, field
 from typing import Any, Mapping, TextIO
 
@@ -14,6 +15,9 @@ class ProgressReporter:
 
     stream: TextIO = field(default_factory=lambda: sys.stdout)
     _closed: bool = field(default=False, init=False, repr=False)
+    stage_timings_s: dict[str, float] = field(default_factory=dict)
+    stage_peak_rss_mb: dict[str, float | None] = field(default_factory=dict)
+    _stage_started_at: dict[str, float] = field(default_factory=dict, repr=False)
 
     def emit(self, event: str, **payload: Any) -> None:
         if self._closed:
@@ -27,6 +31,7 @@ class ProgressReporter:
         self.emit("started", seed=seed, schema_version=schema_version)
 
     def stage_started(self, stage: str) -> None:
+        self._stage_started_at[stage] = time.perf_counter()
         self.emit("stage_started", stage=stage)
 
     def progress(self, stage: str, value: float) -> None:
@@ -35,7 +40,25 @@ class ProgressReporter:
         self.emit("progress", stage=stage, value=float(value))
 
     def stage_complete(self, stage: str) -> None:
+        started = self._stage_started_at.pop(stage, None)
+        if started is not None:
+            self.stage_timings_s[stage] = time.perf_counter() - started
+            try:
+                from worldsim.validation.physical_realism.metrics import peak_rss_mb
+
+                self.stage_peak_rss_mb[stage] = peak_rss_mb()
+            except Exception:
+                self.stage_peak_rss_mb[stage] = None
         self.emit("stage_complete", stage=stage)
+
+    def timing_summary(self) -> dict[str, Any]:
+        """Per-stage wall time and peak RSS snapshot for validation notes."""
+        total = float(sum(self.stage_timings_s.values()))
+        return {
+            "stage_timings_s": dict(self.stage_timings_s),
+            "stage_peak_rss_mb": dict(self.stage_peak_rss_mb),
+            "total_elapsed_s": total,
+        }
 
     def complete(self, world_path: str) -> None:
         self.emit("complete", world_path=world_path)

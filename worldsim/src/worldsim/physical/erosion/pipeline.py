@@ -10,10 +10,15 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from worldsim.physical.erosion.gates import (
+    domain_mean_abs_delta,
+    hillslope_erosion_gate,
+    process_delta_stats,
+)
+from worldsim.physical.erosion.process_deltas import ProcessDeltas
 from worldsim.physical.erosion.pass_one import (
     apply_erosion_pass_one,
     count_land_local_minima,
-    erosion_nontrivial_gate,
     land_elevation_delta_stats,
     land_roughness,
     rock_resistance_proxy,
@@ -56,6 +61,7 @@ class ErosionResult:
     annual_precip_terrain: NDArray[np.float64]
     ocean_mask: NDArray[np.bool_]
     diagnostics: dict[str, Any]
+    process_deltas: ProcessDeltas | None = None
 
     def save(self, directory: Path) -> None:
         directory.mkdir(parents=True, exist_ok=True)
@@ -128,10 +134,11 @@ def build_erosion_pass_one(
 
     before = np.asarray(terrain.elevation_m, dtype=np.float64)
     ocean = np.asarray(terrain.ocean_mask, dtype=np.bool_)
+    land = ~ocean
     minima_before = count_land_local_minima(before, ocean)
     rough_before = land_roughness(before, ocean)
 
-    dem_v1, delta = apply_erosion_pass_one(
+    dem_v1, process = apply_erosion_pass_one(
         elevation_m=before,
         ocean_mask=ocean,
         annual_precip=precip,
@@ -143,6 +150,7 @@ def build_erosion_pass_one(
         macro_blend=params.macro_blend,
         planet_radius_km=params.planet_radius_km,
     )
+    delta = process.total_erosion_delta_m
 
     if reporter is not None:
         reporter.progress("erosion", 0.8)
@@ -153,9 +161,16 @@ def build_erosion_pass_one(
     slope = slope_magnitude(dem_v1, planet_radius_km=params.planet_radius_km)
 
     delta_stats = land_elevation_delta_stats(before, dem_v1, ocean)
-    nontrivial, min_required = erosion_nontrivial_gate(
-        float(delta_stats["mean_abs_delta_land_m"]),
+    hillslope = process.thermal_or_hillslope_delta_m + process.first_fluvial_delta_m
+    hillslope_mean = domain_mean_abs_delta(hillslope, land, ocean)
+    nontrivial, min_required = hillslope_erosion_gate(
+        hillslope_mean,
         float(delta_stats["elev_range_land_m"]),
+    )
+    proc_stats = process_delta_stats(
+        process,
+        ocean,
+        elev_range_m=float(delta_stats["elev_range_land_m"]),
     )
     drainage_improved = minima_after <= minima_before
     roughness_reduced = rough_after <= rough_before * 1.02
@@ -169,9 +184,20 @@ def build_erosion_pass_one(
         "thermal_kappa": float(params.thermal_kappa),
         "thermal_kappa_units": "1km_cell_coeff; kappa_m2=thermal_kappa*1000^2",
         "fluvial_k": float(params.fluvial_k),
-        "fluvial_k_role": "first_pass_precip_slope_only",
+        "fluvial_k_role": "first_pass_precip_slope_hillslope",
         "max_step_m": float(params.max_step_m),
         "macro_blend": float(params.macro_blend),
+        "thermal_mean_abs_delta_m": float(
+            domain_mean_abs_delta(process.thermal_or_hillslope_delta_m, land, ocean)
+        ),
+        "first_fluvial_mean_abs_delta_m": float(
+            domain_mean_abs_delta(process.first_fluvial_delta_m, land, ocean)
+        ),
+        "conditioning_mean_abs_delta_m": float(
+            domain_mean_abs_delta(process.conditioning_or_pit_fill_delta_m, land, ocean)
+        ),
+        "hillslope_mean_abs_delta_m": hillslope_mean,
+        **proc_stats,
         "local_minima_before": minima_before,
         "local_minima_after": minima_after,
         "drainage_quality_improved": drainage_improved,
@@ -189,13 +215,14 @@ def build_erosion_pass_one(
         "erosion_nontrivial": nontrivial,
         "ocean_unchanged": ocean_unchanged,
         "slope_algorithm": "metric_gridmetrics_v1",
-        "erosion_algorithm": "c3_metric_pass1_v1",
+        "erosion_algorithm": "pc4_process_deltas_v1",
         "acceptance_ok": bool(
             drainage_improved
             and macro_preserved
             and roughness_reduced
             and ocean_unchanged
             and nontrivial
+            and bool(proc_stats["conditioning_excluded_from_erosion_acceptance"])
         ),
     }
 
@@ -212,5 +239,6 @@ def build_erosion_pass_one(
         rock_resistance=resistance,
         annual_precip_terrain=precip,
         ocean_mask=ocean,
+        process_deltas=process,
         diagnostics=diagnostics,
     )

@@ -5,13 +5,18 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
+from worldsim.physical.erosion.gates import (
+    EROSION_MIN_MEAN_ABS_DELTA_M,
+    EROSION_MIN_MEAN_ABS_FRAC_OF_RANGE,
+)
+from worldsim.physical.erosion.process_deltas import (
+    ProcessDeltas,
+    accumulate_conditioning_delta,
+)
 from worldsim.spatial.metrics import EARTH_RADIUS_KM, GridMetrics, grid_metrics
 
 # Cell laplacian * 0.08 matched ~1 km cells (F-21). Physical kappa = that * (1000 m)².
 THERMAL_KAPPA_REF_M = 1000.0
-# C3: a no-op pass must not pass acceptance just because correlation held.
-EROSION_MIN_MEAN_ABS_DELTA_M = 1.0
-EROSION_MIN_MEAN_ABS_FRAC_OF_RANGE = 0.0005
 
 
 def land_elevation_delta_stats(
@@ -223,31 +228,24 @@ def apply_erosion_pass_one(
     max_step_m: float = 25.0,
     macro_blend: float = 0.35,
     planet_radius_km: float = EARTH_RADIUS_KM,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Return ``(dem_v1, erosion_delta_m)`` with land-only climate-informed erosion.
-
-    Combines mild thermal diffusion (artefact reduction), precip×slope incision,
-    and pit filling for drainage tendency. Macro-relief is anchored by blending
-    back toward the original DEM each step. Slope and diffusion use GridMetrics
-    (CR-9 / F-21). ``thermal_kappa`` is the 1 km-cell coefficient
-    (``kappa_m2 = thermal_kappa * 1000²``). ``fluvial_k`` is first-pass
-    precip×slope only — it does not control final stream-power incision.
-    """
+) -> tuple[NDArray[np.float64], ProcessDeltas]:
+    """Return ``(dem_v1, process_deltas)`` with land-only climate-informed erosion."""
     elev0 = np.asarray(elevation_m, dtype=np.float64).copy()
     elev = elev0.copy()
     ocean = np.asarray(ocean_mask, dtype=np.bool_)
     land = ~ocean
-    precip = np.asarray(annual_precip, dtype=np.float64)
-    precip = np.maximum(precip, 0.0)
+    precip = np.maximum(np.asarray(annual_precip, dtype=np.float64), 0.0)
     if np.any(land):
         p_norm = precip / (np.percentile(precip[land], 90) + 1e-9)
     else:
         p_norm = precip
     p_norm = np.clip(p_norm, 0.0, 2.5)
-    resist = np.asarray(resistance, dtype=np.float64)
-    erodibility = 1.0 / np.maximum(resist, 0.15)
+    erodibility = 1.0 / np.maximum(np.asarray(resistance, dtype=np.float64), 0.15)
     gm = _metrics_for(elev, planet_radius_km=planet_radius_km)
     kappa_m2 = float(thermal_kappa) * (THERMAL_KAPPA_REF_M ** 2)
+    thermal_acc = np.zeros_like(elev)
+    fluvial_acc = np.zeros_like(elev)
+    conditioning_acc = np.zeros_like(elev)
 
     def _neighbors(e: NDArray[np.float64]) -> tuple[NDArray, NDArray, NDArray, NDArray]:
         east = np.roll(e, -1, axis=1)
@@ -261,38 +259,42 @@ def apply_erosion_pass_one(
         return east, west, north, south
 
     for _ in range(max(1, int(iterations))):
-        lap = _metric_laplacian(elev, gm)
-        thermal = np.clip(kappa_m2 * lap, -max_step_m, max_step_m)
-
+        thermal = np.clip(kappa_m2 * _metric_laplacian(elev, gm), -max_step_m, max_step_m)
+        thermal = np.where(land, thermal, 0.0)
+        thermal_acc += thermal
         slope = slope_magnitude(elev, metrics=gm)
         fluvial = np.clip(
             -fluvial_k * p_norm * slope * erodibility, -max_step_m, 0.0
         )
-
-        delta = thermal + fluvial
-        delta = np.where(land, delta, 0.0)
-        elev = elev + delta
-
-        # Pit fill: raise strict land minima toward lowest neighbour
+        fluvial = np.where(land, fluvial, 0.0)
+        fluvial_acc += fluvial
+        before = elev.copy()
+        elev = elev + thermal + fluvial
         east, west, north, south = _neighbors(elev)
         nmin = np.minimum(np.minimum(east, west), np.minimum(north, south))
-        pits = land & (elev < nmin)
-        elev = np.where(pits, 0.5 * (elev + nmin), elev)
-
-        # Keep land above sea level; leave ocean unchanged
+        elev = np.where(land & (elev < nmin), 0.5 * (elev + nmin), elev)
+        conditioning_acc = accumulate_conditioning_delta(
+            before, elev, conditioning_acc, land_mask=land
+        )
         elev = np.where(land, np.maximum(elev, 0.0), elev0)
-        # Anchor macro-relief toward original DEM
         elev = np.where(land, (1.0 - macro_blend) * elev + macro_blend * elev0, elev0)
 
     elev = np.where(ocean, elev0, elev)
     elev = np.where(land, np.maximum(elev, 0.0), elev)
-    # Final pit-fill pass without re-blending (drainage quality)
     for _ in range(2):
+        before = elev.copy()
         east, west, north, south = _neighbors(elev)
         nmin = np.minimum(np.minimum(east, west), np.minimum(north, south))
-        pits = land & (elev + 1e-6 < nmin)
-        elev = np.where(pits, nmin, elev)
+        elev = np.where(land & (elev + 1e-6 < nmin), nmin, elev)
         elev = np.where(land, np.maximum(elev, 0.0), elev0)
+        conditioning_acc = accumulate_conditioning_delta(
+            before, elev, conditioning_acc, land_mask=land
+        )
 
-    delta_m = elev - elev0
-    return elev, delta_m
+    deltas = ProcessDeltas.zeros(elev.shape)
+    deltas.merge_first_pass(
+        thermal=thermal_acc,
+        first_fluvial=fluvial_acc,
+        conditioning=conditioning_acc,
+    )
+    return elev, deltas

@@ -10,6 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from worldsim.physical.landforms.classify import BroadContext, _dilate_cylindrical
+from worldsim.physical.landforms.gates import canonical_extraction_min_cells
 from worldsim.physical.landforms.params import (
     LandformParams,
     effective_min_cells_honest,
@@ -426,10 +427,15 @@ def extract_mountain_ranges(
     ranges: list[MountainRange] = []
     elev = np.asarray(elevation_m, dtype=np.float64)
     new_id = 1
-    min_cells, _meta = effective_min_cells_honest(
+    min_cells, meta = effective_min_cells_honest(
         min_km2=params.min_range_km2,
         min_cells=params.min_range_cells,
         cell_area_km2=cell_area_km2,
+        min_component_cells=params.min_component_cells,
+    )
+    min_cells = canonical_extraction_min_cells(
+        floor_cells=min_cells,
+        representable_ok=bool(meta.get("representable_ok", True)),
         min_component_cells=params.min_component_cells,
     )
     pieces: list[tuple[NDArray[np.bool_], int]] = []
@@ -518,10 +524,15 @@ def extract_plateaus(
     plateaus: list[Plateau] = []
     elev = np.asarray(elevation_m, dtype=np.float64)
     new_id = 1
-    min_cells, _meta = effective_min_cells_honest(
+    min_cells, meta = effective_min_cells_honest(
         min_km2=params.min_plateau_km2,
         min_cells=params.min_plateau_cells,
         cell_area_km2=cell_area_km2,
+        min_component_cells=params.min_component_cells,
+    )
+    min_cells = canonical_extraction_min_cells(
+        floor_cells=min_cells,
+        representable_ok=bool(meta.get("representable_ok", True)),
         min_component_cells=params.min_component_cells,
     )
     for old, area, cj, ci in ordered:
@@ -578,13 +589,40 @@ def _plateau_steep_rim_line(
     slope: NDArray[np.floating],
     params: LandformParams,
 ) -> list[list[float]]:
-    """Rim follows the steep/scarp edge, not a duplicate of the filled outline."""
+    """Rim follows the steep/scarp edge; never fall back to the full perimeter."""
     sel = np.asarray(mask, dtype=bool)
     slp = np.asarray(slope, dtype=np.float64)
     edge = sel & _dilate_cylindrical(~sel)
     steep = edge & (slp >= float(params.escarpment_slope))
-    use = steep if int(np.count_nonzero(steep)) >= 3 else edge
-    return _prune_polyline(_mask_contour_ring(use))
+    if int(np.count_nonzero(steep)) < 3:
+        return []
+    rim = _prune_polyline(_mask_contour_ring(steep))
+    outline = _mask_contour_ring(sel)
+    if len(outline) >= 4 and rim == outline:
+        return []
+    return rim
+
+
+def plateau_rim_valid(
+    rim_line: list[list[float]],
+    mask: NDArray[np.bool_],
+    *,
+    slope: NDArray[np.floating] | None = None,
+    params: LandformParams | None = None,
+) -> bool:
+    """Empty rim is honest unresolved; filled perimeter fallback is not."""
+    _ = slope, params
+    sel = np.asarray(mask, dtype=bool)
+    interior = sel & ~_dilate_cylindrical(~sel)
+    if int(np.count_nonzero(interior)) < 3:
+        return True
+    rim = _prune_polyline(list(rim_line))
+    if len(rim) < 2:
+        return True
+    outline = _mask_contour_ring(sel)
+    if len(outline) >= 4 and rim == outline:
+        return False
+    return True
 
 
 def components_to_geojson_polygons(

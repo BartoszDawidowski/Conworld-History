@@ -20,7 +20,7 @@ def test_published_runoff_repeats_within_epsilon() -> None:
         spinup_rel_tol=0.01,
     )
     diag = out["diagnostics"]
-    assert diag["runoff_algorithm"] == "soil_bucket_periodic_v1"
+    assert diag["runoff_algorithm"] == "g0_snow_soil_firn_v1"
     assert diag["runoff_periodic"] is True
     assert float(diag["runoff_published_vs_repeat_rel_delta"]) <= 0.01
     assert float(diag["runoff_year2_vs_year1_rel_delta"]) > float(
@@ -127,13 +127,16 @@ def test_periodic_lake_publishes_monthly_liquid_and_ice() -> None:
         frozen_temp_c=1.0,
     )
     assert rec["fractions_are_monthly"] is True
-    assert len(rec["liquid_fraction_monthly"]) == 12
-    assert len(rec["ice_fraction_monthly"]) == 12
+    assert len(rec["open_water_fraction_monthly"]) == 12
+    assert len(rec["lake_ice_fraction_monthly"]) == 12
     assert rec["storage_periodic"] is True
-    ice = np.asarray(diag["ice_fraction_monthly"])
+    ice = np.asarray(diag["lake_ice_fraction_monthly"])
     water = np.asarray(diag["water_fraction_monthly"])
+    open_w = np.asarray(diag["open_water_fraction_monthly"])
     assert ice.shape == (12, h, w)
     assert water.shape == (12, h, w)
+    assert open_w.shape == (12, h, w)
     assert float(np.sum(ice[0:3])) > 0.0
-    assert float(np.sum(water[0:3])) == 0.0
+    assert float(np.sum(open_w[0:3])) == 0.0
+    assert float(np.sum(water[0:3])) > 0.0
     assert diag["lake_fractions_are_monthly"] is True

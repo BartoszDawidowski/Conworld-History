@@ -30,7 +30,7 @@ def _ocean_frame(h: int, w: int, margin: int = 2) -> np.ndarray:
 
 
 def test_algorithm_version_and_frozen_thresholds() -> None:
-    assert LANDFORM_ALGORITHM_VERSION == "landform_v3_c91_5"
+    assert LANDFORM_ALGORITHM_VERSION == "pc5_landform_acceptance_v1"
     p = LandformParams()
     assert p.mountain_score_threshold == 0.60
     assert p.plateau_score_threshold == 0.40
@@ -205,5 +205,11 @@ def test_production_block_plateau_not_escarpment_dominated() -> None:
     assert res.diagnostics["calibrated"] is True
     assert res.diagnostics["plateau_interior_not_escarpment_ok"] is True
     assert float(res.diagnostics["plateau_interior_escarpment_fraction"]) < 0.15
-    assert res.diagnostics["acceptance_ok"] is True
+    assert res.diagnostics["landforms_geometry_ok"] is True
     assert len(res.plateaus) >= 1
+    if res.diagnostics["plateau_fraction_alarm"] or res.diagnostics[
+        "mountain_fraction_alarm"
+    ]:
+        assert res.diagnostics["acceptance_ok"] is False
+    else:
+        assert res.diagnostics["acceptance_ok"] is True

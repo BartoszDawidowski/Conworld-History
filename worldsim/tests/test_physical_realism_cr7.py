@@ -95,7 +95,7 @@ def test_soil_bucket_et_reduces_runoff_below_rain_plus_melt() -> None:
     runoff = np.asarray(out["runoff"])
     assert float(np.sum(runoff)) < float(np.sum(rain_melt))
     assert float(np.sum(out["soil_et"])) > 0.0
-    assert out["diagnostics"]["runoff_algorithm"] == "soil_bucket_periodic_v1"
+    assert out["diagnostics"]["runoff_algorithm"] == "g0_snow_soil_firn_v1"
 
 
 def test_cold_month_still_holds_snow_before_soil() -> None:
@@ -170,10 +170,10 @@ def test_build_hydrology_cr7_units_and_states() -> None:
         params=HydrologyParams(fill_max_depth_m=25.0),
         temperature_c=temp,
     )
-    assert hydro.diagnostics["hydrology_algorithm"] == "c91_2_periodic_runoff_storage_v1"
+    assert hydro.diagnostics["hydrology_algorithm"] == "pc2_final_q_network_v1"
     assert hydro.diagnostics["q_units"] == "m3_s"
     assert hydro.diagnostics["q_canonical"] == "mean_monthly_m3s"
-    assert hydro.diagnostics["runoff_algorithm"] == "soil_bucket_periodic_v1"
+    assert hydro.diagnostics["runoff_algorithm"] == "g0_snow_soil_firn_v1"
     assert np.allclose(
         month_weighted_mean_m3s(hydro.monthly_discharge),
         hydro.river_discharge_proxy,

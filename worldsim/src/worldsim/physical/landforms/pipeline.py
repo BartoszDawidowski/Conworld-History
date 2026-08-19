@@ -20,6 +20,13 @@ from worldsim.physical.landforms.classify import (
     compute_scores,
     legend_payload,
 )
+from worldsim.physical.landforms.gates import (
+    MIN_RIDGE_COVERAGE_FRAC,
+    MAX_LAND_ESCARPMENT_FRAC,
+    MAX_PLATEAU_CONTEXT_ESCARPMENT_FRAC,
+    landform_acceptance_gates,
+    object_explosion_catastrophe,
+)
 from worldsim.physical.landforms.metrics import compute_metric_fields
 from worldsim.physical.landforms.objects import (
     MountainRange,
@@ -29,6 +36,7 @@ from worldsim.physical.landforms.objects import (
     components_to_geojson_rims,
     extract_mountain_ranges,
     extract_plateaus,
+    plateau_rim_valid,
     ridge_geometry_ok,
 )
 from worldsim.physical.landforms.params import (
@@ -385,7 +393,8 @@ def build_landform_analysis(
         chk = ridge_geometry_ok(rec.ridge_line, sel)
         ridge_in_mask = ridge_in_mask and chk["in_mask"]
         ridge_no_dup = ridge_no_dup and chk["no_consecutive_duplicates"]
-    esc_alarm_ok = bool(esc_frac < 0.20)
+    esc_alarm_ok = bool(esc_frac < MAX_LAND_ESCARPMENT_FRAC)
+    plat_ctx_esc_ok = bool(plat_esc_frac < MAX_PLATEAU_CONTEXT_ESCARPMENT_FRAC)
     cell_area = float(metrics_grid.cell_area_km2)
     min_range_cells_eff, range_floor = effective_min_cells_honest(
         min_km2=params.min_range_km2,
@@ -400,9 +409,65 @@ def build_landform_analysis(
         min_component_cells=params.min_component_cells,
     )
     plateau_honesty_ok = bool(plat_floor["honesty_ok"]) if calibrated else True
-    # Interior cells must not be painted escarpment. All-rim specks (no interior)
-    # can be 100% escarpment without failing this gate.
+    representability_ok = bool(plat_floor["honesty_ok"]) if calibrated else True
     interior_ok = bool(plat_interior_esc_frac < 0.15)
+    eligible_ranges = [r for r in ranges if int(r.area_cells) >= int(min_range_cells_eff)]
+    if eligible_ranges:
+        ridge_with_line = sum(1 for r in eligible_ranges if len(r.ridge_line) >= 2)
+        ridge_coverage = float(ridge_with_line) / float(len(eligible_ranges))
+    else:
+        ridge_coverage = 1.0
+    ridge_coverage_ok = bool(ridge_coverage >= MIN_RIDGE_COVERAGE_FRAC)
+    plateau_rim_ok = True
+    for rec in plateaus:
+        sel = plat_id == rec.id
+        if not np.any(sel):
+            continue
+        plateau_rim_ok = plateau_rim_ok and plateau_rim_valid(
+            rec.rim_line,
+            sel,
+            slope=mfields["slope"],
+            params=params,
+        )
+    unresolved_mask = (
+        (~ocean)
+        & (scores["mountain_score"] >= params.mountain_score_threshold)
+        & (range_id == 0)
+    )
+    unresolved_cells = int(np.count_nonzero(unresolved_mask))
+    object_catastrophe = object_explosion_catastrophe(
+        mountain_range_count=len(ranges),
+        plateau_context_escarpment_fraction=float(plat_esc_frac),
+    )
+    zero_semantic_ok = bool(
+        len(ranges) + len(plateaus) > 0
+        or unresolved_cells > 0
+        or not calibrated
+    )
+    gate_report = landform_acceptance_gates(
+        structural_ok=structural_ok,
+        calibrated=calibrated,
+        mask_ok=mask_ok,
+        local_coverage_ok=local_coverage_ok,
+        ridge_in_mask_ok=bool(ridge_in_mask),
+        ridge_no_duplicate_ok=bool(ridge_no_dup),
+        plateau_honesty_ok=plateau_honesty_ok,
+        plateau_interior_ok=interior_ok,
+        escarpment_dominance_ok=esc_alarm_ok,
+        mountain_fraction_ok=bool(
+            mountain_frac <= float(params.max_mountain_land_fraction)
+        ),
+        mountain_fraction_alarm=bool(
+            mountain_frac < 0.10 or mountain_frac > 0.30
+        ),
+        plateau_fraction_alarm=bool(plateau_frac < 0.01 or plateau_frac > 0.08),
+        plateau_context_escarpment_ok=plat_ctx_esc_ok,
+        representability_ok=representability_ok,
+        ridge_coverage_ok=ridge_coverage_ok,
+        plateau_rim_valid_ok=plateau_rim_ok,
+        object_count_catastrophe_ok=not object_catastrophe,
+        zero_semantic_objects_ok=zero_semantic_ok,
+    )
     diagnostics: dict[str, Any] = {
         "enabled": True,
         "algorithm": LANDFORM_ALGORITHM_VERSION,
@@ -433,6 +498,7 @@ def build_landform_analysis(
         "mountain_range_count": len(ranges),
         "mountain_system_count": int(len({int(r.system_id or r.id) for r in ranges})),
         "plateau_count": len(plateaus),
+        "unresolved_mountain_candidate_cells": unresolved_cells,
         "mountain_land_fraction": mountain_frac,
         "plateau_context_land_fraction": plateau_frac,
         "escarpment_land_fraction": esc_frac,
@@ -441,10 +507,15 @@ def build_landform_analysis(
         "plateau_interior_not_escarpment_ok": interior_ok,
         "mountain_fraction_alarm_band": [0.10, 0.30],
         "plateau_fraction_alarm_band": [0.01, 0.08],
-        "escarpment_alarm_max": 0.20,
+        "escarpment_alarm_max": MAX_LAND_ESCARPMENT_FRAC,
+        "plateau_context_escarpment_alarm_max": MAX_PLATEAU_CONTEXT_ESCARPMENT_FRAC,
+        "mountain_range_catastrophe_max": 200,
         "mountain_fraction_alarm": bool(mountain_frac < 0.10 or mountain_frac > 0.30),
         "plateau_fraction_alarm": bool(plateau_frac < 0.01 or plateau_frac > 0.08),
         "escarpment_dominance_ok": esc_alarm_ok,
+        "object_explosion_catastrophe": object_catastrophe,
+        "ridge_coverage_fraction": float(ridge_coverage),
+        "ridge_coverage_ok": ridge_coverage_ok,
         "mean_mountain_score_land": float(scores["mountain_score"][land].mean())
         if np.any(land)
         else 0.0,
@@ -461,16 +532,7 @@ def build_landform_analysis(
         "mountain_fraction_ok": bool(
             mountain_frac <= float(params.max_mountain_land_fraction)
         ),
-        "acceptance_ok": bool(
-            structural_ok
-            and calibrated
-            and mask_ok
-            and local_coverage_ok
-            and ridge_in_mask
-            and ridge_no_dup
-            and plateau_honesty_ok
-            and interior_ok
-        ),
+        **gate_report,
         "ridge_centerlines": int(sum(1 for r in ranges if len(r.ridge_line) >= 2)),
         "plateau_rims": int(sum(1 for p in plateaus if len(p.rim_line) >= 2)),
     }

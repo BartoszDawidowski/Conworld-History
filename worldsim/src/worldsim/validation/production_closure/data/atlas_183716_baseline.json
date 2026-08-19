@@ -1,0 +1,71 @@
+{
+  "schema_version": "pc0_baseline_v1",
+  "audit_commit": "68d0ce93c24a030e9581a810ceadc228289de19f",
+  "reference_seed": 183716,
+  "profile": "atlas",
+  "captured_at": "2026-08-19",
+  "source_note": "Gate metrics frozen at audit commit; runtime and PC1 periodic counts annotated after post-PC1+PC3 local runs and 2026-08-19 per-lake router repair.",
+  "overall_acceptance_ok": false,
+  "failed_gates": ["hydrology_ok", "erosion_or_fluvial_ok", "landforms_ok"],
+  "canonical_gates": {
+    "moisture_spinup_ok": true,
+    "moisture_budget_ok": true,
+    "hydrology_ok": false,
+    "vector_ok": true,
+    "ecology_ok": true,
+    "biome_v2_ok": true,
+    "landforms_ok": false,
+    "erosion_or_fluvial_ok": false,
+    "hex_layout_ok": true
+  },
+  "channels": {
+    "physical_channel_cell_count": 25260,
+    "physical_channel_cell_count_tolerance": 12,
+    "physical_channel_cell_count_note": "Local post-PC runs may read 25077–25266; tolerance in test_atlas_baseline_json_on_disk_if_present",
+    "display_candidate_after_acc_fraction": 888,
+    "display_after_discharge_quantile": 444,
+    "river_segment_count": 46,
+    "river_acc_fraction": 0.035,
+    "river_discharge_candidate_quantile": 0.5
+  },
+  "hydrology": {
+    "acceptance_ok": false,
+    "q_through_lake_once": false,
+    "runoff_periodic": true,
+    "q_effective_gt_gross_material_count": 42,
+    "liquid_lake_candidates": 140,
+    "periodic_liquid_lakes": 25,
+    "nonperiodic_liquid_withheld": 115,
+    "periodic_liquid_fraction": 0.17857142857142858,
+    "post_pc1_global_periodic_regression_note": "Pre-2026-08-19 condensed router used a global storage signature; Atlas 183716 local run showed 0/97 periodic until per-lake fix. Expect periodic_liquid_lakes to move back toward audit-band (~25/140) after regen."
+  },
+  "erosion": {
+    "first_pass_mean_abs_delta_m": 0.1965357664137767,
+    "first_pass_median_abs_delta_m": 0.018152017963586786,
+    "first_pass_erosion_nontrivial": false,
+    "final_fluvial_mean_abs_delta_m": 0.015588437989695487,
+    "final_fluvial_median_abs_delta_m": 0.0037592251449041214,
+    "fluvial_erosion_nontrivial": false,
+    "fluvial_min_mean_abs_delta_m": 3.2180118575753482
+  },
+  "landforms": {
+    "acceptance_ok": false,
+    "mountain_range_count": 488,
+    "mountain_system_count": 484,
+    "plateau_count": 95,
+    "plateau_context_land_fraction": 0.007422148120260313,
+    "plateau_context_escarpment_fraction": 0.8768115942028986,
+    "pc5_enforced_note": "Escarpment fraction exceeds PC5 catastrophe threshold (0.50); landforms_ok must be false once PC5 conjunction is active."
+  },
+  "runtime_s": {
+    "atlas_total_previous_audit": 134.3,
+    "atlas_total_current_audit": 163.9,
+    "runtime_regression_fraction": 0.22,
+    "post_pc1_pc3_local_total": 609.9,
+    "post_pc1_pc3_dominant_stage": "final",
+    "note": "163.9 s is mid-audit (pre condensed router + G0 spin-up). Post PC1+PC3 Atlas 183716 locally ~610 s; see worldgen_pc7.md."
+  },
+  "effective_config": {
+    "precip_scale_mm": 200
+  }
+}

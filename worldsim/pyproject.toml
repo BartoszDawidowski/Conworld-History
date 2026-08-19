@@ -38,4 +38,12 @@ pythonpath = ["src"]
 markers = [
     "slow: long-running generation tests (e.g. full 1024×512 PyPlatec)",
     "realism_audit: annex physical-realism invariants (xfail until fixed)",
+    "pc0: production-closure baseline regressions and frozen Atlas 183716 metrics",
+    "pc1: lake-supernode condensed routing (PC1)",
+    "pc3: G0 snow/soil/firn foundation (PC3)",
+    "pc2: final-Q network and channel tiers (PC2)",
+    "pc4: geomorphic erosion and process-specific gates (PC4)",
+    "pc5: landform systems and honest acceptance (PC5)",
+    "pc6: canonical products, effective config, Godot inspector (PC6)",
+    "pc7: production suite, performance recovery, C10 readiness (PC7)",
 ]

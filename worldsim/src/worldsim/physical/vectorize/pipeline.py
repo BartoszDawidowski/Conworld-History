@@ -28,6 +28,7 @@ from worldsim.physical.vectorize.rivers import (
     river_raster_consistency,
     terminal_type_counts,
     topology_valid,
+    validate_river_vector_topology,
 )
 from worldsim.progress import ProgressReporter
 from worldsim.spatial.extent import SpatialExtent
@@ -233,6 +234,8 @@ def build_vector_geography(
         hydrology.lake_mask,
     ) >= 0.7
     topo_ok = topology_valid(rivers)
+    topo_gate = validate_river_vector_topology(rivers)
+    river_vector_ok = bool(topo_gate.get("river_vector_topology_ok", False))
     # Vectors are hex-independent by construction (no hex types in payloads).
     hex_independent = True
     term_counts = terminal_type_counts(rivers)
@@ -254,6 +257,10 @@ def build_vector_geography(
         "river_raster_consistency_ok": river_ok,
         "lake_raster_consistency_ok": lake_ok,
         "river_topology_valid": topo_ok,
+        "river_vector_topology_ok": river_vector_ok,
+        "invalid_terminal_with_outgoing_edge_count": int(
+            topo_gate.get("invalid_terminal_with_outgoing_edge_count", 0)
+        ),
         "hex_independent": hex_independent,
         "terminal_type_counts": term_counts,
         "ocean_mouth_ocean_adjacent_fraction": float(mouth_frac),
@@ -262,9 +269,10 @@ def build_vector_geography(
             or np.count_nonzero(getattr(hydrology, "channel_mask", np.array([])))
         ),
         "channel_display_cell_count": int(np.count_nonzero(hydrology.river_mask)),
-        "vector_algorithm": "c91_3_honest_terminals_v1",
+        "vector_algorithm": "pc2_final_q_network_v1",
         "acceptance_ok": bool(
-            coast_ok and river_ok and lake_ok and topo_ok and hex_independent
+            coast_ok and river_ok and lake_ok and topo_ok and river_vector_ok
+            and hex_independent
             and len(coastline) > 0
             and len(rivers.segments) > 0
             and mouths_ok

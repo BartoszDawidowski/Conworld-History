@@ -27,14 +27,19 @@ from worldsim.physical.climate.temperature import (
     TEMPERATURE_STATE_FINAL,
 )
 from worldsim.physical.erosion.fluvial import apply_fluvial_erosion
+from worldsim.physical.erosion.gates import (
+    domain_mean_abs_delta,
+    fluvial_corridor_erosion_gate,
+    process_delta_stats,
+)
 from worldsim.physical.erosion.pass_one import (
     count_land_local_minima,
-    erosion_nontrivial_gate,
     land_elevation_delta_stats,
     land_roughness,
     rock_resistance_proxy,
 )
 from worldsim.physical.erosion.pipeline import ErosionResult, _macro_relief_correlation
+from worldsim.spatial.metrics import grid_metrics
 from worldsim.physical.hydrology import HydrologyParams, HydrologyResult, build_hydrology
 from worldsim.physical.landforms import LandformParams, LandformResult, build_landform_analysis
 from worldsim.physical.moisture import MoistureParams, MoistureResult, build_moisture
@@ -299,6 +304,17 @@ def build_final_recalculation(
         reporter.progress("final", 0.05)
 
     th, tw = erosion_v1.elevation_m.shape
+    gm = grid_metrics(tw, th, radius_km=params.moisture.planet_radius_km)
+    cell_len_km = float(np.sqrt(max(gm.cell_area_km2, 0.0)))
+    path_length_km = np.maximum(
+        gm.d8_step_length_km_field(np.full((th, tw), 1, dtype=np.uint8)),
+        cell_len_km,
+    )
+    geomorphic = getattr(
+        hydrology_v1,
+        "geomorphic_channel_mask",
+        hydrology_v1.channel_mask,
+    )
     oro = act = None
     if interpretation is not None:
         oro = upsample_bilinear_cylindrical(interpretation.orogenic_potential, tw, th)
@@ -309,12 +325,13 @@ def build_final_recalculation(
         shape=(th, tw),
     )
 
-    elev_v2, delta = apply_fluvial_erosion(
+    elev_v2, fluvial_process = apply_fluvial_erosion(
         elevation_m=erosion_v1.elevation_m,
         ocean_mask=erosion_v1.ocean_mask,
-        river_mask=hydrology_v1.river_mask,
+        geomorphic_channel_mask=geomorphic,
         discharge_proxy=hydrology_v1.river_discharge_proxy,
         resistance=resistance,
+        step_length_km=path_length_km,
         iterations=params.fluvial_iterations,
         stream_power_k=params.stream_power_k,
         max_step_m=params.stream_power_max_step_m,
@@ -322,6 +339,7 @@ def build_final_recalculation(
         planet_radius_km=params.moisture.planet_radius_km,
         micro_fill_max_depth_m=params.micro_fill_max_depth_m,
     )
+    delta = fluvial_process.total_erosion_delta_m
 
     if reporter is not None:
         reporter.progress("final", 0.25)
@@ -338,8 +356,19 @@ def build_final_recalculation(
     mean_before = float(np.mean(erosion_v1.elevation_m[land])) if np.any(land) else 0.0
     mean_after = float(np.mean(elev_v2[land])) if np.any(land) else 0.0
     mean_drop_frac = (mean_before - mean_after) / elev_range
-    fluvial_nontrivial, fluvial_min_required = erosion_nontrivial_gate(
-        mean_abs, elev_range
+    corridor_mean = domain_mean_abs_delta(
+        fluvial_process.final_stream_power_delta_m,
+        geomorphic,
+        ocean,
+    )
+    fluvial_nontrivial, fluvial_min_required = fluvial_corridor_erosion_gate(
+        corridor_mean, elev_range
+    )
+    fluvial_proc_stats = process_delta_stats(
+        fluvial_process,
+        ocean,
+        geomorphic_mask=geomorphic,
+        elev_range_m=elev_range,
     )
 
     climate_c = correct_climate_for_dem(
@@ -550,6 +579,10 @@ def build_final_recalculation(
     )
     moisture_ok = bool(moisture.diagnostics.get("acceptance_ok"))
     landforms_ok = bool(landforms.diagnostics.get("acceptance_ok"))
+    channel_jaccard = binary_jaccard(
+        geomorphic,
+        getattr(hydrology, "geomorphic_channel_mask", hydrology.channel_mask),
+    )
     no_catastrophe = (
         bool(hydrology.diagnostics.get("acceptance_ok"))
         and bool(vectors.diagnostics.get("acceptance_ok"))
@@ -572,7 +605,12 @@ def build_final_recalculation(
         "median_abs_fluvial_delta_m": float(fluvial_stats["median_abs_delta_land_m"]),
         "p90_abs_fluvial_delta_m": float(fluvial_stats["p90_abs_delta_land_m"]),
         "fluvial_erosion_nontrivial": fluvial_nontrivial,
-        "fluvial_min_mean_abs_delta_m": fluvial_min_required,
+        "fluvial_corridor_mean_abs_delta_m": corridor_mean,
+        **fluvial_proc_stats,
+        "geomorphic_channel_jaccard_pre_post": float(channel_jaccard),
+        "conditioning_separate_ok": bool(
+            fluvial_proc_stats.get("conditioning_separate_ok", False)
+        ),
         "ocean_mask_unchanged": bool(np.array_equal(elev_v2[ocean], erosion_v1.elevation_m[ocean])),
         "climate_land_elev_min_m": float(np.min(climate_c.elevation_m[~climate_c.ocean_mask]))
         if np.any(~climate_c.ocean_mask)
@@ -624,13 +662,23 @@ def build_final_recalculation(
         ),
         "moisture_water_source": coupling.get("moisture_water_source"),
         "hydro_precip_source": coupling.get("hydro_precip_source"),
+        "fluvial_min_mean_abs_delta_m": fluvial_min_required,
+        "erosion_algorithm": "pc4_process_deltas_v1",
         "micro_depressions_conditioned": True,
         "slope_algorithm": "metric_gridmetrics_v1",
         "final_stage_acceptance_ok": bool(
-            stable and no_catastrophe and landforms_ok and fluvial_nontrivial
+            stable
+            and no_catastrophe
+            and landforms_ok
+            and fluvial_nontrivial
+            and bool(fluvial_proc_stats.get("conditioning_excluded_from_erosion_acceptance"))
         ),
         "acceptance_ok": bool(
-            stable and no_catastrophe and landforms_ok and fluvial_nontrivial
+            stable
+            and no_catastrophe
+            and landforms_ok
+            and fluvial_nontrivial
+            and bool(fluvial_proc_stats.get("conditioning_excluded_from_erosion_acceptance"))
         ),
     }
 

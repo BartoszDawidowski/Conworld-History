@@ -1714,6 +1714,24 @@ def run_world(
     timeline = build_environment_timeline(model)
     model.attach_environment_timeline(timeline)
     model.save(world_root)
+    from worldsim.effective_config import build_effective_config, write_effective_config
+
+    tec_extent = state.extents.get("tectonics")
+    tec_w = int(width if width is not None else (tec_extent.width if tec_extent else tw))
+    tec_h = int(height if height is not None else (tec_extent.height if tec_extent else th))
+    effective = build_effective_config(
+        config=config,
+        master_seed=master_seed,
+        grids={
+            "tectonics": [tec_w, tec_h],
+            "terrain": [tw, th],
+            "climate": [cw, ch],
+            "hex": [hex_w, hex_h],
+        },
+        run_metadata=dict(state.metadata),
+    )
+    effective_checksum = write_effective_config(output_dir / "effective_config.json", effective)
+    write_effective_config(world_root / "effective_config.json", effective)
     from worldsim.spatial.canonical_acceptance import stamp_into_diagnostics
 
     report = model.manifest.extra.get("canonical_acceptance") or {}
@@ -1726,6 +1744,15 @@ def run_world(
         )
     atlas_meta = export_atlas_display(model, world_root / "atlas_display")
     _attach_world(state, model)
+
+    timing = reporter.timing_summary()
+    state.metadata["stage_timings_s"] = timing["stage_timings_s"]
+    state.metadata["stage_peak_rss_mb"] = timing["stage_peak_rss_mb"]
+    state.metadata["pipeline_elapsed_s"] = timing["total_elapsed_s"]
+    (output_dir / "stage_timing.json").write_text(
+        json.dumps(timing, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
     (output_dir / "README.txt").write_text(
         "Milestone 19 WorldSpatialModel + EnvironmentTimeline scaffold.\n"
@@ -1754,6 +1781,11 @@ def run_world(
                 "environment_timeline": "world/timeline/environment",
                 "atlas_schema": atlas_meta.get("schema"),
                 "acceptance_ok": model.manifest.acceptance_ok,
+                "effective_config_schema_version": effective.get(
+                    "effective_config_schema_version"
+                ),
+                "effective_config_checksum": effective_checksum,
+                "effective_config": "effective_config.json",
             },
             indent=2,
             sort_keys=True,

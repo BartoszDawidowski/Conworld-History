@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-LANDFORM_ALGORITHM_VERSION = "landform_v3_c91_5"
+LANDFORM_ALGORITHM_VERSION = "pc5_landform_acceptance_v1"
 # Production CR-9 band: threshold must be in this range to claim calibrated.
 CALIBRATED_MOUNTAIN_THRESHOLD_MIN = 0.58
 CALIBRATED_MOUNTAIN_THRESHOLD_MAX = 0.65

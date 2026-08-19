@@ -229,6 +229,19 @@ func _set_text(text: String) -> void:
 func _status_line() -> String:
 	if _climate_summary.is_empty():
 		return ""
+	var status = _climate_summary.get("inspector_status", {})
+	if typeof(status) == TYPE_DICTIONARY and not status.is_empty():
+		var bits: PackedStringArray = []
+		bits.append("Moisture %s" % _mark_status(status.get("moisture_ok", false)))
+		bits.append("Snow/Firn %s" % _mark_status(status.get("snow_firn_ok", false)))
+		bits.append("Hydro %s" % _mark_status(status.get("hydrology_ok", false)))
+		bits.append("Erosion %s" % _mark_status(status.get("erosion_ok", false)))
+		bits.append("Landforms %s" % _mark_landforms(status))
+		var warn = _climate_summary.get("warnings", [])
+		var amber := ""
+		if typeof(warn) == TYPE_ARRAY and warn.size() > 0:
+			amber = "\n[color=#E6B35A]⚠ %s[/color]" % str(warn[0])
+		return "[b]%s[/b]%s\n\n" % ["   ".join(bits), amber]
 	var bits: PackedStringArray = []
 	bits.append("Temperature %s" % _mark("temperature_integrity_ok"))
 	bits.append("Spin-up %s" % _mark("moisture_spinup_ok"))
@@ -239,6 +252,18 @@ func _status_line() -> String:
 	if typeof(warn) == TYPE_ARRAY and warn.size() > 0:
 		amber = "\n[color=#E6B35A]⚠ %s[/color]" % str(warn[0])
 	return "[b]%s[/b]%s\n\n" % ["   ".join(bits), amber]
+
+
+func _mark_status(ok: bool) -> String:
+	return "✓" if ok else "✕"
+
+
+func _mark_landforms(status: Dictionary) -> String:
+	if bool(status.get("landforms_ok", false)):
+		return "✓"
+	if bool(status.get("landforms_warning", false)):
+		return "⚠"
+	return "✕"
 
 
 func _mark(key: String) -> String:

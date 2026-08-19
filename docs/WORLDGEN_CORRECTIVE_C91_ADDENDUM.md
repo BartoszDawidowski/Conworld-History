@@ -81,7 +81,7 @@ Do **not** change these defaults (Godot Advanced, YAML, or code dataclass defaul
 | `sst_mix` | `0.28` |
 | SST inland decay | `1200` km |
 | `mountain_score_threshold` | `0.60` |
-| `precip_scale_mm` | current (300) |
+| `precip_scale_mm` | **200** (effective in code/YAML/Godot; C10 grid may compare 250/300/350) |
 | `river_acc_fraction` | `0.035` |
 | `river_discharge_candidate_quantile` | `0.50` |
 | `plateau_score_threshold` | `0.40` |
@@ -102,7 +102,7 @@ These are starting points **after** C9.1 closes. They are not new defaults.
 
 | Area | Start | Test grid |
 |---|---|---|
-| `precip_scale_mm` | 300 | 250 / 300 / 350 |
+| `precip_scale_mm` | **200** (control) | 250 / 300 / 350 |
 | River display fraction | 0.15 | 0.10 / 0.15 / 0.20 |
 | River Q quantile | 0.35 | 0.25 / 0.35 / 0.45 |
 | Mountain threshold | 0.62 | 0.60 / 0.62 / 0.65 |

@@ -7,9 +7,9 @@
       "max_m": 5994.145277282431,
       "hypsometry_mode": "power_tail_v2",
       "mountain_frac": 0.22853535353535354,
-      "ranges": 80,
-      "plateaus": 2,
-      "acceptance_ok": true
+      "ranges": 19,
+      "plateaus": 0,
+      "acceptance_ok": false
     },
     {
       "seed": 42,
@@ -18,9 +18,9 @@
       "max_m": 4694.534018018368,
       "hypsometry_mode": "power_tail_v2",
       "mountain_frac": 0.3085016835016835,
-      "ranges": 91,
+      "ranges": 25,
       "plateaus": 0,
-      "acceptance_ok": true
+      "acceptance_ok": false
     },
     {
       "seed": 100,
@@ -29,9 +29,9 @@
       "max_m": 5747.746999576693,
       "hypsometry_mode": "power_tail_v2",
       "mountain_frac": 0.28324915824915825,
-      "ranges": 66,
-      "plateaus": 2,
-      "acceptance_ok": true
+      "ranges": 18,
+      "plateaus": 0,
+      "acceptance_ok": false
     }
   ]
 }

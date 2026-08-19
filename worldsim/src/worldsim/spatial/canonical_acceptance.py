@@ -93,10 +93,15 @@ def collect_gates(
     ecology_ok = bool(_flag(e, "acceptance_ok") and biome_ok)
 
     land_ok = _flag(lf, "acceptance_ok")
-    if "plateau_area_floor_honesty_ok" in lf:
-        land_ok = land_ok and bool(lf["plateau_area_floor_honesty_ok"])
-    if "plateau_interior_not_escarpment_ok" in lf:
-        land_ok = land_ok and bool(lf["plateau_interior_not_escarpment_ok"])
+    for sub in (
+        "landforms_representability_ok",
+        "landforms_geometry_ok",
+        "object_count_catastrophe_ok",
+        "plateau_area_floor_honesty_ok",
+        "plateau_interior_not_escarpment_ok",
+    ):
+        if sub in lf:
+            land_ok = land_ok and bool(lf[sub])
 
     if _metric_erosion_claimed(er, fn):
         erosion_ok = True
@@ -185,25 +190,62 @@ def stamp_into_diagnostics(diagnostics: dict[str, Any], report: dict[str, Any]) 
     diagnostics["failed_gates"] = list(report.get("failed_gates") or [])
 
 
+def inspector_status_from_gates(
+    gates: dict[str, bool],
+    *,
+    snow_firn_ok: bool = False,
+    landforms_warning: bool = False,
+) -> dict[str, bool]:
+    """Compact §10.3 status row — Godot reads this; no local recalculation."""
+    moisture_ok = bool(
+        gates.get("moisture_spinup_ok", False) and gates.get("moisture_budget_ok", False)
+    )
+    landforms_ok = bool(gates.get("landforms_ok", False))
+    return {
+        "moisture_ok": moisture_ok,
+        "snow_firn_ok": bool(snow_firn_ok),
+        "hydrology_ok": bool(gates.get("hydrology_ok", False)),
+        "erosion_ok": bool(gates.get("erosion_or_fluvial_ok", False)),
+        "landforms_ok": landforms_ok,
+        "landforms_warning": bool(landforms_warning or (not landforms_ok and moisture_ok)),
+    }
+
+
 def climate_summary_from_report(
     report: dict[str, Any],
     *,
     temperature_integrity_ok: bool | None = None,
     warnings: list[str] | None = None,
+    snow_firn_ok: bool = False,
 ) -> dict[str, Any]:
     gates = dict(report.get("gates") or {})
     failed = list(report.get("failed_gates") or [])
     warn = list(warnings or [])
     if failed:
         warn.append("failed_gates: " + ",".join(failed))
+    landforms_warning = any(
+        any(token in str(w).lower() for token in ("landform", "plateau", "overlap", "range"))
+        for w in warn
+    )
+    from worldsim.spatial.product_contracts import INSPECTOR_CONTRACT_VERSION
+
+    inspector_status = inspector_status_from_gates(
+        gates,
+        snow_firn_ok=snow_firn_ok,
+        landforms_warning=landforms_warning,
+    )
     return {
         "canonical_acceptance_version": CANONICAL_ACCEPTANCE_VERSION,
+        "inspector_contract_version": INSPECTOR_CONTRACT_VERSION,
+        "inspector_status": inspector_status,
         "temperature_integrity_ok": bool(
             True if temperature_integrity_ok is None else temperature_integrity_ok
         ),
         "moisture_spinup_ok": bool(gates.get("moisture_spinup_ok", False)),
         "moisture_budget_ok": bool(gates.get("moisture_budget_ok", False)),
         "hydrology_coupling_ok": bool(gates.get("hydrology_ok", False)),
+        "erosion_or_fluvial_ok": bool(gates.get("erosion_or_fluvial_ok", False)),
+        "snow_firn_ok": bool(snow_firn_ok),
         "biome_v2_ok": bool(gates.get("biome_v2_ok", False)),
         "landforms_ok": bool(gates.get("landforms_ok", False)),
         "hex_layout_ok": bool(gates.get("hex_layout_ok", False)),

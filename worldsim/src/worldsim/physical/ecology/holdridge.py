@@ -108,7 +108,7 @@ _LIFE_ZONE_DISPLAY: tuple[tuple[str, ...], ...] = (
 ZONE_NAMES: dict[int, str] = {
     int(HoldridgeOverride.OCEAN): "Ocean",
     int(HoldridgeOverride.LAKE): "Lake",
-    int(HoldridgeOverride.ICE): "Permanent ice",
+    int(HoldridgeOverride.ICE): "Permanent ice (thermal potential)",
     int(HoldridgeOverride.ALPINE_BARE): "Alpine bare",
 }
 

@@ -62,7 +62,7 @@ def test_synthetic_drainage_and_macro() -> None:
         orogenic_potential=None, tectonic_activity=None, shape=(h, w)
     )
     before_min = count_land_local_minima(elev, ocean)
-    dem, delta = apply_erosion_pass_one(
+    dem, process = apply_erosion_pass_one(
         elevation_m=elev,
         ocean_mask=ocean,
         annual_precip=precip,
@@ -75,7 +75,7 @@ def test_synthetic_drainage_and_macro() -> None:
     corr = float(np.corrcoef(elev[land], dem[land])[0, 1])
     assert corr > 0.97
     assert np.allclose(dem[ocean], elev[ocean])
-    assert float(np.mean(np.abs(delta[land]))) > 0.0
+    assert float(np.mean(np.abs(process.total_erosion_delta_m[land]))) > 0.0
 
 
 def test_erosion_from_small_world(tmp_path: Path) -> None:

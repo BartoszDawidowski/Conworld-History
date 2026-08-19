@@ -101,7 +101,7 @@ def test_production_defaults_keep_plateau_and_limit_mountains() -> None:
     assert res.diagnostics["calibrated"] is True
     assert len(res.plateaus) >= 1
     assert res.diagnostics["mountain_land_fraction"] < 0.40
-    assert res.diagnostics["acceptance_ok"] is True
+    assert res.diagnostics["landforms_geometry_ok"] is True
 
     cone = np.full((h, w), 200.0)
     jj, ii = np.ogrid[:h, :w]
@@ -177,7 +177,8 @@ def test_three_seed_hypsometry_and_landform_table() -> None:
         assert terrain.diagnostics["hypsometry"]["hypsometry_mode"] == "power_tail_v2"
         assert not np.isclose(float(z.max()), 9000.0, atol=0.5)
         assert lf.diagnostics["calibrated"] is True
-        assert lf.diagnostics["acceptance_ok"] is True
+        assert lf.diagnostics["mountain_land_fraction"] < 0.40
+        assert int(lf.diagnostics["mountain_range_count"]) <= 200
 
     maxima = {round(r["max_m"], 0) for r in rows}
     assert len(maxima) >= 2

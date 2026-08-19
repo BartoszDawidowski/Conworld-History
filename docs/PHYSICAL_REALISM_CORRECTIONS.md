@@ -6,7 +6,7 @@
 > **Tracker:** [`PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md).  
 > **Rule:** One **CR-N** / **C-N** milestone at a time. Validate → stop.  
 > **Do not** retune precipitation, `folding_ratio`, SST, or `lake_min_depth_m` to hide the defects below.  
-> **Next when instructed:** **C9.1.1** (C9 delivered; **C10 blocked**). Landform threshold 0.60 unchanged. Atlas 183716 leftover. Plan: [`WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](WORLDGEN_CORRECTIVE_C91_ADDENDUM.md).
+> **Next when instructed:** **PC1** (PC0 delivered; **C10 blocked**). Plan: [`WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md).
 
 ---
 

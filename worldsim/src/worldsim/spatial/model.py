@@ -270,11 +270,23 @@ def _fill_rasters(
                 "hydrology/water_fraction_monthly",
                 hydrology.water_fraction_monthly.astype(np.float32),
             )
-        if getattr(hydrology, "ice_fraction_monthly", None) is not None and hydrology.ice_fraction_monthly.size:
+        open_w = getattr(hydrology, "open_water_fraction_monthly", None)
+        if open_w is not None and np.asarray(open_w).size:
             store.put(
-                "hydrology/ice_fraction_monthly",
-                hydrology.ice_fraction_monthly.astype(np.float32),
+                "hydrology/open_water_fraction_monthly",
+                np.asarray(open_w).astype(np.float32),
             )
+        lake_ice = getattr(hydrology, "lake_ice_fraction_monthly", None)
+        if lake_ice is not None and np.asarray(lake_ice).size:
+            store.put(
+                "hydrology/lake_ice_fraction_monthly",
+                np.asarray(lake_ice).astype(np.float32),
+            )
+        elif getattr(hydrology, "ice_fraction_monthly", None) is not None:
+            # Legacy alias on in-memory objects only.
+            legacy = np.asarray(hydrology.ice_fraction_monthly)
+            if legacy.size:
+                store.put("hydrology/lake_ice_fraction_monthly", legacy.astype(np.float32))
         if getattr(hydrology, "river_water_fraction", None) is not None and hydrology.river_water_fraction.size:
             store.put(
                 "hydrology/river_water_fraction",
@@ -299,6 +311,26 @@ def _fill_rasters(
         q_gross = getattr(hydrology, "river_discharge_gross", None)
         if q_gross is not None and np.asarray(q_gross).size:
             store.put("hydrology/river_discharge_gross", q_gross)
+        for key, attr in (
+            ("hydrology/channel_mask", "channel_mask"),
+            ("hydrology/geomorphic_channel_mask", "geomorphic_channel_mask"),
+            ("hydrology/display_river_mask", "display_river_mask"),
+        ):
+            layer = getattr(hydrology, attr, None)
+            if layer is not None and np.asarray(layer).size:
+                store.put(key, np.asarray(layer).astype(np.uint8))
+        for key, attr in (
+            ("cryosphere/seasonal_snow_swe", "seasonal_snow_swe"),
+            ("cryosphere/firn_swe", "firn_swe"),
+            ("cryosphere/soil_water", "soil_store"),
+        ):
+            layer = getattr(hydrology, attr, None)
+            if layer is not None and np.asarray(layer).size:
+                store.put(
+                    key,
+                    np.asarray(layer, dtype=np.float32),
+                    extent_key="hydrology",
+                )
 
     if elevation_terrain_m is not None:
         elev = np.asarray(elevation_terrain_m, dtype=np.float64)
@@ -410,6 +442,12 @@ def build_world_spatial_model(
     hex_prod = (
         hex_diag.get("production_acceptance_ok") if isinstance(hex_diag, dict) else None
     )
+    h_diag = getattr(hydrology, "diagnostics", None) if hydrology is not None else None
+    h_diag = dict(h_diag) if isinstance(h_diag, dict) else {}
+    snow_firn_ok = bool(
+        h_diag.get("snow_soil_state_periodic_or_firn_transfer_ok", False)
+        and h_diag.get("snow_soil_firn_mass_balance_ok", False)
+    )
     extra = {
         k: extra_meta[k]
         for k in extra_meta
@@ -432,6 +470,8 @@ def build_world_spatial_model(
             "moisture_spinup_ok": report["gates"]["moisture_spinup_ok"],
             "moisture_budget_ok": report["gates"]["moisture_budget_ok"],
             "hydrology_coupling_ok": report["gates"]["hydrology_ok"],
+            "erosion_or_fluvial_ok": report["gates"]["erosion_or_fluvial_ok"],
+            "snow_firn_ok": snow_firn_ok,
             "biome_v2_ok": report["gates"]["biome_v2_ok"],
             "landforms_ok": report["gates"]["landforms_ok"],
             "hex_layout_ok": report["gates"]["hex_layout_ok"],
@@ -617,10 +657,15 @@ def hydrology_from_rasters(
         if rasters.has("climate/ocean_mask")
         else None
     )
+    lake_ice = _opt("hydrology/lake_ice_fraction_monthly")
+    if lake_ice is None:
+        lake_ice = _opt("hydrology/ice_fraction_monthly")
     return SimpleNamespace(
         water_fraction_mean=_opt("hydrology/water_fraction_mean"),
         water_fraction_monthly=_opt("hydrology/water_fraction_monthly"),
-        ice_fraction_monthly=_opt("hydrology/ice_fraction_monthly"),
+        open_water_fraction_monthly=_opt("hydrology/open_water_fraction_monthly"),
+        lake_ice_fraction_monthly=lake_ice,
+        ice_fraction_monthly=lake_ice,
         lake_mask=(_opt("hydrology/lake_mask").astype(bool) if rasters.has("hydrology/lake_mask") else None),
         channel_state=_opt("hydrology/channel_state"),
         river_discharge_proxy=_opt("hydrology/river_discharge_proxy"),

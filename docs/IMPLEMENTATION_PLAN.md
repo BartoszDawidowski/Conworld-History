@@ -2,8 +2,8 @@
 
 > **Status:** Milestone **19 complete** (2026-08-15). Physical World v1 plan milestones 0–19 are complete.  
 > **Follow-up atlas:** A1–A8 done; Plan B **B1–B7** done (`docs/ATLAS_PLAN_B.md`). Optional presentation: **B10**.  
-> **Follow-up physics:** [`docs/PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md) (**PR-0…PR-9** foundation + **CR** baseline + addendum **C** track). Design: [`docs/WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md). Production defects/repair: [`docs/PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md). Addendum: [`docs/WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md`](WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md).  
-> **Next when instructed:** **C9.1.1**. C9 delivered. **C10 blocked** until production closure — [`WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](WORLDGEN_CORRECTIVE_C91_ADDENDUM.md). CR-6…CR-9 baseline — correction required. Atlas 183716 leftover.  
+> **Follow-up physics:** [`docs/PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md) (**PR-0…PR-9** foundation + **CR** baseline + addendum **C** track). Design: [`docs/WORLDGEN_PHYSICAL_REALISM_ANNEX.md`](WORLDGEN_PHYSICAL_REALISM_ANNEX.md). Production defects/repair: [`docs/PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md). Addendum: [`docs/WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md`](WORLDGEN_CORRECTIVE_IMPLEMENTATION_ADDENDUM.md). **Production closure PC0–PC7:** [`docs/WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md).  
+> **Next when instructed:** **C10 calibration** after user accepts [`docs/validation/C10_READINESS_GATE.md`](validation/C10_READINESS_GATE.md). PC0–PC7 + pre-C10 structural repairs delivered.  
 > **Date:** 2026-08-17  
 > **Authority:** Derived from `docs/WORLDGEN_ARCHITECTURE.md` (v0.2) §62–§65 and local repository inspection; realism amendments from the Physical Realism Annex  
 > **Rule:** Do **not** implement the full project in one pass. Execute **one milestone at a time**.

@@ -550,8 +550,35 @@ def build_river_network(
                 node.type = kind
                 if lid and not node.lake_id:
                     node.lake_id = lid
+        # PC2: terminals only when outdegree=0.
+        if out > 0 and node.type == "endorheic_sink":
+            node.type = "confluence" if inc >= 2 else "junction"
 
     return RiverNetwork(nodes=nodes, segments=segments)
+
+
+def validate_river_vector_topology(network: RiverNetwork) -> dict[str, int | bool]:
+    """PC2 vector topology gates (addendum §6.3)."""
+    outgoing: set[int] = {s.from_node for s in network.segments}
+    incoming: dict[int, int] = {}
+    for s in network.segments:
+        incoming[s.to_node] = incoming.get(s.to_node, 0) + 1
+
+    invalid_terminal = 0
+    for node in network.nodes:
+        out = 1 if node.id in outgoing else 0
+        if node.type == "endorheic_sink" and out > 0:
+            invalid_terminal += 1
+        if node.type == "confluence" and out == 0 and incoming.get(node.id, 0) >= 2:
+            invalid_terminal += 1
+
+    counts = terminal_type_counts(network)
+    ok = invalid_terminal == 0
+    return {
+        **counts,
+        "invalid_terminal_with_outgoing_edge_count": int(invalid_terminal),
+        "river_vector_topology_ok": bool(ok),
+    }
 
 
 def river_raster_consistency(

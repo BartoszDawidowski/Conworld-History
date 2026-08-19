@@ -1,9 +1,9 @@
 # Worldgen corrective C9.1 — roll-up
 
 **Date:** 2026-08-18  
-**Status:** ✅ **C9.1.1–C9.1.6 delivered** (unit/fixture evidence; Atlas `183716` not regenerated)  
+**Status:** ⚠️ **IMPLEMENTED ON FIXTURES — PRODUCTION CLOSURE REQUIRED** (see [PC0](worldgen_pc0.md), [production-closure addendum](../WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md))  
 **Authority:** [`docs/WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](../WORLDGEN_CORRECTIVE_C91_ADDENDUM.md)  
-**Next:** user review of this roll-up. **C10 remains blocked.**
+**Next:** **PC1** (lake-supernode). **C10 remains blocked.**
 
 ---
 

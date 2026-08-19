@@ -114,6 +114,18 @@ class PlanetConfig:
     hydrology_transmission_rate: float = 0.45
     hydrology_fill_max_depth_m: float = 25.0
     hydrology_river_min_catchment_km2: float | None = 500.0
+    hydrology_bed_loss_m3_per_km_month: float = 2.0e5
+    hydrology_channel_q_min_m3s: float = 0.05
+    hydrology_lake_storage_spinup_years: int = 8
+    hydrology_lake_storage_spinup_tol: float = 0.01
+    hydrology_runoff_spinup_years: int = 8
+    hydrology_runoff_spinup_tol: float = 0.01
+    hydrology_snow_threshold_c: float = 0.0
+    hydrology_snow_band_c: float = 2.0
+    hydrology_melt_factor_per_c: float = 0.08
+    hydrology_max_snow_store: float = 40.0
+    hydrology_soil_capacity: float = 1.0
+    hydrology_soil_quickflow_frac: float = 0.20
     # CR-5 landforms
     landform_mountain_score_threshold: float = 0.60
     landform_plateau_score_threshold: float = 0.40
@@ -262,6 +274,18 @@ class PlanetConfig:
             fill_max_depth_m=self.hydrology_fill_max_depth_m,
             planet_radius_km=self.planet_radius_km,
             river_min_catchment_km2=self.hydrology_river_min_catchment_km2,
+            bed_loss_m3_per_km_month=self.hydrology_bed_loss_m3_per_km_month,
+            channel_q_min_m3s=self.hydrology_channel_q_min_m3s,
+            lake_storage_spinup_years=self.hydrology_lake_storage_spinup_years,
+            lake_storage_spinup_tol=self.hydrology_lake_storage_spinup_tol,
+            runoff_spinup_years=self.hydrology_runoff_spinup_years,
+            runoff_spinup_tol=self.hydrology_runoff_spinup_tol,
+            snow_threshold_c=self.hydrology_snow_threshold_c,
+            snow_band_c=self.hydrology_snow_band_c,
+            melt_factor_per_c=self.hydrology_melt_factor_per_c,
+            max_snow_store=self.hydrology_max_snow_store,
+            soil_capacity=self.hydrology_soil_capacity,
+            soil_quickflow_frac=self.hydrology_soil_quickflow_frac,
         )
 
     def to_landform_params(self) -> "LandformParams":
@@ -702,6 +726,46 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
         and hydrology_river_min_catchment_km2 < 0.0
     ):
         raise ConfigError("hydrology.river_min_catchment_km2 must be >= 0")
+    hydrology_bed_loss_m3_per_km_month = float(
+        hydro_cfg.get("bed_loss_m3_per_km_month", 2.0e5)
+    )
+    if hydrology_bed_loss_m3_per_km_month < 0.0:
+        raise ConfigError("hydrology.bed_loss_m3_per_km_month must be >= 0")
+    hydrology_channel_q_min_m3s = float(hydro_cfg.get("channel_q_min_m3s", 0.05))
+    if hydrology_channel_q_min_m3s < 0.0:
+        raise ConfigError("hydrology.channel_q_min_m3s must be >= 0")
+    hydrology_lake_storage_spinup_years = int(
+        hydro_cfg.get("lake_storage_spinup_years", 8)
+    )
+    if hydrology_lake_storage_spinup_years < 1:
+        raise ConfigError("hydrology.lake_storage_spinup_years must be >= 1")
+    hydrology_lake_storage_spinup_tol = float(
+        hydro_cfg.get("lake_storage_spinup_tol", 0.01)
+    )
+    if hydrology_lake_storage_spinup_tol <= 0.0:
+        raise ConfigError("hydrology.lake_storage_spinup_tol must be > 0")
+    hydrology_runoff_spinup_years = int(hydro_cfg.get("runoff_spinup_years", 8))
+    if hydrology_runoff_spinup_years < 1:
+        raise ConfigError("hydrology.runoff_spinup_years must be >= 1")
+    hydrology_runoff_spinup_tol = float(hydro_cfg.get("runoff_spinup_tol", 0.01))
+    if hydrology_runoff_spinup_tol <= 0.0:
+        raise ConfigError("hydrology.runoff_spinup_tol must be > 0")
+    hydrology_snow_threshold_c = float(hydro_cfg.get("snow_threshold_c", 0.0))
+    hydrology_snow_band_c = float(hydro_cfg.get("snow_band_c", 2.0))
+    if hydrology_snow_band_c <= 0.0:
+        raise ConfigError("hydrology.snow_band_c must be > 0")
+    hydrology_melt_factor_per_c = float(hydro_cfg.get("melt_factor_per_c", 0.08))
+    if hydrology_melt_factor_per_c < 0.0:
+        raise ConfigError("hydrology.melt_factor_per_c must be >= 0")
+    hydrology_max_snow_store = float(hydro_cfg.get("max_snow_store", 40.0))
+    if hydrology_max_snow_store <= 0.0:
+        raise ConfigError("hydrology.max_snow_store must be > 0")
+    hydrology_soil_capacity = float(hydro_cfg.get("soil_capacity", 1.0))
+    if hydrology_soil_capacity <= 0.0:
+        raise ConfigError("hydrology.soil_capacity must be > 0")
+    hydrology_soil_quickflow_frac = float(hydro_cfg.get("soil_quickflow_frac", 0.20))
+    if not 0.0 <= hydrology_soil_quickflow_frac <= 1.0:
+        raise ConfigError("hydrology.soil_quickflow_frac must be in [0, 1]")
 
     land_cfg = data.get("landforms") or {}
     if land_cfg is None:
@@ -814,6 +878,18 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
         hydrology_transmission_rate=hydrology_transmission_rate,
         hydrology_fill_max_depth_m=hydrology_fill_max_depth_m,
         hydrology_river_min_catchment_km2=hydrology_river_min_catchment_km2,
+        hydrology_bed_loss_m3_per_km_month=hydrology_bed_loss_m3_per_km_month,
+        hydrology_channel_q_min_m3s=hydrology_channel_q_min_m3s,
+        hydrology_lake_storage_spinup_years=hydrology_lake_storage_spinup_years,
+        hydrology_lake_storage_spinup_tol=hydrology_lake_storage_spinup_tol,
+        hydrology_runoff_spinup_years=hydrology_runoff_spinup_years,
+        hydrology_runoff_spinup_tol=hydrology_runoff_spinup_tol,
+        hydrology_snow_threshold_c=hydrology_snow_threshold_c,
+        hydrology_snow_band_c=hydrology_snow_band_c,
+        hydrology_melt_factor_per_c=hydrology_melt_factor_per_c,
+        hydrology_max_snow_store=hydrology_max_snow_store,
+        hydrology_soil_capacity=hydrology_soil_capacity,
+        hydrology_soil_quickflow_frac=hydrology_soil_quickflow_frac,
         landform_mountain_score_threshold=landform_mountain_score_threshold,
         landform_plateau_score_threshold=landform_plateau_score_threshold,
         landform_fine_radius_km=landform_fine_radius_km,

@@ -79,10 +79,16 @@ const _MODE_UI := {
 @onready var zoom_slider: HSlider = %ZoomSlider
 @onready var zoom_fit_btn: Button = %ZoomFitBtn
 @onready var zoom_box: HBoxContainer = get_node_or_null("%ZoomBox")
+var _effective_config: Dictionary = {}
+
 @onready var advanced_btn: Button = %AdvancedBtn
 @onready var advanced_popup: PopupPanel = %AdvancedPopup
 @onready var adv_close_btn: Button = %AdvCloseBtn
+@onready var adv_vbox: VBoxContainer = $AdvancedPopup/AdvMargin/AdvOuter/AdvScroll/AdvVBox
 @onready var mode_box: HBoxContainer = %ModeBox
+
+var _pc6_spins: Dictionary = {}
+var _pc6_groups_built: bool = false
 
 var atlas: Node2D
 var runner: Node
@@ -140,6 +146,7 @@ func _ready() -> void:
 	if landform_check:
 		landform_check.toggled.connect(_on_landform_overlay)
 	_setup_profile_option()
+	_ensure_pc6_advanced_groups()
 	advanced_btn.pressed.connect(_open_advanced_popup)
 	adv_close_btn.pressed.connect(func(): advanced_popup.hide())
 	generate_btn.pressed.connect(_on_generate)
@@ -237,7 +244,381 @@ func _selected_profile() -> String:
 
 
 func _open_advanced_popup() -> void:
-	advanced_popup.popup_centered(Vector2i(420, 640))
+	_sync_advanced_from_effective_config()
+	advanced_popup.popup_centered(Vector2i(460, 720))
+
+
+func _add_adv_section(title: String) -> void:
+	var label := Label.new()
+	label.text = title
+	label.add_theme_font_size_override("font_size", 14)
+	adv_vbox.add_child(label)
+
+
+func _add_adv_spin(
+	key: String,
+	prefix: String,
+	min_v: float,
+	max_v: float,
+	step: float,
+	value: float,
+	suffix: String,
+	tooltip: String,
+) -> SpinBox:
+	var spin := SpinBox.new()
+	spin.min_value = min_v
+	spin.max_value = max_v
+	spin.step = step
+	spin.value = value
+	spin.prefix = prefix
+	if suffix != "":
+		spin.suffix = suffix
+	spin.tooltip_text = tooltip
+	spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	adv_vbox.add_child(spin)
+	_pc6_spins[key] = spin
+	return spin
+
+
+func _pc6_spin_value(key: String, default: float = 0.0) -> float:
+	var spin: SpinBox = _pc6_spins.get(key)
+	if spin == null:
+		return default
+	return float(spin.value)
+
+
+func _set_pc6_spin_value(key: String, value: Variant) -> void:
+	var spin: SpinBox = _pc6_spins.get(key)
+	if spin == null or value == null:
+		return
+	spin.value = float(value)
+
+
+func _ensure_pc6_advanced_groups() -> void:
+	if _pc6_groups_built:
+		return
+	_pc6_groups_built = true
+	_add_adv_section("Hydrology physics (PC6)")
+	_add_adv_spin(
+		"river_min_catchment_km2",
+		"min catchment ",
+		0.0,
+		50000.0,
+		50.0,
+		500.0,
+		" km²",
+		"Physical river catchment floor before display LOD.",
+	)
+	_add_adv_spin(
+		"river_discharge_candidate_quantile",
+		"Q candidate q ",
+		0.0,
+		1.0,
+		0.05,
+		0.50,
+		"",
+		"Discharge quantile on accumulation candidates.",
+	)
+	_add_adv_spin(
+		"channel_q_min_m3s",
+		"channel Q min ",
+		0.0,
+		5.0,
+		0.01,
+		0.05,
+		" m³/s",
+		"Minimum effective discharge for a perennial channel state.",
+	)
+	_add_adv_spin(
+		"bed_loss_m3_per_km_month",
+		"bed loss ",
+		0.0,
+		20.0,
+		0.1,
+		2.0,
+		" ×1e5 m³/km/mo",
+		"Channel-bed loss rate (geometry × this coefficient).",
+	)
+	_add_adv_spin(
+		"fill_max_depth_m",
+		"pit fill max ",
+		0.0,
+		200.0,
+		1.0,
+		25.0,
+		" m",
+		"Numerical pit-fill pour depth; closed basins when positive.",
+	)
+	_add_adv_section("Lake storage (PC6)")
+	_add_adv_spin(
+		"lake_storage_spinup_years",
+		"lake spinup ",
+		1.0,
+		48.0,
+		1.0,
+		8.0,
+		" y",
+		"Maximum lake-storage spin-up years.",
+	)
+	_add_adv_spin(
+		"lake_storage_spinup_tol",
+		"lake tol ",
+		0.001,
+		0.5,
+		0.005,
+		0.01,
+		" rel",
+		"Relative annual storage periodicity tolerance.",
+	)
+	_add_adv_section("Snow / firn foundation (PC6)")
+	_add_adv_spin(
+		"snow_threshold_c",
+		"snow threshold ",
+		-10.0,
+		10.0,
+		0.5,
+		0.0,
+		" °C",
+		"Rain/snow transition centre (G0 partition).",
+	)
+	_add_adv_spin(
+		"snow_band_c",
+		"snow band ",
+		0.5,
+		10.0,
+		0.5,
+		2.0,
+		" °C",
+		"Transition band width for rain/snow partition.",
+	)
+	_add_adv_spin(
+		"melt_factor_per_c",
+		"melt factor ",
+		0.0,
+		1.0,
+		0.01,
+		0.08,
+		" /°C",
+		"Degree-day melt factor on seasonal snow store.",
+	)
+	_add_adv_spin(
+		"max_snow_store",
+		"max snow store ",
+		1.0,
+		200.0,
+		1.0,
+		40.0,
+		" mm",
+		"Seasonal snow store cap (proxy mm).",
+	)
+	_add_adv_spin(
+		"soil_capacity",
+		"soil capacity ",
+		0.1,
+		20.0,
+		0.1,
+		1.0,
+		" ×precip",
+		"Soil bucket capacity in precip-scale units.",
+	)
+	_add_adv_section("Erosion physics (PC6)")
+	_add_adv_spin(
+		"thermal_kappa",
+		"thermal κ ",
+		0.0,
+		1.0,
+		0.01,
+		0.08,
+		"",
+		"First-pass thermal diffusion coefficient (1 km cells).",
+	)
+	_add_adv_spin(
+		"stream_power_k",
+		"stream power k ",
+		0.0,
+		50.0,
+		0.5,
+		12.0,
+		"",
+		"Final stream-power incision coefficient (not pass-1 fluvial k).",
+	)
+	_add_adv_spin(
+		"stream_power_iterations",
+		"stream power iters ",
+		1.0,
+		20.0,
+		1.0,
+		4.0,
+		"",
+		"Final stream-power iteration count.",
+	)
+	_add_adv_spin(
+		"micro_fill_max_depth_m",
+		"micro fill max ",
+		0.0,
+		200.0,
+		1.0,
+		25.0,
+		" m",
+		"Final-pass micro pit-fill depth threshold.",
+	)
+	_add_adv_section("Landform classification (PC6)")
+	_add_adv_spin(
+		"mountain_score_threshold",
+		"mountain thr ",
+		0.0,
+		1.0,
+		0.01,
+		0.60,
+		"",
+		"Mountain score threshold (frozen at 0.60 until C10).",
+	)
+	_add_adv_spin(
+		"plateau_score_threshold",
+		"plateau thr ",
+		0.0,
+		1.0,
+		0.01,
+		0.40,
+		"",
+		"Plateau score threshold.",
+	)
+	_add_adv_spin(
+		"min_range_km2",
+		"min range ",
+		0.0,
+		50000.0,
+		50.0,
+		800.0,
+		" km²",
+		"Minimum retained mountain range area.",
+	)
+	_add_adv_spin(
+		"min_plateau_km2",
+		"min plateau ",
+		0.0,
+		50000.0,
+		50.0,
+		2500.0,
+		" km²",
+		"Configured plateau floor (honesty gate may flag unrepresentable).",
+	)
+	_add_adv_section("Display-only river / object LOD (PC6)")
+	_add_adv_spin(
+		"river_acc_fraction",
+		"river acc ",
+		0.001,
+		0.5,
+		0.005,
+		0.035,
+		" frac",
+		"Top accumulation fraction rendered as display rivers.",
+	)
+	_add_adv_section("Solver / expert (PC6)")
+	_add_adv_spin(
+		"moisture_spinup_max_years",
+		"moist spinup ",
+		1.0,
+		96.0,
+		1.0,
+		48.0,
+		" y",
+		"Moisture climatology spin-up cap.",
+	)
+	_add_adv_spin(
+		"moisture_spinup_tolerance_relative",
+		"moist tol ",
+		0.001,
+		0.5,
+		0.005,
+		0.02,
+		" rel",
+		"Relative moisture spin-up convergence tolerance.",
+	)
+	_add_adv_spin(
+		"runoff_spinup_years",
+		"runoff spinup ",
+		1.0,
+		48.0,
+		1.0,
+		8.0,
+		" y",
+		"Snow/soil runoff spin-up maximum.",
+	)
+	_add_adv_spin(
+		"runoff_spinup_tol",
+		"runoff tol ",
+		0.001,
+		0.5,
+		0.005,
+		0.01,
+		" rel",
+		"Runoff spin-up relative tolerance.",
+	)
+
+
+func _sync_advanced_from_effective_config() -> void:
+	if _effective_config.is_empty():
+		return
+	var groups = _effective_config.get("physical_groups", {})
+	if typeof(groups) != TYPE_DICTIONARY:
+		return
+	var hydro = groups.get("hydrology_physics", {})
+	if typeof(hydro) == TYPE_DICTIONARY:
+		_set_pc6_spin_value("river_min_catchment_km2", hydro.get("river_min_catchment_km2"))
+		_set_pc6_spin_value(
+			"river_discharge_candidate_quantile",
+			hydro.get("river_discharge_candidate_quantile"),
+		)
+		_set_pc6_spin_value("channel_q_min_m3s", hydro.get("channel_q_min_m3s"))
+		_set_pc6_spin_value(
+			"bed_loss_m3_per_km_month",
+			float(hydro.get("bed_loss_m3_per_km_month", 2.0e5)) / 1.0e5,
+		)
+		_set_pc6_spin_value("fill_max_depth_m", hydro.get("fill_max_depth_m"))
+	var lake = groups.get("lake_storage", {})
+	if typeof(lake) == TYPE_DICTIONARY:
+		_set_pc6_spin_value("lake_storage_spinup_years", lake.get("lake_storage_spinup_years"))
+		_set_pc6_spin_value("lake_storage_spinup_tol", lake.get("lake_storage_spinup_tol"))
+		_set_pc6_spin_value("runoff_spinup_years", lake.get("runoff_spinup_years"))
+		_set_pc6_spin_value("runoff_spinup_tol", lake.get("runoff_spinup_tol"))
+	var snow = groups.get("snow_firn_foundation", {})
+	if typeof(snow) == TYPE_DICTIONARY:
+		_set_pc6_spin_value("snow_threshold_c", snow.get("snow_threshold_c"))
+		_set_pc6_spin_value("snow_band_c", snow.get("snow_band_c"))
+		_set_pc6_spin_value("melt_factor_per_c", snow.get("melt_factor_per_c"))
+		_set_pc6_spin_value("max_snow_store", snow.get("max_snow_store"))
+		_set_pc6_spin_value("soil_capacity", snow.get("soil_capacity"))
+	var erosion = groups.get("erosion_physics", {})
+	if typeof(erosion) == TYPE_DICTIONARY:
+		_set_pc6_spin_value("thermal_kappa", erosion.get("thermal_kappa"))
+	var final_e = groups.get("final_erosion_physics", {})
+	if typeof(final_e) == TYPE_DICTIONARY:
+		_set_pc6_spin_value("stream_power_k", final_e.get("stream_power_k"))
+		_set_pc6_spin_value("stream_power_iterations", final_e.get("stream_power_iterations"))
+		_set_pc6_spin_value("micro_fill_max_depth_m", final_e.get("micro_fill_max_depth_m"))
+	var landforms = groups.get("landform_classification", {})
+	if typeof(landforms) == TYPE_DICTIONARY:
+		_set_pc6_spin_value("mountain_score_threshold", landforms.get("mountain_score_threshold"))
+		_set_pc6_spin_value("plateau_score_threshold", landforms.get("plateau_score_threshold"))
+		_set_pc6_spin_value("min_range_km2", landforms.get("min_range_km2"))
+		_set_pc6_spin_value("min_plateau_km2", landforms.get("min_plateau_km2"))
+	var moisture = groups.get("moisture_physics", {})
+	if typeof(moisture) == TYPE_DICTIONARY:
+		_set_pc6_spin_value("moisture_spinup_max_years", moisture.get("spinup_max_years"))
+		_set_pc6_spin_value(
+			"moisture_spinup_tolerance_relative",
+			moisture.get("spinup_tolerance_relative"),
+		)
+	var lod = _effective_config.get("display_only_lod", {})
+	if typeof(lod) == TYPE_DICTIONARY:
+		_set_pc6_spin_value("river_acc_fraction", lod.get("river_acc_fraction"))
+		if lod.has("precip_scale_mm"):
+			precip_scale_spin.value = float(lod.get("precip_scale_mm"))
+		_set_pc6_spin_value(
+			"river_discharge_candidate_quantile",
+			lod.get("river_discharge_candidate_quantile"),
+		)
 
 
 func _generation_knobs() -> Dictionary:
@@ -277,6 +658,35 @@ func _generation_knobs() -> Dictionary:
 		"moisture_monsoon_strength": float(moist_monsoon_spin.value),
 		"moisture_monsoon_lat_band_max_abs_deg": float(moist_monsoon_band_max_spin.value),
 		"precip_scale_mm": float(precip_scale_spin.value),
+		"river_acc_fraction": _pc6_spin_value("river_acc_fraction", 0.035),
+		"river_min_catchment_km2": _pc6_spin_value("river_min_catchment_km2", 500.0),
+		"river_discharge_candidate_quantile": _pc6_spin_value(
+			"river_discharge_candidate_quantile", 0.50
+		),
+		"channel_q_min_m3s": _pc6_spin_value("channel_q_min_m3s", 0.05),
+		"bed_loss_m3_per_km_month": _pc6_spin_value("bed_loss_m3_per_km_month", 2.0) * 1.0e5,
+		"fill_max_depth_m": _pc6_spin_value("fill_max_depth_m", 25.0),
+		"lake_storage_spinup_years": int(_pc6_spin_value("lake_storage_spinup_years", 8.0)),
+		"lake_storage_spinup_tol": _pc6_spin_value("lake_storage_spinup_tol", 0.01),
+		"runoff_spinup_years": int(_pc6_spin_value("runoff_spinup_years", 8.0)),
+		"runoff_spinup_tol": _pc6_spin_value("runoff_spinup_tol", 0.01),
+		"snow_threshold_c": _pc6_spin_value("snow_threshold_c", 0.0),
+		"snow_band_c": _pc6_spin_value("snow_band_c", 2.0),
+		"melt_factor_per_c": _pc6_spin_value("melt_factor_per_c", 0.08),
+		"max_snow_store": _pc6_spin_value("max_snow_store", 40.0),
+		"soil_capacity": _pc6_spin_value("soil_capacity", 1.0),
+		"thermal_kappa": _pc6_spin_value("thermal_kappa", 0.08),
+		"stream_power_k": _pc6_spin_value("stream_power_k", 12.0),
+		"stream_power_iterations": int(_pc6_spin_value("stream_power_iterations", 4.0)),
+		"micro_fill_max_depth_m": _pc6_spin_value("micro_fill_max_depth_m", 25.0),
+		"mountain_score_threshold": _pc6_spin_value("mountain_score_threshold", 0.60),
+		"plateau_score_threshold": _pc6_spin_value("plateau_score_threshold", 0.40),
+		"min_range_km2": _pc6_spin_value("min_range_km2", 800.0),
+		"min_plateau_km2": _pc6_spin_value("min_plateau_km2", 2500.0),
+		"moisture_spinup_max_years": int(_pc6_spin_value("moisture_spinup_max_years", 48.0)),
+		"moisture_spinup_tolerance_relative": _pc6_spin_value(
+			"moisture_spinup_tolerance_relative", 0.02
+		),
 	}
 
 
@@ -344,15 +754,15 @@ terrain:
 
 erosion:
   iterations: %d
-  thermal_kappa: 0.08
+  thermal_kappa: %.4f
   fluvial_k: %.4f
   max_step_m: 25.0
   macro_blend: 0.35
-  stream_power_k: 12.0
-  stream_power_iterations: 4
+  stream_power_k: %.4f
+  stream_power_iterations: %d
   stream_power_max_step_m: 30.0
   stream_power_macro_blend: 0.40
-  micro_fill_max_depth_m: 25.0
+  micro_fill_max_depth_m: %.1f
 
 climate:
   months: 12
@@ -377,8 +787,8 @@ moisture:
   continentality_dry: %.4f
   lee_dry: %.4f
   diffusion_mix_per_month: 0.08
-  spinup_max_years: 48
-  spinup_tolerance_relative: 0.02
+  spinup_max_years: %d
+  spinup_tolerance_relative: %.4f
   spinup_tolerance_absolute: 0.001
   plume_strength: %.4f
   plume_mix_reach_km: 500.0
@@ -394,19 +804,33 @@ moisture:
   monsoon_regional_mean_km: 500.0
 
 hydrology:
-  river_acc_fraction: 0.035
-  river_min_catchment_km2: 500.0
-  fill_max_depth_m: 25.0
+  river_acc_fraction: %.4f
+  river_min_catchment_km2: %.1f
+  river_discharge_candidate_quantile: %.2f
+  channel_q_min_m3s: %.4f
+  bed_loss_m3_per_km_month: %.1f
+  lake_min_depth_m: 2.0
+  lake_storage_spinup_years: %d
+  lake_storage_spinup_tol: %.4f
+  runoff_spinup_years: %d
+  runoff_spinup_tol: %.4f
+  snow_threshold_c: %.2f
+  snow_band_c: %.2f
+  melt_factor_per_c: %.4f
+  max_snow_store: %.1f
+  soil_capacity: %.2f
+  soil_quickflow_frac: 0.20
+  fill_max_depth_m: %.1f
   transmission_rate: 0.45
 
 landforms:
-  mountain_score_threshold: 0.60
-  plateau_score_threshold: 0.40
+  mountain_score_threshold: %.2f
+  plateau_score_threshold: %.2f
   fine_radius_km: 60.0
   meso_radius_km: 150.0
   macro_radius_km: 300.0
-  min_range_km2: 800.0
-  min_plateau_km2: 2500.0
+  min_range_km2: %.1f
+  min_plateau_km2: %.1f
 
 generation:
   quality: final
@@ -431,6 +855,10 @@ generation:
 		float(knobs["boundary_relief"]),
 		int(knobs["erosion_iterations"]),
 		float(knobs["fluvial_k"]),
+		float(knobs["thermal_kappa"]),
+		float(knobs["stream_power_k"]),
+		int(knobs["stream_power_iterations"]),
+		float(knobs["micro_fill_max_depth_m"]),
 		float(knobs["base_temp_c"]),
 		float(knobs["precip_scale_mm"]),
 		int(knobs["moisture_advect_steps"]),
@@ -443,12 +871,33 @@ generation:
 		float(knobs["moisture_land_et_rate"]),
 		float(knobs["moisture_continentality_dry"]),
 		float(knobs["moisture_lee_dry"]),
+		int(knobs["moisture_spinup_max_years"]),
+		float(knobs["moisture_spinup_tolerance_relative"]),
 		float(knobs["moisture_plume_strength"]),
 		float(knobs["moisture_land_store_capacity"]),
 		float(knobs["moisture_itcz_convective_scale"]),
 		float(knobs["moisture_itcz_width_deg"]),
 		float(knobs["moisture_monsoon_strength"]),
 		float(knobs["moisture_monsoon_lat_band_max_abs_deg"]),
+		float(knobs["river_acc_fraction"]),
+		float(knobs["river_min_catchment_km2"]),
+		float(knobs["river_discharge_candidate_quantile"]),
+		float(knobs["channel_q_min_m3s"]),
+		float(knobs["bed_loss_m3_per_km_month"]),
+		int(knobs["lake_storage_spinup_years"]),
+		float(knobs["lake_storage_spinup_tol"]),
+		int(knobs["runoff_spinup_years"]),
+		float(knobs["runoff_spinup_tol"]),
+		float(knobs["snow_threshold_c"]),
+		float(knobs["snow_band_c"]),
+		float(knobs["melt_factor_per_c"]),
+		float(knobs["max_snow_store"]),
+		float(knobs["soil_capacity"]),
+		float(knobs["fill_max_depth_m"]),
+		float(knobs["mountain_score_threshold"]),
+		float(knobs["plateau_score_threshold"]),
+		float(knobs["min_range_km2"]),
+		float(knobs["min_plateau_km2"]),
 	]
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
@@ -571,15 +1020,17 @@ func _load_world(world_root: String) -> void:
 	if err != OK:
 		status_label.text = "Failed to load atlas at %s" % world_root
 		return
+	_load_effective_config(world_root)
 	var meta: Dictionary = atlas.get_atlas_meta()
 	if modes.has_method("configure_from_meta"):
 		modes.configure_from_meta(meta)
 	_setup_mode_buttons()
 	timeline.set_months(int(meta.get("months", 12)))
 	month_spin.max_value = timeline.months
-	status_label.text = "Loaded atlas %dx%d" % [
+	status_label.text = "Loaded atlas %dx%d%s" % [
 		int(meta.get("raster_width", 0)),
 		int(meta.get("raster_height", 0)),
+		_effective_config_status_suffix(),
 	]
 	_load_inspector_context()
 	modes.select_mode(str(meta.get("default_mode", "elevation")))
@@ -606,9 +1057,34 @@ func _on_worker_line(line: String) -> void:
 		progress.handle_event(ev)
 
 
+func _read_worker_stderr_tail(max_chars: int = 240) -> String:
+	var out_dir := world_path_edit.text.strip_edges().get_base_dir()
+	if out_dir.is_empty():
+		return ""
+	var err_path := out_dir.path_join("worker.stderr.log")
+	if not FileAccess.file_exists(err_path):
+		return ""
+	var text := FileAccess.get_file_as_string(err_path).strip_edges()
+	if text.is_empty():
+		return ""
+	var lines := text.split("\n", false)
+	for i in range(lines.size() - 1, -1, -1):
+		var line := str(lines[i]).strip_edges()
+		if line.is_empty():
+			continue
+		if line.length() > max_chars:
+			return line.substr(0, max_chars)
+		return line
+	return ""
+
+
 func _on_worker_exit(code: int) -> void:
 	if code != 0:
-		status_label.text = "Worker exited with code %d" % code
+		var detail := _read_worker_stderr_tail()
+		if detail.is_empty():
+			status_label.text = "Worker exited with code %d" % code
+		else:
+			status_label.text = "Worker exited with code %d — %s" % [code, detail]
 
 
 func _on_progress(stage: String, value: float) -> void:
@@ -725,6 +1201,38 @@ func _sync_month_spin_enabled() -> void:
 	if modes != null and modes.has_method("is_monthly"):
 		monthly = modes.is_monthly(str(modes.current_mode))
 	month_spin.editable = monthly
+
+
+func _load_effective_config(world_root: String) -> void:
+	_effective_config = {}
+	if world_root.is_empty():
+		return
+	var candidates: PackedStringArray = PackedStringArray([
+		world_root.path_join("effective_config.json"),
+		world_root.path_join("world/effective_config.json"),
+	])
+	var parent := world_root.get_base_dir()
+	if parent != world_root:
+		candidates.append(parent.path_join("effective_config.json"))
+	for path in candidates:
+		if FileAccess.file_exists(path):
+			var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+			if typeof(parsed) == TYPE_DICTIONARY:
+				_effective_config = parsed
+				_sync_advanced_from_effective_config()
+				return
+
+
+func _effective_config_status_suffix() -> String:
+	if _effective_config.is_empty():
+		return ""
+	var lod = _effective_config.get("display_only_lod", {})
+	if typeof(lod) != TYPE_DICTIONARY:
+		return ""
+	var scale = lod.get("precip_scale_mm", null)
+	if scale == null:
+		return ""
+	return " · precip_scale=%s mm" % str(scale)
 
 
 func _load_inspector_context() -> void:

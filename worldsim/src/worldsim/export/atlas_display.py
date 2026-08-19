@@ -15,6 +15,11 @@ from worldsim.physical.vectorize.lakes import lake_atlas_properties
 from worldsim.spatial.hex_grid.pipeline import HexAnalysisResult
 from worldsim.spatial.hex_grid.contract import HEX_CONTRACT_FIELDS, hex_environment_columns
 from worldsim.spatial.model import WorldSpatialModel
+from worldsim.spatial.product_contracts import (
+    DIAGNOSTIC_LAYER_DESCRIPTORS,
+    INSPECTOR_CONTRACT_VERSION,
+    PRODUCT_CONTRACT_VERSION,
+)
 from worldsim.spatial.raster_store import RasterStore
 
 # C0: version the display contract. C9 writes structured mode descriptors.
@@ -26,6 +31,38 @@ def _hex_color_rgb(color: str) -> tuple[int, int, int]:
     if len(text) != 6:
         return (128, 128, 128)
     return int(text[0:2], 16), int(text[2:4], 16), int(text[4:6], 16)
+
+
+def _nearest_float(arr: NDArray[Any], h: int, w: int) -> NDArray[np.float64]:
+    src = np.asarray(arr, dtype=np.float64)
+    sh, sw = src.shape
+    yi = (np.arange(h) * sh // h).astype(np.intp)
+    xi = (np.arange(w) * sw // w).astype(np.intp)
+    return src[np.ix_(yi, xi)]
+
+
+def _log_catchment_rgb(flow_acc: NDArray[Any], ocean: NDArray[np.bool_]) -> NDArray[np.uint8]:
+    acc = np.asarray(flow_acc, dtype=np.float64)
+    out = np.zeros((*acc.shape, 3), dtype=np.uint8)
+    land = (~ocean) & np.isfinite(acc) & (acc > 0.0)
+    if not np.any(land):
+        return out
+    logv = np.log10(np.maximum(acc[land], 1.0))
+    lo = float(np.min(logv))
+    hi = float(np.max(logv))
+    if hi <= lo:
+        hi = lo + 1.0
+    gray = ((logv - lo) / (hi - lo) * 255.0).astype(np.uint8)
+    out[land] = np.stack([gray, gray, gray], axis=-1)
+    return out
+
+
+def _binary_mask_rgb(mask: NDArray[Any], ocean: NDArray[np.bool_]) -> NDArray[np.uint8]:
+    m = np.asarray(mask).astype(bool)
+    out = np.zeros((*m.shape, 3), dtype=np.uint8)
+    active = m & (~ocean)
+    out[active] = np.array([0, 180, 255], dtype=np.uint8)
+    return out
 
 
 def paint_categorical_rgb(
@@ -264,6 +301,24 @@ def export_atlas_display(
             directory / "flow_direction.png",
             _flow_direction_rgb(d8, riv, ocean),
         )
+
+    diagnostic_layers: list[dict[str, Any]] = []
+    if rasters.has("hydrology/flow_accumulation"):
+        fa = np.asarray(rasters.get("hydrology/flow_accumulation"), dtype=np.float64)
+        if fa.shape != (h, w):
+            fa = _nearest_float(fa, h, w)
+        write_png_rgb(directory / "log_catchment_area.png", _log_catchment_rgb(fa, ocean))
+        diagnostic_layers.append(dict(DIAGNOSTIC_LAYER_DESCRIPTORS[0]))
+    for desc, key in (
+        (DIAGNOSTIC_LAYER_DESCRIPTORS[1], "hydrology/geomorphic_channel_mask"),
+        (DIAGNOSTIC_LAYER_DESCRIPTORS[2], "hydrology/display_river_mask"),
+    ):
+        if rasters.has(key):
+            layer = np.asarray(rasters.get(key))
+            if layer.shape != (h, w):
+                layer = _nearest_uint8(layer.astype(np.uint8), h, w).astype(bool)
+            write_png_rgb(directory / desc["file"], _binary_mask_rgb(layer, ocean))
+            diagnostic_layers.append(dict(desc))
 
     temp = np.asarray(rasters.get("climate/temperature_c"), dtype=np.float64)
     precip = np.asarray(rasters.get("moisture/precipitation"), dtype=np.float64)
@@ -547,6 +602,10 @@ def export_atlas_display(
             "climate_summary": "climate_summary.json",
         },
         "hex_contract_fields": list(HEX_CONTRACT_FIELDS),
+        "product_contract_version": PRODUCT_CONTRACT_VERSION,
+        "inspector_contract_version": INSPECTOR_CONTRACT_VERSION,
+        "diagnostic_layers": diagnostic_layers,
+        "diagnostic_layer_ids": [str(d["id"]) for d in diagnostic_layers],
         "stroke_smooth": {
             "river_vertices_before": riv_verts_before,
             "river_vertices_after": riv_verts_after,
@@ -604,5 +663,6 @@ def _climate_summary(
             )
         ),
         warnings=warnings,
+        snow_firn_ok=bool(extra.get("snow_firn_ok", False)),
     )
     return summary

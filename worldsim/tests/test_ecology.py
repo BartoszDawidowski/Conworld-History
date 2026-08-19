@@ -76,7 +76,7 @@ def test_holdridge_ocean_override() -> None:
 def test_holdridge_inspector_labels() -> None:
     assert zone_label_for_id(0) == "Ocean"
     assert zone_label_for_id(1) == "Lake"
-    assert zone_label_for_id(2) == "Permanent ice"
+    assert zone_label_for_id(2) == "Permanent ice (thermal potential)"
     assert zone_label_for_id(3) == "Alpine bare"
     # Tropical (≥24 °C) × humid → Tropical moist forest (wiki-style)
     from worldsim.physical.ecology.holdridge import life_zone_id

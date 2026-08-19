@@ -68,7 +68,7 @@ def test_fluvial_incises_rivers_stably() -> None:
     resist = rock_resistance_proxy(
         orogenic_potential=None, tectonic_activity=None, shape=(h, w)
     )
-    dem2, delta = apply_fluvial_erosion(
+    dem2, process = apply_fluvial_erosion(
         elevation_m=elev,
         ocean_mask=ocean,
         river_mask=river,
@@ -78,7 +78,7 @@ def test_fluvial_incises_rivers_stably() -> None:
     )
     land = ~ocean
     assert float(np.corrcoef(elev[land], dem2[land])[0, 1]) > 0.95
-    assert float(delta[river].mean()) < 0.0  # net incision on river
+    assert float(process.final_stream_power_delta_m[river].mean()) < 0.0
     assert np.allclose(dem2[ocean], elev[ocean])
 
 
@@ -97,13 +97,16 @@ def test_final_recalculation(tmp_path: Path) -> None:
     )
     assert final.elevation_v2_m.shape == erosion.elevation_m.shape
     assert final.diagnostics["stable_final_geography"] is True
-    assert final.diagnostics["hydrology_final_ok"] is True
+    assert final.diagnostics["erosion_algorithm"] == "pc4_process_deltas_v1"
+    assert final.diagnostics["conditioning_excluded_from_erosion_acceptance"] is True
+    assert "geomorphic_channel_jaccard_pre_post" in final.diagnostics
+    assert final.hydrology.diagnostics.get("runoff_periodic") is True
+    assert final.hydrology.diagnostics.get("final_q_network_order_ok") is True
     assert final.diagnostics["vectors_final_ok"] is True
     assert final.diagnostics["hydro_evap_iteration"] in (1, 2)
     assert "lake_mask_jaccard" in final.diagnostics
     assert "effective_q_rel_change" in final.diagnostics
     assert "coupling_converged" in final.diagnostics
-    assert final.hydrology.diagnostics["acceptance_ok"] is True
     assert final.vectors.diagnostics["acceptance_ok"] is True
     final.save(tmp_path / "final")
     assert (tmp_path / "final" / "terrain_v2.npz").is_file()
