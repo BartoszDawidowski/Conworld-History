@@ -2,8 +2,8 @@
 
 **Date:** 2026-08-19  
 **Status:** ✅ **Delivered** (synthetic representability/catastrophe fixtures; thresholds frozen)  
-**Authority:** [`docs/WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §9 + §11 PC5  
-**Depends on:** [PC0](worldgen_pc0.md), [PC4](worldgen_pc4.md)
+**Authority:** [`docs/00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §9 + §11 PC5  
+**Depends on:** [PC0](01_worldgen_pc0.md), [PC4](05_worldgen_pc4.md)
 
 ---
 

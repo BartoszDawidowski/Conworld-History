@@ -2,8 +2,8 @@
 
 **Date:** 2026-08-19  
 **Status:** ✅ **Delivered** (suite harness, performance ledger, readiness review)  
-**Authority:** [`docs/WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §11 PC7 + §16  
-**Depends on:** [PC0](worldgen_pc0.md) … [PC6](worldgen_pc6.md)
+**Authority:** [`docs/00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §11 PC7 + §16  
+**Depends on:** [PC0](01_worldgen_pc0.md) … [PC6](07_worldgen_pc6.md)
 
 ---
 
@@ -66,7 +66,7 @@ The **+22%** figure (134 → 164 s) documents the mid-audit step only. Current A
 1. Skip redundant G0 validation year when spin-up converges early (`g0_repeat_year_skipped` diagnostic).
 2. O(1) lake-record lookup in condensed monthly router (was O(n) per lake-month).
 
-**Post-PC7 repair (2026-08-19):** per-lake storage periodicity in condensed router (see [PC1](worldgen_pc1.md)).
+**Post-PC7 repair (2026-08-19):** per-lake storage periodicity in condensed router (see [PC1](02_worldgen_pc1.md)).
 
 ---
 
@@ -107,7 +107,7 @@ User review is required before C10 even when suite passes.
 | Godot Advanced §10.1 UI groups | ✅ |
 | PC1 per-lake lake-storage periodicity | ✅ |
 | PC0 docs / baseline tolerance | ✅ |
-| C10 readiness gate doc | [`C10_READINESS_GATE.md`](C10_READINESS_GATE.md) |
+| C10 readiness gate doc | [`09_C10_READINESS_GATE.md`](09_C10_READINESS_GATE.md) |
 
 **C10 calibration:** not started — requires user acceptance of readiness gate.
 

@@ -1,7 +1,7 @@
 # Worldgen corrective C9.1 — roll-up
 
 **Date:** 2026-08-18  
-**Status:** ⚠️ **IMPLEMENTED ON FIXTURES — PRODUCTION CLOSURE REQUIRED** (see [PC0](worldgen_pc0.md), [production-closure addendum](../WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md))  
+**Status:** ⚠️ **IMPLEMENTED ON FIXTURES — PRODUCTION CLOSURE REQUIRED** (see [PC0](01_worldgen_pc0.md), [production-closure addendum](../00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md))  
 **Authority:** [`docs/WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](../WORLDGEN_CORRECTIVE_C91_ADDENDUM.md)  
 **Next:** **PC1** (lake-supernode). **C10 remains blocked.**
 

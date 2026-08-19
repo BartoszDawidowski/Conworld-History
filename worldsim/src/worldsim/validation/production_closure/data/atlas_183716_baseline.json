@@ -63,7 +63,7 @@
     "runtime_regression_fraction": 0.22,
     "post_pc1_pc3_local_total": 609.9,
     "post_pc1_pc3_dominant_stage": "final",
-    "note": "163.9 s is mid-audit (pre condensed router + G0 spin-up). Post PC1+PC3 Atlas 183716 locally ~610 s; see worldgen_pc7.md."
+    "note": "163.9 s is mid-audit (pre condensed router + G0 spin-up). Post PC1+PC3 Atlas 183716 locally ~610 s; see 08_worldgen_pc7.md."
   },
   "effective_config": {
     "precip_scale_mm": 200

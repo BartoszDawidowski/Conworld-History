@@ -2,8 +2,8 @@
 
 **Date:** 2026-08-19  
 **Status:** ✅ **Delivered** (synthetic cascade/balance fixtures; no lake parameter retune)  
-**Authority:** [`docs/WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §11 PC1  
-**Depends on:** [PC0](worldgen_pc0.md)
+**Authority:** [`docs/00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §11 PC1  
+**Depends on:** [PC0](01_worldgen_pc0.md)
 
 ---
 

@@ -2,8 +2,8 @@
 
 **Date:** 2026-08-19  
 **Status:** ✅ **Delivered** (synthetic process-delta fixtures; no coefficient retune)  
-**Authority:** [`docs/WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §8 + §11 PC4  
-**Depends on:** [PC0](worldgen_pc0.md), [PC2](worldgen_pc2.md)
+**Authority:** [`docs/00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §8 + §11 PC4  
+**Depends on:** [PC0](01_worldgen_pc0.md), [PC2](03_worldgen_pc2.md)
 
 ---
 

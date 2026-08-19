@@ -2,8 +2,8 @@
 
 **Date:** 2026-08-19  
 **Status:** ✅ **Delivered** (pipeline reorder + synthetic tier/topology fixtures)  
-**Authority:** [`docs/WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §4.2, §6, §11 PC2  
-**Depends on:** [PC1](worldgen_pc1.md), [PC3](worldgen_pc3.md)
+**Authority:** [`docs/00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §4.2, §6, §11 PC2  
+**Depends on:** [PC1](02_worldgen_pc1.md), [PC3](04_worldgen_pc3.md)
 
 ---
 

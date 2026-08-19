@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-19 (updated post PC7 pre-C10 repairs)  
 **Status:** ✅ **Delivered** — baseline frozen; synthetic regressions now **hard PASS** (PC1–PC5 resolved on fixtures)  
-**Authority:** [`docs/WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §11 PC0  
+**Authority:** [`docs/00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §11 PC0  
 **Audited commit:** `68d0ce93c24a030e9581a810ceadc228289de19f`  
 **Reference world:** Atlas profile, seed `183716`
 
@@ -54,4 +54,4 @@ Run: `pytest -m pc0 -q`
 
 ## Next
 
-Structural closure continues in [PC1](worldgen_pc1.md) … [PC7](worldgen_pc7.md). C10 calibration: [`C10_READINESS_GATE.md`](C10_READINESS_GATE.md).
+Structural closure continues in [PC1](02_worldgen_pc1.md) … [PC7](08_worldgen_pc7.md). C10 calibration: [`09_C10_READINESS_GATE.md`](09_C10_READINESS_GATE.md).

@@ -13,7 +13,7 @@ This document is the **execution index** for scientific hardening of the physica
 
 - Full design, algorithms, acceptance, and prohibitions live in the annex.
 - **Post–PR-9 production gaps** and the repair sequence live in [`PHYSICAL_REALISM_CORRECTIONS.md`](PHYSICAL_REALISM_CORRECTIONS.md).
-- **C9.1 production closure** (blocks C10) lives in [`WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](WORLDGEN_CORRECTIVE_C91_ADDENDUM.md) — **implemented on fixtures**; successor: [`WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) (**PC0–PC7**).
+- **C9.1 production closure** (blocks C10) lives in [`WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](WORLDGEN_CORRECTIVE_C91_ADDENDUM.md) — **implemented on fixtures**; successor: [`00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) (**PC0–PC7**).
 - This tracker records order, status, and **conflicts** with earlier plans.
 - Atlas presentation work (**B10**) may proceed independently of PR/CR physics when explicitly requested.
 
@@ -141,14 +141,14 @@ Detail: annex §§7–19. Production defects: corrections §3 (F-01…).
 | C8 | Canonical WorldSpatialModel / hex / query / export | ✅ Complete (Godot display leftover → C9) | [`docs/validation/worldgen_corrective_c8.md`](validation/worldgen_corrective_c8.md) |
 | C9 | Godot BiomeV2 / landform modes / legends / inspector | ✅ Complete (Fit/4× leftover until regen) | [`docs/validation/worldgen_corrective_c9.md`](validation/worldgen_corrective_c9.md) |
 | C9.1 | Production closure (fixtures) | ⚠️ Implemented on fixtures — PC required | [`docs/WORLDGEN_CORRECTIVE_C91_ADDENDUM.md`](WORLDGEN_CORRECTIVE_C91_ADDENDUM.md) |
-| PC0 | Baseline + failing regressions | ✅ Complete | [`docs/validation/worldgen_pc0.md`](validation/worldgen_pc0.md) |
-| PC1 | Lake-supernode + monthly router | ✅ Complete | [`docs/validation/worldgen_pc1.md`](validation/worldgen_pc1.md) |
-| PC2 | Periodic storage + 3-tier networks | ✅ Complete | [`docs/validation/worldgen_pc2.md`](validation/worldgen_pc2.md) |
-| PC3 | G0 snow/soil/firn | ✅ Complete | [`docs/validation/worldgen_pc3.md`](validation/worldgen_pc3.md) |
-| PC4 | Geomorphic erosion + gates | ✅ Complete | [`docs/validation/worldgen_pc4.md`](validation/worldgen_pc4.md) |
-| PC5 | Landform systems + acceptance | ✅ Complete | [`docs/validation/worldgen_pc5.md`](validation/worldgen_pc5.md) |
-| PC6 | Products + Godot + inspector | ✅ Complete | [`docs/validation/worldgen_pc6.md`](validation/worldgen_pc6.md) |
-| PC7 | Production suite + C10 readiness | ✅ Complete | [`docs/validation/worldgen_pc7.md`](validation/worldgen_pc7.md) |
+| PC0 | Baseline + failing regressions | ✅ Complete | [`docs/validation/01_worldgen_pc0.md`](validation/01_worldgen_pc0.md) |
+| PC1 | Lake-supernode + monthly router | ✅ Complete | [`docs/validation/02_worldgen_pc1.md`](validation/02_worldgen_pc1.md) |
+| PC2 | Periodic storage + 3-tier networks | ✅ Complete | [`docs/validation/03_worldgen_pc2.md`](validation/03_worldgen_pc2.md) |
+| PC3 | G0 snow/soil/firn | ✅ Complete | [`docs/validation/04_worldgen_pc3.md`](validation/04_worldgen_pc3.md) |
+| PC4 | Geomorphic erosion + gates | ✅ Complete | [`docs/validation/05_worldgen_pc4.md`](validation/05_worldgen_pc4.md) |
+| PC5 | Landform systems + acceptance | ✅ Complete | [`docs/validation/06_worldgen_pc5.md`](validation/06_worldgen_pc5.md) |
+| PC6 | Products + Godot + inspector | ✅ Complete | [`docs/validation/07_worldgen_pc6.md`](validation/07_worldgen_pc6.md) |
+| PC7 | Production suite + C10 readiness | ✅ Complete | [`docs/validation/08_worldgen_pc7.md`](validation/08_worldgen_pc7.md) |
 | C10 | Multi-seed calibration / Full RSS | **Blocked** — user review of PC7 readiness | addendum §12 |
 | C11 | Cryosphere G1–G3 glaciation | **Deferred** after PC7/C10 | addendum §13 |
 
@@ -179,7 +179,7 @@ Landforms (**PR-9** / **CR-5**) feed hex caches and `EnvironmentAdapter` later; 
 Worldgen production closure PC0–PC7 complete. C10 only after user accepts readiness review.
 ```
 
-PC2 delivered. C9.1 = implemented on fixtures. **C10 is blocked** until PC7 ([`WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md)). Do not retune precip, river LOD, mountain/plateau thresholds, or folding. Optional atlas **B10** remains independent presentation.
+PC2 delivered. C9.1 = implemented on fixtures. **C10 is blocked** until PC7 ([`00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md)). Do not retune precip, river LOD, mountain/plateau thresholds, or folding. Optional atlas **B10** remains independent presentation.
 
 ---
 

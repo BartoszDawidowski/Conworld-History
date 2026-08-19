@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-19  
 **Status:** `NOT_READY_FOR_CALIBRATION` — structural repairs delivered; physics gates still red on Atlas `183716`  
-**Authority:** [`WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §12 + §16
+**Authority:** [`00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §12 + §16
 
 ---
 
@@ -71,4 +71,4 @@ Programmatic verdict: `worldsim.validation.production_closure.c10_readiness.revi
 
 ## Runtime note (Atlas `183716`, post PC1+PC3)
 
-Pre-audit baseline (**163.9 s** at commit `68d0ce93`) predates condensed lake routing and G0 8-year spin-up. A fresh Atlas run on current code is typically **~600 s** (dominant stages: `final` ~65%, standalone `hydrology` ~31%). See [`worldgen_pc7.md`](worldgen_pc7.md).
+Pre-audit baseline (**163.9 s** at commit `68d0ce93`) predates condensed lake routing and G0 8-year spin-up. A fresh Atlas run on current code is typically **~600 s** (dominant stages: `final` ~65%, standalone `hydrology` ~31%). See [`08_worldgen_pc7.md`](08_worldgen_pc7.md).

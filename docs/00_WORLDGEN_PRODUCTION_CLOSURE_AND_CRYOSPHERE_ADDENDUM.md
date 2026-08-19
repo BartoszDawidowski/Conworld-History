@@ -979,7 +979,7 @@ Required:
 - correct documentation status from production accepted to fixture-implemented where applicable;
 - resolve `precip_scale_mm` documentation parity while keeping the effective value at `200`;
 - add per-stage runtime and peak-RSS measurement;
-- stop with `docs/validation/worldgen_pc0.md`.
+- stop with `docs/validation/01_worldgen_pc0.md`.
 
 No physics or default changes in PC0.
 
@@ -1014,7 +1014,7 @@ Implement:
 - vector topology and explicit ocean targets;
 - Atlas `183716` integration.
 
-Stop with `docs/validation/worldgen_pc2.md`. C10 remains blocked.
+Stop with `docs/validation/03_worldgen_pc2.md`. C10 remains blocked.
 
 ## PC3 — Mass-conserving snow/soil/firn foundation G0
 

@@ -2,8 +2,8 @@
 
 **Date:** 2026-08-19  
 **Status:** ✅ **Delivered** (effective config, tier-mask persistence, inspector status row)  
-**Authority:** [`docs/WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §10 + §11 PC6  
-**Depends on:** [PC0](worldgen_pc0.md) … [PC5](worldgen_pc5.md)
+**Authority:** [`docs/00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §10 + §11 PC6  
+**Depends on:** [PC0](01_worldgen_pc0.md) … [PC5](06_worldgen_pc5.md)
 
 ---
 

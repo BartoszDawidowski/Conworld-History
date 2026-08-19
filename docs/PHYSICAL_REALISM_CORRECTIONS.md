@@ -6,7 +6,7 @@
 > **Tracker:** [`PHYSICAL_REALISM_PLAN.md`](PHYSICAL_REALISM_PLAN.md).  
 > **Rule:** One **CR-N** / **C-N** milestone at a time. Validate → stop.  
 > **Do not** retune precipitation, `folding_ratio`, SST, or `lake_min_depth_m` to hide the defects below.  
-> **Next when instructed:** **PC1** (PC0 delivered; **C10 blocked**). Plan: [`WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md).
+> **Next when instructed:** **PC1** (PC0 delivered; **C10 blocked**). Plan: [`00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md).
 
 ---
 

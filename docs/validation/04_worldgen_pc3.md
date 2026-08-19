@@ -2,8 +2,8 @@
 
 **Date:** 2026-08-19  
 **Status:** ✅ **Delivered** (synthetic conservation/periodicity fixtures; no lake parameter retune)  
-**Authority:** [`docs/WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §7 + §11 PC3  
-**Depends on:** [PC0](worldgen_pc0.md); parallel with [PC1](worldgen_pc1.md)
+**Authority:** [`docs/00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §7 + §11 PC3  
+**Depends on:** [PC0](01_worldgen_pc0.md); parallel with [PC1](02_worldgen_pc1.md)
 
 ---
 
