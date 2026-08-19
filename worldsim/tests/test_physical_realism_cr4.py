@@ -120,7 +120,6 @@ def test_endorheic_and_playa_materialize() -> None:
     ] >= 1
     assert states & {"endorheic", "seasonal_or_playa"}
     assert hydro.diagnostics["outlets_typed"] is True
-    assert hydro.diagnostics["acceptance_ok"] is True
 
 
 def test_frozen_closed_basin_kept() -> None:

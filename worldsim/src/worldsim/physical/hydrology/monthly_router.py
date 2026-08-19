@@ -103,6 +103,9 @@ def spinup_condensed_lake_routing(
         body = env == lid
         if not np.any(body):
             continue
+        n_cells = int(np.count_nonzero(body))
+        rec["envelope_cell_count"] = n_cells
+        rec["envelope_area_km2"] = float(n_cells) * float(cell_area_km2)
         sn = condensed.supernodes[lid]
         sr, sc = int(sn.outlet_row), int(sn.outlet_col)
         rows, cols = np.where(body)

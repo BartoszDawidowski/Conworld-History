@@ -281,5 +281,7 @@ def test_godot_does_not_present_fluvial_k_as_final_incision() -> None:
     tscn = (ROOT / "godot" / "scenes" / "Main.tscn").read_text(encoding="utf-8")
     assert "Does not control final stream-power" in tscn
     gd = (ROOT / "godot" / "scenes" / "Main.gd").read_text(encoding="utf-8")
-    assert "stream_power_k: 12.0" in gd
-    assert "thermal_kappa: 0.08" in gd
+    assert "stream_power_k: %.4f" in gd
+    assert "thermal_kappa: %.4f" in gd
+    assert '_pc6_spin_value("stream_power_k", 12.0)' in gd
+    assert '_pc6_spin_value("thermal_kappa", 0.08)' in gd

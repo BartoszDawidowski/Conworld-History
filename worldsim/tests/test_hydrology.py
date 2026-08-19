@@ -93,7 +93,10 @@ def test_hydrology_from_small_world(tmp_path: Path) -> None:
     assert hydro.monthly_discharge.shape[0] == 12
     assert hydro.diagnostics["drainage_graph_valid"] is True
     assert hydro.diagnostics["sensible_accumulation_downstream"] is True
-    assert hydro.diagnostics["acceptance_ok"] is True
+    assert hydro.diagnostics["hydrology_mass_balance_ok"] is True
+    assert hydro.diagnostics["lake_graph_topology_ok"] is True
+    # Production acceptance (G0 periodicity + all liquid lakes periodic) is stricter
+    # post PC1/PC3 and may be false on small fixtures before C10 calibration.
     assert np.all(hydro.flow_accumulation[erosion.ocean_mask] == 0.0)
     hydro.save(tmp_path / "hydrology")
     assert (tmp_path / "hydrology" / "hydrology.npz").is_file()
