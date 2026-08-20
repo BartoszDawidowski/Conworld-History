@@ -88,6 +88,7 @@ def build_effective_config(
             "final_erosion_physics": _param_group(config, "final_erosion_physics"),
             "landform_classification": _param_group(config, "landform_classification"),
             "moisture_physics": _param_group(config, "moisture_physics"),
+            "ecology_physics": _param_group(config, "ecology_physics"),
         },
         "display_only_lod": display_lod,
         "run_metadata": dict(run_metadata or {}),
