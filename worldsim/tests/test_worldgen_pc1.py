@@ -77,7 +77,115 @@ def _run_simple(
     )
 
 
+def test_lake_captures_all_incoming_edges_not_single_sink() -> None:
+    """Addendum §5.1: every land→lake edge feeds storage, not only outlet cell."""
+    h, w = 3, 10
+    elev = np.full((h, w), 20.0)
+    elev[1, 4] = 6.0
+    elev[1, 5] = 6.0
+    elev[0, 5] = 6.0
+    # Two land sources drain into different shoreline cells of the same lake.
+    local = np.zeros((1, h, w), dtype=np.float64)
+    local[0, 1, 0] = 10.0
+    local[0, 0, 0] = 10.0
+    graph, _ = _east_drain(h=h, w=w)
+    env = np.zeros((h, w), dtype=np.int32)
+    env[1, 4] = 1
+    env[1, 5] = 1
+    env[0, 5] = 1
+    records = [
+        {
+            "lake_id": 1,
+            "sink_row": 1,
+            "sink_col": 5,
+            "outlet_row": 1,
+            "outlet_col": 5,
+            "spill_elevation_m": 6.05,
+            "basin_id": 1,
+            "water_state": "open",
+        }
+    ]
+    out = spinup_condensed_lake_routing(
+        graph=graph,
+        basin_envelope_id=env,
+        lake_records=records,
+        elevation_m=elev,
+        monthly_land_runoff_m3s=local,
+        bed_loss_potential_m3s=np.zeros((h, w)),
+        temperature_c=np.full((1, h, w), 4.0),
+        cell_area_km2=1e-6,
+        spinup_years=1,
+        spinup_rel_tol=0.2,
+    )
+    # Full-edge capture must exceed the legacy single-sink probe.
+    assert float(out["lake_inflow_all_edges_m3s"]) >= float(
+        out["lake_inflow_single_sink_m3s"]
+    )
+    assert float(out["lake_inflow_capture_ratio_vs_single_sink"]) >= 1.0
+    # Storage must see material inflow (not ~0 from a dry sink cell).
+    assert float(sum(records[0].get("inflow_m3") or [])) > 0.0
+
+
 def test_no_post_hoc_spill_inject_in_pipeline() -> None:
+    assert not hydrology_uses_post_hoc_spill_inject()
+    violations = hydrology_network_order_violations()
+    assert "post_hoc_spill_inject_present" not in violations
+
+
+def test_land_mediated_spill_credits_downstream_same_month() -> None:
+    """Spill crossing a land cell must enter the next lake in the same month."""
+    h, w = 3, 14
+    elev = np.full((h, w), 20.0)
+    elev[1, 4] = 6.0
+    elev[1, 8] = 6.0
+    local = np.zeros((1, h, w), dtype=np.float64)
+    local[0, 1, 0] = 50.0
+    graph, _ = _east_drain(h=h, w=w)
+    env = np.zeros((h, w), dtype=np.int32)
+    env[1, 4] = 1
+    env[1, 8] = 2
+    records = [
+        {
+            "lake_id": 1,
+            "sink_row": 1,
+            "sink_col": 4,
+            "outlet_row": 1,
+            "outlet_col": 4,
+            "spill_elevation_m": 6.05,
+            "basin_id": 1,
+            "water_state": "open",
+        },
+        {
+            "lake_id": 2,
+            "sink_row": 1,
+            "sink_col": 8,
+            "outlet_row": 1,
+            "outlet_col": 8,
+            "spill_elevation_m": 6.05,
+            "basin_id": 2,
+            "water_state": "open",
+        },
+    ]
+    cg = build_condensed_lake_graph(
+        graph=graph, basin_envelope_id=env, lake_records=records
+    )
+    assert cg.supernodes[1].downstream_lake_id == 2
+    out = spinup_condensed_lake_routing(
+        graph=graph,
+        basin_envelope_id=env,
+        lake_records=records,
+        elevation_m=elev,
+        monthly_land_runoff_m3s=local,
+        bed_loss_potential_m3s=np.zeros((h, w)),
+        temperature_c=np.full((1, h, w), 4.0),
+        cell_area_km2=1e-6,
+        spinup_years=1,
+        spinup_rel_tol=0.2,
+    )
+    rec2 = next(r for r in records if int(r["lake_id"]) == 2)
+    assert float(rec2["inflow_m3"][0]) > 0.0
+    assert out["unassigned_spill_ok"] is True
+
     assert not hydrology_uses_post_hoc_spill_inject()
     violations = hydrology_network_order_violations()
     assert "post_hoc_spill_inject_present" not in violations
@@ -356,23 +464,24 @@ def test_nonperiodic_storage_withheld_via_condensed_router() -> None:
 
 def test_per_lake_periodic_independent_in_coupled_router() -> None:
     """Fast-converging lake may publish while a slow neighbor remains withheld."""
-    h, w = 3, 14
+    h, w = 4, 14
     elev = np.full((h, w), 20.0, dtype=np.float64)
-    elev[1, 4] = 6.0
-    elev[1, 8:11] = 5.0
+    elev[2, 4] = 6.0
+    elev[0, 8:11] = 1.0
     graph, _ = _east_drain(h=h, w=w)
     env = np.zeros((h, w), dtype=np.int32)
-    env[1, 4] = 1
-    env[1, 8:11] = 2
+    env[2, 4] = 1
+    env[0, 8:11] = 2
     local = np.zeros((12, h, w), dtype=np.float64)
-    local[:, 1, 0] = 10.0
-    local[:, 1, 7] = 1e-5
+    local[:, 2, 0] = 10.0
+    # Slow closed basin on a disconnected row — fills across years, not periodic in 2.
+    local[:, 0, 7] = 0.01
     records = [
         {
             "lake_id": 1,
-            "sink_row": 1,
+            "sink_row": 2,
             "sink_col": 4,
-            "outlet_row": 1,
+            "outlet_row": 2,
             "outlet_col": 4,
             "spill_elevation_m": 6.05,
             "basin_id": 1,
@@ -380,13 +489,14 @@ def test_per_lake_periodic_independent_in_coupled_router() -> None:
         },
         {
             "lake_id": 2,
-            "sink_row": 1,
+            "sink_row": 0,
             "sink_col": 9,
-            "outlet_row": 1,
+            "outlet_row": 0,
             "outlet_col": 9,
-            "spill_elevation_m": 19.0,
+            "spill_elevation_m": 18.0,
             "basin_id": 2,
-            "water_state": "open",
+            "water_state": "endorheic",
+            "closed_basin": True,
         },
     ]
     out = spinup_condensed_lake_routing(
@@ -397,7 +507,7 @@ def test_per_lake_periodic_independent_in_coupled_router() -> None:
         monthly_land_runoff_m3s=local,
         bed_loss_potential_m3s=np.zeros((h, w)),
         temperature_c=np.full((12, h, w), 4.0),
-        cell_area_km2=1e-4,
+        cell_area_km2=0.25,
         spinup_years=2,
         spinup_rel_tol=0.01,
     )

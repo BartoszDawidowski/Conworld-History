@@ -285,3 +285,8 @@ def test_godot_does_not_present_fluvial_k_as_final_incision() -> None:
     assert "thermal_kappa: %.4f" in gd
     assert '_pc6_spin_value("stream_power_k", 12.0)' in gd
     assert '_pc6_spin_value("thermal_kappa", 0.08)' in gd
+    # Writer must emit thermal then fluvial (not swapped).
+    assert 'float(knobs["thermal_kappa"])' in gd
+    thermal_pos = gd.index('float(knobs["thermal_kappa"])')
+    fluvial_pos = gd.index('float(knobs["fluvial_k"])')
+    assert thermal_pos < fluvial_pos

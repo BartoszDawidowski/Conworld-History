@@ -257,67 +257,68 @@ def test_godot_planet_config_yaml_loads() -> None:
     ]
     assert len(specs) == len(args)
 
+    # Unique sentinels so a swapped argument cannot silently pass.
     knobs = {
-        "ocean_fraction": 0.71,
-        "sst_mix": 0.28,
-        "sst_inland_decay_km": 1200.0,
-        "western_warm_c": 2.2,
-        "eastern_cool_c": 1.8,
+        "ocean_fraction": 0.7111,
+        "sst_mix": 0.2811,
+        "sst_inland_decay_km": 1201.0,
+        "western_warm_c": 2.21,
+        "eastern_cool_c": 1.81,
         "num_plates": 7,
         "cycle_count": 3,
-        "folding_ratio": 0.01,
-        "tectonics_sea_level": 0.65,
-        "tectonics_erosion_period": 100,
-        "detail_amplitude": 0.02,
-        "land_scale_m": 9000.0,
-        "ocean_scale_m": 10000.0,
-        "orogeny_boost": 0.05,
-        "activity_relief": 0.25,
-        "boundary_relief": 0.35,
+        "folding_ratio": 0.011,
+        "tectonics_sea_level": 0.651,
+        "tectonics_erosion_period": 101,
+        "detail_amplitude": 0.021,
+        "land_scale_m": 9001.0,
+        "ocean_scale_m": 10001.0,
+        "orogeny_boost": 0.051,
+        "activity_relief": 0.251,
+        "boundary_relief": 0.351,
         "erosion_iterations": 5,
-        "fluvial_k": 8.0,
-        "thermal_kappa": 0.08,
-        "stream_power_k": 12.0,
+        "thermal_kappa": 0.0811,
+        "fluvial_k": 8.11,
+        "stream_power_k": 12.11,
         "stream_power_iterations": 4,
-        "micro_fill_max_depth_m": 25.0,
-        "base_temp_c": 25.0,
-        "precip_scale_mm": 200.0,
+        "micro_fill_max_depth_m": 25.1,
+        "base_temp_c": 25.1,
+        "precip_scale_mm": 201.0,
         "moisture_advect_steps": 32,
-        "moisture_advect_wind_scale": 0.2,
-        "moisture_large_scale_frac": 0.15,
-        "moisture_orographic_frac": 0.85,
-        "moisture_convective_scale": 2.0,
-        "moisture_ocean_evap_rate": 1.4,
-        "moisture_land_et_rate": 0.4,
-        "moisture_continentality_dry": 0.4,
-        "moisture_lee_dry": 0.12,
-        "moisture_plume_strength": 0.18,
-        "moisture_land_store_capacity": 8.0,
-        "moisture_itcz_convective_scale": 1.2,
-        "moisture_itcz_width_deg": 8.0,
-        "moisture_monsoon_strength": 0.35,
-        "moisture_monsoon_lat_band_max_abs_deg": 32.0,
+        "moisture_advect_wind_scale": 0.201,
+        "moisture_large_scale_frac": 0.151,
+        "moisture_orographic_frac": 0.851,
+        "moisture_convective_scale": 2.01,
+        "moisture_ocean_evap_rate": 1.41,
+        "moisture_land_et_rate": 0.41,
+        "moisture_continentality_dry": 0.41,
+        "moisture_lee_dry": 0.121,
+        "moisture_plume_strength": 0.181,
+        "moisture_land_store_capacity": 8.1,
+        "moisture_itcz_convective_scale": 1.21,
+        "moisture_itcz_width_deg": 8.1,
+        "moisture_monsoon_strength": 0.351,
+        "moisture_monsoon_lat_band_max_abs_deg": 32.1,
         "moisture_spinup_max_years": 48,
-        "moisture_spinup_tolerance_relative": 0.02,
-        "river_acc_fraction": 0.035,
-        "river_min_catchment_km2": 500.0,
-        "river_discharge_candidate_quantile": 0.50,
-        "channel_q_min_m3s": 0.05,
-        "bed_loss_m3_per_km_month": 200000.0,
-        "fill_max_depth_m": 25.0,
+        "moisture_spinup_tolerance_relative": 0.021,
+        "river_acc_fraction": 0.0351,
+        "river_min_catchment_km2": 501.0,
+        "river_discharge_candidate_quantile": 0.51,
+        "channel_q_min_m3s": 0.051,
+        "bed_loss_m3_per_km_month": 200001.0,
+        "fill_max_depth_m": 25.1,
         "lake_storage_spinup_years": 8,
-        "lake_storage_spinup_tol": 0.01,
+        "lake_storage_spinup_tol": 0.011,
         "runoff_spinup_years": 8,
-        "runoff_spinup_tol": 0.01,
-        "snow_threshold_c": 0.0,
-        "snow_band_c": 2.0,
-        "melt_factor_per_c": 0.08,
-        "max_snow_store": 40.0,
-        "soil_capacity": 1.0,
-        "mountain_score_threshold": 0.60,
-        "plateau_score_threshold": 0.40,
-        "min_range_km2": 800.0,
-        "min_plateau_km2": 2500.0,
+        "runoff_spinup_tol": 0.012,
+        "snow_threshold_c": 0.1,
+        "snow_band_c": 2.1,
+        "melt_factor_per_c": 0.081,
+        "max_snow_store": 40.1,
+        "soil_capacity": 1.1,
+        "mountain_score_threshold": 0.61,
+        "plateau_score_threshold": 0.41,
+        "min_range_km2": 801.0,
+        "min_plateau_km2": 2501.0,
     }
     vals: list[float | int] = []
     for line in args:
@@ -335,9 +336,38 @@ def test_godot_planet_config_yaml_loads() -> None:
     try:
         cfg = load_planet_config(tmp)
         assert cfg.moisture_spinup_max_years == 48
-        assert cfg.hydrology_bed_loss_m3_per_km_month == 200000.0
+        assert cfg.hydrology_bed_loss_m3_per_km_month == 200001.0
+        # Critical parity: thermal vs fluvial must not be swapped (audit 7a7e70e).
+        assert abs(float(cfg.erosion_thermal_kappa) - 0.0811) < 1e-6
+        assert abs(float(cfg.erosion_fluvial_k) - 8.11) < 1e-6
+        assert abs(float(cfg.erosion_stream_power_k) - 12.11) < 1e-6
+        assert abs(float(cfg.hydrology_river_acc_fraction) - 0.0351) < 1e-6
+        assert abs(float(cfg.sst_mix) - 0.2811) < 1e-6
+        assert abs(float(cfg.precip_scale_mm) - 201.0) < 1e-6
     finally:
         tmp.unlink(missing_ok=True)
+
+
+def test_godot_erosion_knob_order_and_c10_ranges() -> None:
+    """UI ranges must admit C10 grids; YAML thermal/fluvial order must match args."""
+    main = (GODOT / "scenes" / "Main.gd").read_text(encoding="utf-8")
+    tscn = (GODOT / "scenes" / "Main.tscn").read_text(encoding="utf-8")
+    # Argument order after erosion_iterations must be thermal then fluvial.
+    erosion_args = main.split('int(knobs["erosion_iterations"]),', 1)[1]
+    thermal_idx = erosion_args.find('float(knobs["thermal_kappa"])')
+    fluvial_idx = erosion_args.find('float(knobs["fluvial_k"])')
+    assert 0 <= thermal_idx < fluvial_idx
+    assert "thermal_kappa: %.4f" in main
+    assert "fluvial_k: %.4f" in main
+    # C10 ranges must be reachable from Advanced spins.
+    assert '"thermal_kappa"' in main and "100.0" in main.split('"thermal_kappa"', 1)[1][:200]
+    assert '"stream_power_k"' in main and "1500.0" in main.split('"stream_power_k"', 1)[1][:200]
+    # sst_mix default 0.28 requires step ≤ 0.01 (was 0.05 → snapped to 0.30).
+    sst_block = tscn.split('[node name="SstMixSpin"', 1)[1].split("[node name=", 1)[0]
+    assert "step = 0.01" in sst_block
+    assert "value = 0.28" in sst_block
+    assert "snappedf" in main
+
 
 
 def test_project_declares_godot_47() -> None:

@@ -104,9 +104,24 @@ def build_condensed_lake_graph(
         st_r = st_c = None
         if loc is not None:
             st_r, st_c = int(loc[0]), int(loc[1])
-            down_lid = int(env[st_r, st_c])
-            if down_lid == lid:
-                down_lid = 0
+            # Walk land reaches until another lake, ocean, or sink (addendum §5.1).
+            j = flat_index(st_r, st_c, w)
+            ds = graph.downstream_flat
+            ocean = graph.ocean_mask
+            while j >= 0:
+                rr, cc = unravel(j, w)
+                other = int(env[rr, cc])
+                if other > 0 and other != lid:
+                    down_lid = other
+                    break
+                if ocean[rr, cc]:
+                    break
+                j = int(ds[j])
+            if down_lid == 0:
+                # Immediate neighbour may itself be a lake cell.
+                down_lid = int(env[st_r, st_c])
+                if down_lid == lid:
+                    down_lid = 0
         supernodes[lid] = LakeSupernode(
             lake_id=lid,
             outlet_row=outlet_r,

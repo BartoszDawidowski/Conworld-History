@@ -284,14 +284,24 @@ func _pc6_spin_value(key: String, default: float = 0.0) -> float:
 	var spin: SpinBox = _pc6_spins.get(key)
 	if spin == null:
 		return default
-	return float(spin.value)
+	# Snap to the declared step so float noise does not drift defaults (0.035→0.036).
+	var step := float(spin.step)
+	var raw := float(spin.value)
+	if step > 0.0:
+		return snappedf(raw, step)
+	return raw
 
 
 func _set_pc6_spin_value(key: String, value: Variant) -> void:
 	var spin: SpinBox = _pc6_spins.get(key)
 	if spin == null or value == null:
 		return
-	spin.value = float(value)
+	var step := float(spin.step)
+	var raw := float(value)
+	if step > 0.0:
+		spin.value = snappedf(raw, step)
+	else:
+		spin.value = raw
 
 
 func _ensure_pc6_advanced_groups() -> void:
@@ -365,7 +375,7 @@ func _ensure_pc6_advanced_groups() -> void:
 		"lake tol ",
 		0.001,
 		0.5,
-		0.005,
+		0.001,
 		0.01,
 		" rel",
 		"Relative annual storage periodicity tolerance.",
@@ -426,21 +436,21 @@ func _ensure_pc6_advanced_groups() -> void:
 		"thermal_kappa",
 		"thermal κ ",
 		0.0,
-		1.0,
+		100.0,
 		0.01,
 		0.08,
 		"",
-		"First-pass thermal diffusion coefficient (1 km cells).",
+		"First-pass thermal diffusion coefficient (1 km cells). C10 grid: 20/50/80.",
 	)
 	_add_adv_spin(
 		"stream_power_k",
 		"stream power k ",
 		0.0,
-		50.0,
-		0.5,
+		1500.0,
+		1.0,
 		12.0,
 		"",
-		"Final stream-power incision coefficient (not pass-1 fluvial k).",
+		"Final stream-power incision coefficient (not pass-1 fluvial k). C10 grid: 500/1000/1500.",
 	)
 	_add_adv_spin(
 		"stream_power_iterations",
@@ -509,7 +519,7 @@ func _ensure_pc6_advanced_groups() -> void:
 		"river acc ",
 		0.001,
 		0.5,
-		0.005,
+		0.001,
 		0.035,
 		" frac",
 		"Top accumulation fraction rendered as display rivers.",
@@ -530,7 +540,7 @@ func _ensure_pc6_advanced_groups() -> void:
 		"moist tol ",
 		0.001,
 		0.5,
-		0.005,
+		0.001,
 		0.02,
 		" rel",
 		"Relative moisture spin-up convergence tolerance.",
@@ -550,7 +560,7 @@ func _ensure_pc6_advanced_groups() -> void:
 		"runoff tol ",
 		0.001,
 		0.5,
-		0.005,
+		0.001,
 		0.01,
 		" rel",
 		"Runoff spin-up relative tolerance.",
@@ -854,8 +864,8 @@ generation:
 		float(knobs["activity_relief"]),
 		float(knobs["boundary_relief"]),
 		int(knobs["erosion_iterations"]),
-		float(knobs["fluvial_k"]),
 		float(knobs["thermal_kappa"]),
+		float(knobs["fluvial_k"]),
 		float(knobs["stream_power_k"]),
 		int(knobs["stream_power_iterations"]),
 		float(knobs["micro_fill_max_depth_m"]),

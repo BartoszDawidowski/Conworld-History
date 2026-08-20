@@ -1,7 +1,7 @@
 # C10 readiness gate (post PC0–PC7 + pre-C10 repairs)
 
 **Date:** 2026-08-19  
-**Status:** `NOT_READY_FOR_CALIBRATION` — structural repairs delivered; physics gates still red on Atlas `183716`  
+**Status:** `NOT_READY_FOR_CALIBRATION` — remaining red Atlas gates include **structural** hydrology/river/erosion defects, not only C10 knob targets.  
 **Authority:** [`00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md`](../00_WORLDGEN_PRODUCTION_CLOSURE_AND_CRYOSPHERE_ADDENDUM.md) §12 + §16
 
 ---
@@ -17,6 +17,12 @@
 | Atlas baseline tolerance for post-PC channel drift | ✅ |
 | Full Godot Advanced §10.1 UI groups | ✅ (`Main.gd` — hydrology, lake storage, snow/firn, erosion, landforms, display LOD, solver/expert) |
 | PC1 per-lake lake-storage periodicity in condensed router | ✅ (2026-08-19 — fixes global-signature regression) |
+| **Pkg1** Godot YAML thermal/fluvial order, C10 UI ranges, spin quantization | ✅ (2026-08-20) |
+| **Pkg2** Lake inflow = all incoming edges; same-month land-mediated spill | ✅ (2026-08-20) |
+| **Pkg2** Acceptance checks real `withheld_count` (not hard-coded published=0) | ✅ |
+| Pkg3 true global mass ledger + capture-ratio ≥ 1−ε | ⏳ |
+| Pkg4 display rivers to explicit terminal; erosion delta identity | ⏳ |
+| Pkg5 honest PC7 multi-seed suite | ⏳ |
 
 ---
 

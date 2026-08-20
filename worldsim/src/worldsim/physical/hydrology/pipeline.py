@@ -708,8 +708,11 @@ def build_hydrology(
         diagnostics.get("snow_soil_state_periodic_or_firn_transfer_ok", False)
     )
     g0_mass_ok = bool(diagnostics.get("snow_soil_firn_mass_balance_ok", False))
-    withheld = int(diagnostics.get("basin_storage_nonperiodic_liquid_published_count") or 0)
+    withheld = int(
+        diagnostics.get("basin_storage_nonperiodic_liquid_withheld_count") or 0
+    )
     mass_ok = bool(diagnostics.get("hydrology_mass_balance_ok", False))
+    unassigned_ok = bool(diagnostics.get("unassigned_spill_ok", True))
     diagnostics["acceptance_ok"] = bool(
         diagnostics["acceptance_ok"]
         and mass_ok
@@ -717,6 +720,7 @@ def build_hydrology(
         and g0_state_ok
         and g0_mass_ok
         and withheld == 0
+        and unassigned_ok
     )
 
     if reporter is not None:

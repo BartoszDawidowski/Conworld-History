@@ -49,7 +49,8 @@ def build_effective_config(
         "river_discharge_candidate_quantile": float(
             config.hydrology_river_discharge_candidate_quantile
         ),
-        "precip_scale_mm": float(config.precip_scale_mm),
+        # precip_scale_mm is NOT display-only: it scales ecology, runoff, Q, and
+        # lake storage. Kept under physical_groups.ecology_physics below.
     }
 
     return {

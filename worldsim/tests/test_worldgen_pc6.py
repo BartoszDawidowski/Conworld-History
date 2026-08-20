@@ -40,7 +40,10 @@ def test_effective_config_schema_and_checksum(tmp_path: Path) -> None:
         run_metadata={"stage": "world"},
     )
     assert payload["effective_config_schema_version"] == EFFECTIVE_CONFIG_SCHEMA_VERSION
-    assert float(payload["display_only_lod"]["precip_scale_mm"]) == float(config.precip_scale_mm)
+    assert "precip_scale_mm" not in payload["display_only_lod"]
+    assert float(payload["physical_groups"]["ecology_physics"]["precip_scale_mm"]) == float(
+        config.precip_scale_mm
+    )
     assert float(payload["physical_groups"]["hydrology_physics"]["precip_scale_mm"]) == float(
         config.precip_scale_mm
     )
