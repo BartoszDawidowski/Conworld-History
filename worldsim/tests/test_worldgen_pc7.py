@@ -78,8 +78,71 @@ def test_c10_readiness_fail_closed_on_baseline_gates() -> None:
 def test_pc7_report_schema() -> None:
     report = build_pc7_report(seed_results=[])
     assert report["schema_version"] == PC7_SCHEMA_VERSION
+    assert report["suite_ok"] is False
+    assert report["matrix"]["matrix_complete"] is False
+    assert report["all_seeds_acceptance_ok"] is False
+    assert report["gates_all_green"] is False
     assert report["performance"]["optimization_version"] == PC7_OPTIMIZATION_VERSION
     assert report["c10_readiness"]["ready_for_calibration"] is False
+
+
+def test_pc7_report_honesty_and_across_seeds() -> None:
+    """Pkg5: suite_ok ≠ green gates; readiness ANDs atlas seeds."""
+    from worldsim.validation.production_closure.suite import SeedRunResult
+
+    def _run(profile: str, seed: int, *, ok: bool, hydro: bool) -> SeedRunResult:
+        return SeedRunResult(
+            profile=profile,
+            master_seed=seed,
+            elapsed_s=1.0,
+            peak_rss_mb_before=100.0,
+            peak_rss_mb_after=120.0,
+            artifact_bytes=10,
+            acceptance_ok=ok,
+            gates={
+                "moisture_spinup_ok": True,
+                "moisture_budget_ok": True,
+                "hydrology_ok": hydro,
+                "vector_ok": True,
+                "ecology_ok": True,
+                "biome_v2_ok": True,
+                "landforms_ok": True,
+                "erosion_or_fluvial_ok": True,
+                "hex_layout_ok": True,
+            },
+            stage_timings_s={"hydrology": 1.0},
+            stage_peak_rss_mb={"hydrology": 120.0},
+            precip_scale_mm=200.0,
+            absolute_maps=[],
+            output_dir=Path("."),
+        )
+
+    partial = build_pc7_report(
+        seed_results=[_run("quick", 42, ok=True, hydro=True)],
+        expect_quick=True,
+        expect_atlas=True,
+    )
+    assert partial["suite_ok"] is False
+    assert "quick:1" in partial["matrix"]["missing_runs"]
+
+    complete_red = build_pc7_report(
+        seed_results=[
+            _run("quick", 1, ok=True, hydro=True),
+            _run("quick", 42, ok=True, hydro=True),
+            _run("quick", 100, ok=True, hydro=True),
+            _run("atlas", 42, ok=True, hydro=True),
+            _run("atlas", 183716, ok=False, hydro=False),
+        ],
+        expect_quick=True,
+        expect_atlas=True,
+    )
+    assert complete_red["suite_ok"] is True
+    assert complete_red["matrix"]["matrix_complete"] is True
+    assert complete_red["all_seeds_acceptance_ok"] is False
+    assert complete_red["gates_all_green"] is False
+    assert complete_red["gates_and"]["hydrology_ok"] is False
+    assert complete_red["c10_readiness"]["ready_for_calibration"] is False
+    assert "hydrology_ok" in complete_red["c10_readiness"]["failed_gates"]
 
 
 def test_directory_size_helper(tmp_path: Path) -> None:

@@ -68,7 +68,8 @@ def spill_bypasses_channel_loss() -> dict[str, float | bool]:
     )
     src = router_path.read_text(encoding="utf-8")
     routes_spill_with_loss = (
-        "land_spill_m3s" in src
+        "_route_spill_along_path" in src
+        and "remaining_bed" in src
         and "effective_discharge_and_sink" in src
         and "spinup_condensed_lake_routing" in src
     )

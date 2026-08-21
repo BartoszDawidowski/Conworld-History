@@ -218,10 +218,10 @@ def test_lake_fraction_scales_evaporation() -> None:
 
 def test_config_cr6_defaults() -> None:
     cfg = load_planet_config(default_config_path())
-    assert cfg.hydrology_river_acc_fraction == pytest.approx(0.035)
+    assert cfg.hydrology_river_acc_fraction == pytest.approx(0.10)
     assert cfg.continentality_scale_km == pytest.approx(500.0)
     hp = cfg.to_hydrology_params()
-    assert hp.river_acc_fraction == pytest.approx(0.035)
+    assert hp.river_acc_fraction == pytest.approx(0.10)
 
 
 def test_build_lakes_keeps_water_state() -> None:

@@ -44,10 +44,10 @@ class PlanetConfig:
     terrain_detail_amplitude: float
     erosion_iterations: int
     erosion_fluvial_k: float
-    erosion_thermal_kappa: float = 0.08
+    erosion_thermal_kappa: float = 20.0
     erosion_max_step_m: float = 25.0
     erosion_macro_blend: float = 0.35
-    erosion_stream_power_k: float = 12.0
+    erosion_stream_power_k: float = 500.0
     erosion_fluvial_iterations: int = 4
     erosion_stream_power_max_step_m: float = 30.0
     erosion_stream_power_macro_blend: float = 0.40
@@ -104,7 +104,7 @@ class PlanetConfig:
     moisture_monsoon_temp_scale_c: float = 8.0
     moisture_monsoon_regional_mean_km: float = 500.0
     # Plan B7 — precip-aware hydro gates
-    hydrology_river_acc_fraction: float = 0.035
+    hydrology_river_acc_fraction: float = 0.10
     hydrology_lake_min_depth_m: float = 2.0
     hydrology_river_discharge_candidate_quantile: float = 0.50
     hydrology_lake_precip_land_quantile: float = 0.70
@@ -116,9 +116,9 @@ class PlanetConfig:
     hydrology_river_min_catchment_km2: float | None = 500.0
     hydrology_bed_loss_m3_per_km_month: float = 2.0e5
     hydrology_channel_q_min_m3s: float = 0.05
-    hydrology_lake_storage_spinup_years: int = 8
+    hydrology_lake_storage_spinup_years: int = 24
     hydrology_lake_storage_spinup_tol: float = 0.01
-    hydrology_runoff_spinup_years: int = 8
+    hydrology_runoff_spinup_years: int = 64
     hydrology_runoff_spinup_tol: float = 0.01
     hydrology_snow_threshold_c: float = 0.0
     hydrology_snow_band_c: float = 2.0
@@ -484,7 +484,7 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     erosion_fluvial_k = float(erosion_cfg.get("fluvial_k", 8.0))
     if erosion_fluvial_k < 0.0:
         raise ConfigError("erosion.fluvial_k must be >= 0")
-    erosion_thermal_kappa = float(erosion_cfg.get("thermal_kappa", 0.08))
+    erosion_thermal_kappa = float(erosion_cfg.get("thermal_kappa", 20.0))
     if erosion_thermal_kappa < 0.0:
         raise ConfigError("erosion.thermal_kappa must be >= 0")
     erosion_max_step_m = float(erosion_cfg.get("max_step_m", 25.0))
@@ -493,7 +493,7 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     erosion_macro_blend = float(erosion_cfg.get("macro_blend", 0.35))
     if not 0.0 <= erosion_macro_blend <= 1.0:
         raise ConfigError("erosion.macro_blend must be in [0, 1]")
-    erosion_stream_power_k = float(erosion_cfg.get("stream_power_k", 12.0))
+    erosion_stream_power_k = float(erosion_cfg.get("stream_power_k", 500.0))
     if erosion_stream_power_k < 0.0:
         raise ConfigError("erosion.stream_power_k must be >= 0")
     erosion_fluvial_iterations = int(
@@ -676,7 +676,7 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
         hydro_cfg = {}
     if not isinstance(hydro_cfg, dict):
         raise ConfigError("hydrology must be a mapping when provided")
-    hydrology_river_acc_fraction = float(hydro_cfg.get("river_acc_fraction", 0.035))
+    hydrology_river_acc_fraction = float(hydro_cfg.get("river_acc_fraction", 0.10))
     if not 0.0 < hydrology_river_acc_fraction <= 1.0:
         raise ConfigError("hydrology.river_acc_fraction must be in (0, 1]")
     hydrology_lake_min_depth_m = float(hydro_cfg.get("lake_min_depth_m", 2.0))
@@ -735,7 +735,7 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     if hydrology_channel_q_min_m3s < 0.0:
         raise ConfigError("hydrology.channel_q_min_m3s must be >= 0")
     hydrology_lake_storage_spinup_years = int(
-        hydro_cfg.get("lake_storage_spinup_years", 8)
+        hydro_cfg.get("lake_storage_spinup_years", 24)
     )
     if hydrology_lake_storage_spinup_years < 1:
         raise ConfigError("hydrology.lake_storage_spinup_years must be >= 1")
@@ -744,7 +744,7 @@ def planet_config_from_dict(data: Mapping[str, Any]) -> PlanetConfig:
     )
     if hydrology_lake_storage_spinup_tol <= 0.0:
         raise ConfigError("hydrology.lake_storage_spinup_tol must be > 0")
-    hydrology_runoff_spinup_years = int(hydro_cfg.get("runoff_spinup_years", 8))
+    hydrology_runoff_spinup_years = int(hydro_cfg.get("runoff_spinup_years", 64))
     if hydrology_runoff_spinup_years < 1:
         raise ConfigError("hydrology.runoff_spinup_years must be >= 1")
     hydrology_runoff_spinup_tol = float(hydro_cfg.get("runoff_spinup_tol", 0.01))

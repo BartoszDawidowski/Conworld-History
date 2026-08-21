@@ -63,8 +63,45 @@ def test_process_deltas_first_pass_tracks_conditioning_separately() -> None:
         (erosion_sum + process.conditioning_or_pit_fill_delta_m)[land],
         atol=1e-9,
     )
+    assert np.allclose(
+        process.total_dem_adjustment_m[land],
+        (after - elev)[land],
+        atol=1e-9,
+    )
     assert float(np.max(np.abs(process.conditioning_or_pit_fill_delta_m[land]))) >= 0.0
     assert np.allclose(after[ocean], elev[ocean])
+
+
+def test_final_fluvial_delta_matches_dem_change() -> None:
+    elev, ocean = _ridge_fixture()
+    land = ~ocean
+    geo = np.zeros_like(ocean)
+    geo[10:20, 10:30] = True
+    q = np.where(geo, 5.0, 0.1)
+    resist = np.ones_like(elev)
+    after, process = apply_fluvial_erosion(
+        elevation_m=elev,
+        ocean_mask=ocean,
+        geomorphic_channel_mask=geo,
+        discharge_proxy=q,
+        resistance=resist,
+        step_length_km=np.full(elev.shape, 10.0),
+        iterations=3,
+        stream_power_k=0.5,
+        max_step_m=2.0,
+        macro_blend=0.3,
+    )
+    assert np.allclose(
+        process.total_dem_adjustment_m[land],
+        (after - elev)[land],
+        atol=1e-9,
+    )
+    assert np.allclose(
+        process.total_erosion_delta_m[land]
+        + process.conditioning_or_pit_fill_delta_m[land],
+        process.total_dem_adjustment_m[land],
+        atol=1e-9,
+    )
 
 
 def test_hillslope_gate_excludes_conditioning_from_acceptance() -> None:

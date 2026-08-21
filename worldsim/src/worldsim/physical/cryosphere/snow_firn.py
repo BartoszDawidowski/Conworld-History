@@ -237,7 +237,7 @@ def build_g0_climatology(
     soil = np.zeros((h, w), dtype=np.float64)
     pack: dict[str, NDArray[np.float64]] | None = None
     prev_runoff: NDArray[np.float64] | None = None
-    prev_seasonal: NDArray[np.float64] | None = None
+    prev_seasonal_end: NDArray[np.float64] | None = None
     prev_soil: NDArray[np.float64] | None = None
     year1_runoff: NDArray[np.float64] | None = None
     year2_runoff: NDArray[np.float64] | None = None
@@ -246,6 +246,10 @@ def build_g0_climatology(
     soil_periodic = False
     used_years = years
     spinup_converged_early = False
+    last_mass: dict[str, float] = {
+        "annual_mass_balance_rel": 0.0,
+        "annual_firn_gain_m_swe": 0.0,
+    }
 
     for year in range(years):
         start_seasonal = seasonal.copy()
@@ -264,14 +268,17 @@ def build_g0_climatology(
         firn = pack["firn_end"]
         soil = pack["soil_end"]
         runoff = pack["runoff"]
-        seasonal_field = pack["seasonal_snow_swe"]
         if year == 0:
             year1_runoff = runoff.copy()
         elif year == 1:
             year2_runoff = runoff.copy()
-        if prev_runoff is not None:
+        if prev_runoff is not None and prev_seasonal_end is not None and prev_soil is not None:
+            # Seasonal periodicity uses end-of-year store (2D), not the monthly cube.
+            # Growing firn changes firn-melt and thus intra-year snow trajectories even
+            # when the seasonal store itself has reached a repeating climatology
+            # (addendum §7.3: seasonal stores repeat; accumulation closes via firn).
             rel_r = _rel_field_delta(runoff, prev_runoff)
-            rel_s = _rel_field_delta(seasonal_field, prev_seasonal)
+            rel_s = _rel_field_delta(seasonal, prev_seasonal_end)
             rel_o = _rel_field_delta(soil, prev_soil)
             runoff_periodic = rel_r <= float(p.spinup_rel_tol)
             seasonal_periodic = rel_s <= float(p.spinup_rel_tol)
@@ -279,9 +286,17 @@ def build_g0_climatology(
             if runoff_periodic and seasonal_periodic and soil_periodic:
                 used_years = year + 1
                 spinup_converged_early = True
+                mass = _annual_mass_balance(
+                    pack,
+                    seasonal_start=start_seasonal,
+                    firn_start=start_firn,
+                    soil_start=start_soil,
+                    ocean=ocean,
+                )
+                last_mass = mass
                 break
         prev_runoff = runoff.copy()
-        prev_seasonal = seasonal_field.copy()
+        prev_seasonal_end = seasonal.copy()
         prev_soil = soil.copy()
         mass = _annual_mass_balance(
             pack,
@@ -309,7 +324,7 @@ def build_g0_climatology(
         )
         published_vs_repeat = _rel_field_delta(pack["runoff"], repeat["runoff"])
         seasonal_vs_repeat = _rel_field_delta(
-            pack["seasonal_snow_swe"], repeat["seasonal_snow_swe"]
+            seasonal, np.asarray(repeat["seasonal_snow_end"], dtype=np.float64)
         )
         soil_vs_repeat = _rel_field_delta(pack["soil_end"], repeat["soil_end"])
         if published_vs_repeat <= float(p.spinup_rel_tol):
@@ -322,8 +337,17 @@ def build_g0_climatology(
     state_periodic = bool(runoff_periodic and seasonal_periodic and soil_periodic)
     mass_ok = bool(last_mass["annual_mass_balance_rel"] <= float(p.mass_balance_tol))
     firn_transfer = float(last_mass["annual_firn_gain_m_swe"]) > 0.0
+    # Repeating seasonal+soil+runoff is enough; firn may keep growing as an
+    # explicit transfer (not a hidden seasonal clip).
     periodic_or_firn = bool(
-        state_periodic or (seasonal_periodic and firn_transfer and mass_ok)
+        state_periodic
+        or (
+            runoff_periodic
+            and soil_periodic
+            and seasonal_periodic
+            and mass_ok
+            and firn_transfer
+        )
     )
 
     year2_vs_year1 = (

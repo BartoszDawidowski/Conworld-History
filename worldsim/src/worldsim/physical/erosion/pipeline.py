@@ -43,7 +43,7 @@ class ErosionParams:
     """
 
     iterations: int = 5
-    thermal_kappa: float = 0.08
+    thermal_kappa: float = 20.0
     fluvial_k: float = 8.0
     max_step_m: float = 25.0
     macro_blend: float = 0.35
@@ -171,6 +171,8 @@ def build_erosion_pass_one(
         process,
         ocean,
         elev_range_m=float(delta_stats["elev_range_land_m"]),
+        elev_before_m=before,
+        elev_after_m=dem_v1,
     )
     drainage_improved = minima_after <= minima_before
     roughness_reduced = rough_after <= rough_before * 1.02
@@ -223,6 +225,7 @@ def build_erosion_pass_one(
             and ocean_unchanged
             and nontrivial
             and bool(proc_stats["conditioning_excluded_from_erosion_acceptance"])
+            and bool(proc_stats.get("erosion_delta_identity_ok", False))
         ),
     }
 

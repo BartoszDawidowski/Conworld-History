@@ -174,7 +174,7 @@ def test_godot_project_skeleton_exists() -> None:
     assert "continentality_scale_km: 500.0" in main_gd
     assert "monsoon_regional_mean_km: 500.0" in main_gd
     assert "mountain_score_threshold:" in main_gd
-    assert "river_acc_fraction: 0.035" in main_gd or "river_acc_fraction:" in main_gd
+    assert "river_acc_fraction: 0.10" in main_gd or "river_acc_fraction:" in main_gd
     assert "bed_loss_m3_per_km_month" in main_gd
     assert "_ensure_pc6_advanced_groups" in main_gd
     assert "Hydrology physics (PC6)" in main_gd
@@ -306,9 +306,9 @@ def test_godot_planet_config_yaml_loads() -> None:
         "channel_q_min_m3s": 0.051,
         "bed_loss_m3_per_km_month": 200001.0,
         "fill_max_depth_m": 25.1,
-        "lake_storage_spinup_years": 8,
+        "lake_storage_spinup_years": 24,
         "lake_storage_spinup_tol": 0.011,
-        "runoff_spinup_years": 8,
+        "runoff_spinup_years": 64,
         "runoff_spinup_tol": 0.012,
         "snow_threshold_c": 0.1,
         "snow_band_c": 2.1,

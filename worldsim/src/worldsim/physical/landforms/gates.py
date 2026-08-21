@@ -15,7 +15,12 @@ def object_explosion_catastrophe(
     mountain_range_count: int,
     plateau_context_escarpment_fraction: float,
 ) -> bool:
-    """True when audited Atlas-style object/escarpment alarms fire."""
+    """True when audited Atlas-style object/escarpment alarms fire.
+
+    ``plateau_context_escarpment_fraction`` must be the **interior** escarpment
+    share (C9.1.5): thin all-rim plateaus may be 100% rim escarpment without
+    tripping this gate.
+    """
     return bool(
         int(mountain_range_count) > MAX_CANONICAL_MOUNTAIN_RANGES
         or float(plateau_context_escarpment_fraction)

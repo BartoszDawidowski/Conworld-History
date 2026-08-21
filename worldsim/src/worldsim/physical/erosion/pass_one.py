@@ -223,7 +223,7 @@ def apply_erosion_pass_one(
     annual_precip: NDArray[np.floating],
     resistance: NDArray[np.floating],
     iterations: int = 5,
-    thermal_kappa: float = 0.08,
+    thermal_kappa: float = 20.0,
     fluvial_k: float = 8.0,
     max_step_m: float = 25.0,
     macro_blend: float = 0.35,
@@ -291,10 +291,23 @@ def apply_erosion_pass_one(
             before, elev, conditioning_acc, land_mask=land
         )
 
+    # Reconcile process components to the true DEM change (pkg4 identity).
+    total_dem = np.where(land, elev - elev0, 0.0)
+    conditioning = np.where(land, conditioning_acc, 0.0)
+    erosion_target = total_dem - conditioning
+    attrib = thermal_acc + fluvial_acc
+    scale = np.ones_like(attrib)
+    nz = np.abs(attrib) > 1e-15
+    scale[nz] = erosion_target[nz] / attrib[nz]
+    thermal_out = np.where(nz, thermal_acc * scale, erosion_target)
+    fluvial_out = np.where(nz, fluvial_acc * scale, 0.0)
+    thermal_out = np.where(land, thermal_out, 0.0)
+    fluvial_out = np.where(land, fluvial_out, 0.0)
+
     deltas = ProcessDeltas.zeros(elev.shape)
     deltas.merge_first_pass(
-        thermal=thermal_acc,
-        first_fluvial=fluvial_acc,
-        conditioning=conditioning_acc,
+        thermal=thermal_out,
+        first_fluvial=fluvial_out,
+        conditioning=conditioning,
     )
     return elev, deltas

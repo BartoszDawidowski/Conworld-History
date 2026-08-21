@@ -226,36 +226,104 @@ def build_pc7_report(
     seed_results: list[SeedRunResult],
     cross_profile: dict[str, Any] | None = None,
     full_smoke: SeedRunResult | None = None,
+    expect_quick: bool = True,
+    expect_atlas: bool = True,
+    expect_full: bool = False,
 ) -> dict[str, Any]:
-    """Assemble the PC7 suite artefact for docs and CI."""
-    suite_ok = bool(seed_results)
-    reference = seed_results[-1] if seed_results else None
+    """Assemble the PC7 suite artefact for docs and CI.
+
+    Honesty rules (pkg5):
+    - ``suite_ok`` means the required seed matrix was *executed*, not that gates are green.
+    - ``all_seeds_acceptance_ok`` / ``gates_all_green`` report physics truth fail-closed.
+    - C10 readiness uses the AND of gates across atlas (else all) runs — never a single
+      cherry-picked seed and never ``suite_ok=True`` on an empty matrix.
+    """
+    quick_runs = [r for r in seed_results if r.profile == "quick"]
+    atlas_runs = [r for r in seed_results if r.profile == "atlas"]
+    full_runs = [full_smoke] if full_smoke is not None else []
+
+    quick_seeds = {int(r.master_seed) for r in quick_runs}
+    atlas_seeds = {int(r.master_seed) for r in atlas_runs}
+    full_seeds = {int(r.master_seed) for r in full_runs if r is not None}
+
+    missing: list[str] = []
+    if expect_quick:
+        for seed in PC7_QUICK_SEEDS:
+            if int(seed) not in quick_seeds:
+                missing.append(f"quick:{seed}")
+    if expect_atlas:
+        for seed in PC7_ATLAS_SEEDS:
+            if int(seed) not in atlas_seeds:
+                missing.append(f"atlas:{seed}")
+    if expect_full:
+        for seed in PC7_FULL_SEEDS:
+            if int(seed) not in full_seeds:
+                missing.append(f"full:{seed}")
+
+    matrix_complete = len(missing) == 0 and (
+        bool(seed_results) or bool(full_runs)
+    )
+    # Empty explicit request still fails closed.
+    if not seed_results and full_smoke is None:
+        matrix_complete = False
+
+    all_runs = list(seed_results) + ([full_smoke] if full_smoke is not None else [])
+    all_seeds_acceptance_ok = bool(all_runs) and all(bool(r.acceptance_ok) for r in all_runs)
+
+    gate_source = atlas_runs if atlas_runs else all_runs
+    gates_and: dict[str, bool] = {}
+    if gate_source:
+        keys = set()
+        for run in gate_source:
+            keys.update(run.gates.keys())
+        for key in sorted(keys):
+            gates_and[key] = all(bool(run.gates.get(key, False)) for run in gate_source)
+
+    failed_gates = [name for name, ok in gates_and.items() if not ok]
+    gates_all_green = bool(gates_and) and not failed_gates
+
+    suite_ok = bool(matrix_complete)
+    reference = atlas_runs[-1] if atlas_runs else (seed_results[-1] if seed_results else None)
     performance = analyze_stage_regression(
         reference.stage_timings_s if reference else {},
         total_elapsed_s=reference.elapsed_s if reference else None,
     )
-    gates = dict(reference.gates if reference else {})
     readiness = review_c10_readiness(
-        gates=gates,
+        gates=gates_and,
         suite_ok=suite_ok,
         performance_documented=True,
+        all_seeds_acceptance_ok=all_seeds_acceptance_ok,
     )
     return {
         "schema_version": PC7_SCHEMA_VERSION,
+        "honesty": {
+            "suite_ok_means": "required_seed_matrix_executed",
+            "gates_all_green_means": "AND_across_atlas_or_all_runs",
+            "empty_matrix_fail_closed": True,
+        },
+        "matrix": {
+            "expect_quick": bool(expect_quick),
+            "expect_atlas": bool(expect_atlas),
+            "expect_full": bool(expect_full),
+            "missing_runs": missing,
+            "matrix_complete": bool(matrix_complete),
+        },
+        "suite_ok": bool(suite_ok),
+        "all_seeds_acceptance_ok": bool(all_seeds_acceptance_ok),
+        "gates_all_green": bool(gates_all_green),
+        "gates_and": gates_and,
+        "failed_gates": failed_gates,
         "seeds": {
-            "quick": [r.to_dict() for r in seed_results if r.profile == "quick"],
-            "atlas": [r.to_dict() for r in seed_results if r.profile == "atlas"],
+            "quick": [r.to_dict() for r in quick_runs],
+            "atlas": [r.to_dict() for r in atlas_runs],
             "full": [full_smoke.to_dict()] if full_smoke else [],
         },
         "cross_profile": cross_profile or {},
         "performance": performance,
         "c10_readiness": readiness,
         "artifact_summary": {
-            "total_runs": len(seed_results) + (1 if full_smoke else 0),
-            "max_artifact_bytes": max(
-                [r.artifact_bytes for r in seed_results]
-                + ([full_smoke.artifact_bytes] if full_smoke else [0])
-            ),
+            "total_runs": len(all_runs),
+            "max_artifact_bytes": max([r.artifact_bytes for r in all_runs], default=0),
         },
     }
 
@@ -316,6 +384,9 @@ def run_pc7_suite(
         seed_results=results,
         cross_profile=cross,
         full_smoke=full_smoke,
+        expect_quick=True,
+        expect_atlas=True,
+        expect_full=bool(include_full),
     )
     (output_dir / "pc7_report.json").write_text(
         json.dumps(report, indent=2, sort_keys=True, default=str) + "\n",

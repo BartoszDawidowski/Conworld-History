@@ -128,7 +128,7 @@ class FinalRecalcParams:
     """
 
     fluvial_iterations: int = 4
-    stream_power_k: float = 12.0
+    stream_power_k: float = 500.0
     stream_power_max_step_m: float = 30.0
     stream_power_macro_blend: float = 0.40
     micro_fill_max_depth_m: float = 25.0
@@ -369,6 +369,8 @@ def build_final_recalculation(
         ocean,
         geomorphic_mask=geomorphic,
         elev_range_m=elev_range,
+        elev_before_m=erosion_v1.elevation_m,
+        elev_after_m=elev_v2,
     )
 
     climate_c = correct_climate_for_dem(
@@ -672,6 +674,7 @@ def build_final_recalculation(
             and landforms_ok
             and fluvial_nontrivial
             and bool(fluvial_proc_stats.get("conditioning_excluded_from_erosion_acceptance"))
+            and bool(fluvial_proc_stats.get("erosion_delta_identity_ok", False))
         ),
         "acceptance_ok": bool(
             stable
@@ -679,6 +682,7 @@ def build_final_recalculation(
             and landforms_ok
             and fluvial_nontrivial
             and bool(fluvial_proc_stats.get("conditioning_excluded_from_erosion_acceptance"))
+            and bool(fluvial_proc_stats.get("erosion_delta_identity_ok", False))
         ),
     }
 

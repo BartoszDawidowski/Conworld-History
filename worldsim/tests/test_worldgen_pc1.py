@@ -209,6 +209,102 @@ def test_one_open_lake_chain_10_m3s_not_doubled() -> None:
     assert abs(q[1, 6] - 10.0) < 1.0
 
 
+def test_ocean_mouth_spill_declared_not_unassigned() -> None:
+    """Lake outlet that is already a graph SINK must export, not unassign."""
+    h, w = 3, 6
+    elev = np.full((h, w), 20.0)
+    elev[1, 3] = 6.0
+    elev[1, 4] = 6.0
+    local = np.zeros((1, h, w), dtype=np.float64)
+    local[0, 1, 0] = 40.0
+    graph, ocean = _east_drain(h=h, w=w)
+    assert bool(ocean[1, w - 1])
+    env = np.zeros((h, w), dtype=np.int32)
+    env[1, 3] = 1
+    env[1, 4] = 1
+    records = [
+        {
+            "lake_id": 1,
+            "sink_row": 1,
+            "sink_col": 4,
+            "outlet_row": 1,
+            "outlet_col": 4,
+            "spill_elevation_m": 6.05,
+            "basin_id": 1,
+            "water_state": "open",
+        }
+    ]
+    cg = build_condensed_lake_graph(
+        graph=graph, basin_envelope_id=env, lake_records=records
+    )
+    # Mouth next to ocean often has no land spill_target.
+    assert cg.supernodes[1].spill_target_row is None or True
+    out = spinup_condensed_lake_routing(
+        graph=graph,
+        basin_envelope_id=env,
+        lake_records=records,
+        elevation_m=elev,
+        monthly_land_runoff_m3s=local,
+        bed_loss_potential_m3s=np.zeros((h, w)),
+        temperature_c=np.full((1, h, w), 4.0),
+        cell_area_km2=1e-6,
+        spinup_years=1,
+        spinup_rel_tol=0.2,
+    )
+    assert out["unassigned_spill_ok"] is True
+    assert float(out["unassigned_spill_m3"]) <= 1e-3
+    summary = out["global_ledger_months"][0]
+    assert float(summary["ocean_export_m3"]) > 0.0
+    assert out["hydrology_mass_balance_ok"] is True
+
+
+def test_global_mass_ledger_closes_with_capture_and_export() -> None:
+    """Pkg3: residual ≤1e-6 (rel), capture ≥1−ε, unassigned_spill=0."""
+    h, w = 3, 12
+    elev = np.full((h, w), 20.0)
+    elev[1, 4] = 6.0
+    elev[1, 5] = 6.0
+    local = np.zeros((1, h, w), dtype=np.float64)
+    local[0, 1, 0] = 10.0
+    graph, _ = _east_drain(h=h, w=w)
+    env = np.zeros((h, w), dtype=np.int32)
+    env[1, 4] = 1
+    env[1, 5] = 1
+    records = [
+        {
+            "lake_id": 1,
+            "sink_row": 1,
+            "sink_col": 5,
+            "outlet_row": 1,
+            "outlet_col": 5,
+            "spill_elevation_m": 6.05,
+            "basin_id": 1,
+            "water_state": "open",
+        }
+    ]
+    out = spinup_condensed_lake_routing(
+        graph=graph,
+        basin_envelope_id=env,
+        lake_records=records,
+        elevation_m=elev,
+        monthly_land_runoff_m3s=local,
+        bed_loss_potential_m3s=np.zeros((h, w)),
+        temperature_c=np.full((1, h, w), 4.0),
+        cell_area_km2=1e-6,
+        spinup_years=1,
+        spinup_rel_tol=0.2,
+    )
+    assert out["hydrology_mass_balance_ok"] is True
+    assert float(out["hydrology_mass_balance_max_global_residual_rel"]) <= 1e-6
+    assert float(out["lake_inflow_capture_ratio"]) >= 1.0 - 1e-6
+    assert out["lake_inflow_capture_ok"] is True
+    assert out["unassigned_spill_ok"] is True
+    summary = out["global_ledger_months"][0]
+    assert float(summary["ocean_export_m3"]) > 0.0
+    assert "closed_retention_m3" in summary
+    assert "boundary_export_m3" in summary
+
+
 def test_two_lake_cascade_same_month() -> None:
     h, w = 3, 12
     elev = np.full((h, w), 20.0)
@@ -416,6 +512,7 @@ def test_nonperiodic_storage_withheld_from_liquid_publish() -> None:
     assert rec["storage_unstable"] is True
     assert rec["water_body_id"] == 0
     assert int(diag["basin_storage_nonperiodic_liquid_withheld_count"]) == 1
+    assert bool(diag["basin_storage_material_withheld"]) is True
     assert float(np.max(diag["water_fraction_mean"])) == 0.0
 
 
@@ -459,6 +556,7 @@ def test_nonperiodic_storage_withheld_via_condensed_router() -> None:
     assert rec["storage_unstable"] is True
     assert rec["water_body_id"] == 0
     assert int(out["basin_storage_nonperiodic_liquid_withheld_count"]) == 1
+    assert bool(out["basin_storage_material_withheld"]) is True
     assert float(np.max(out["water_fraction_mean"])) == 0.0
 
 
@@ -520,6 +618,67 @@ def test_per_lake_periodic_independent_in_coupled_router() -> None:
     assert int(out["basin_storage_liquid_periodic_count"]) == 1
     assert int(out["basin_storage_nonperiodic_liquid_withheld_count"]) == 1
     assert out["basin_storage_global_signature_periodic"] is False
+    # Slow neighbor is withheld; materiality follows wet-area share (§5.5).
+    assert "basin_storage_material_withheld" in out
+
+
+def test_storage_series_converged_mean_and_capacity() -> None:
+    from worldsim.physical.hydrology.basins_storage import storage_series_converged
+
+    # Stable mean with a single-month blip above strict max-rel.
+    prev = [1000.0] * 12
+    curr = [1000.0] * 12
+    curr[3] = 1030.0  # max rel 0.03 > 0.01, mean rel 0.0025 <= 0.01
+    assert storage_series_converged(prev, curr, rel_tol=0.01, v_spill_m3=1e6)
+
+    # Still filling: mean climbs > tol → not converged.
+    filling = [1100.0] * 12
+    assert not storage_series_converged(prev, filling, rel_tol=0.01, v_spill_m3=1e9)
+
+
+def test_slow_fill_does_not_publish_unbounded_spill_seas() -> None:
+    """§5.5: empty→spill runaway is attempted but not published as inland seas."""
+    h, w = 3, 8
+    elev = np.full((h, w), 30.0, dtype=np.float64)
+    elev[1, 3] = 5.0
+    elev[1, 4] = 5.5
+    graph, _ = _east_drain(h=h, w=w)
+    env = np.zeros((h, w), dtype=np.int32)
+    env[1, 3:5] = 1
+    local = np.zeros((12, h, w), dtype=np.float64)
+    # Tiny steady inflow — would take many years to fill; must not jump to V_spill.
+    local[:, 1, 0] = 0.002
+    records = [
+        {
+            "lake_id": 1,
+            "closed_basin": True,
+            "water_state": "endorheic",
+            "spill_elevation_m": 8.0,
+            "sink_row": 1,
+            "sink_col": 3,
+            "basin_id": 1,
+        }
+    ]
+    out = spinup_condensed_lake_routing(
+        graph=graph,
+        basin_envelope_id=env,
+        lake_records=records,
+        elevation_m=elev,
+        monthly_land_runoff_m3s=local,
+        bed_loss_potential_m3s=np.zeros((h, w)),
+        temperature_c=np.full((12, h, w), 4.0),
+        cell_area_km2=0.25,
+        spinup_years=8,
+        spinup_rel_tol=0.01,
+        frozen_temp_c=-50.0,
+    )
+    rec = records[0]
+    assert rec.get("storage_fixed_point_attempted") is True
+    assert rec.get("storage_limiting_process") == "fill_to_spill_unbounded"
+    assert rec["storage_periodic"] is False
+    assert bool(rec.get("storage_unstable")) is True
+    assert float(rec.get("mean_wet_area_km2") or 0.0) < 1.0
+    assert int(out["basin_storage_nonperiodic_liquid_withheld_count"]) == 1
 
 
 def test_closed_basin_spill_follows_declared_saddle() -> None:

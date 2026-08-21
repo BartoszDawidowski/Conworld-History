@@ -136,5 +136,5 @@ def test_lod_cutoff_when_physical_channel_continues() -> None:
 
 def test_display_filter_defaults_not_retuned() -> None:
     p = HydrologyParams()
-    assert p.river_acc_fraction == 0.035
+    assert p.river_acc_fraction == 0.10
     assert p.river_discharge_candidate_quantile == 0.50

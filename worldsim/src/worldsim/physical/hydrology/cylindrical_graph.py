@@ -175,6 +175,10 @@ def build_cylindrical_graph(
 
 
 def _upstream_adjacency(graph: CylindricalFlowGraph) -> list[list[int]]:
+    """Build (and cache) upstream adjacency once per graph instance."""
+    cached = getattr(graph, "_cached_upstream", None)
+    if cached is not None:
+        return cached
     n = graph.size
     ups: list[list[int]] = [[] for _ in range(n)]
     ds = graph.downstream_flat
@@ -185,11 +189,15 @@ def _upstream_adjacency(graph: CylindricalFlowGraph) -> list[list[int]]:
         j = int(ds[i])
         if j >= 0:
             ups[j].append(i)
+    object.__setattr__(graph, "_cached_upstream", ups)
     return ups
 
 
 def topological_order_upstream_first(graph: CylindricalFlowGraph) -> NDArray[np.int32]:
-    """Land cells ordered sources → outlets (Kahn)."""
+    """Land cells ordered sources → outlets (Kahn). Cached on the graph."""
+    cached = getattr(graph, "_cached_topo_order", None)
+    if cached is not None:
+        return cached
     n = graph.size
     ds = graph.downstream_flat
     ocean = graph.ocean_mask.ravel()
@@ -208,7 +216,7 @@ def topological_order_upstream_first(graph: CylindricalFlowGraph) -> NDArray[np.
         i = q.popleft()
         order.append(i)
         j = int(ds[i])
-        if j >= 0:
+        if j >= 0 and not ocean[j]:
             indeg[j] -= 1
             if indeg[j] == 0:
                 q.append(j)
@@ -218,7 +226,9 @@ def topological_order_upstream_first(graph: CylindricalFlowGraph) -> NDArray[np.
         for i in range(n):
             if not ocean[i] and i not in seen:
                 order.append(i)
-    return np.asarray(order, dtype=np.int32)
+    out = np.asarray(order, dtype=np.int32)
+    object.__setattr__(graph, "_cached_topo_order", out)
+    return out
 
 
 def accumulate_weights(

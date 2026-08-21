@@ -72,6 +72,8 @@ def process_delta_stats(
     *,
     geomorphic_mask: NDArray[np.bool_] | None = None,
     elev_range_m: float,
+    elev_before_m: NDArray[np.floating] | None = None,
+    elev_after_m: NDArray[np.floating] | None = None,
 ) -> dict[str, float | bool]:
     land = ~np.asarray(ocean_mask, dtype=bool)
     hillslope = deltas.thermal_or_hillslope_delta_m + deltas.first_fluvial_delta_m
@@ -93,6 +95,22 @@ def process_delta_stats(
     fluvial_ok, fluvial_required = fluvial_corridor_erosion_gate(
         corridor_mean, elev_range_m
     )
+    # Component identity: erosion + conditioning = total DEM adjustment.
+    adj = deltas.total_dem_adjustment_m
+    rebuilt = deltas.total_erosion_delta_m + deltas.conditioning_or_pit_fill_delta_m
+    if np.any(land):
+        max_comp_err = float(np.max(np.abs(adj[land] - rebuilt[land])))
+    else:
+        max_comp_err = 0.0
+    dem_identity_ok = max_comp_err <= 1e-6
+    dem_change_err = 0.0
+    if elev_before_m is not None and elev_after_m is not None and np.any(land):
+        actual = (
+            np.asarray(elev_after_m, dtype=np.float64)
+            - np.asarray(elev_before_m, dtype=np.float64)
+        )
+        dem_change_err = float(np.max(np.abs(actual[land] - adj[land])))
+        dem_identity_ok = dem_identity_ok and dem_change_err <= 1e-6
     return {
         "hillslope_mean_abs_delta_m": hillslope_mean,
         "conditioning_mean_abs_delta_m": conditioning_mean,
@@ -104,4 +122,6 @@ def process_delta_stats(
         "fluvial_corridor_erosion_ok": fluvial_ok,
         "conditioning_separate_ok": True,
         "conditioning_excluded_from_erosion_acceptance": True,
+        "erosion_delta_identity_max_abs_err_m": max(max_comp_err, dem_change_err),
+        "erosion_delta_identity_ok": bool(dem_identity_ok),
     }

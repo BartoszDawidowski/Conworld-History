@@ -28,11 +28,11 @@ def test_default_config_loads() -> None:
     assert config.to_pyplatec_params().folding_ratio == 0.01
     assert config.erosion_iterations == 5
     assert config.erosion_fluvial_k == 8.0
-    assert config.erosion_thermal_kappa == pytest.approx(0.08)
-    assert config.erosion_stream_power_k == pytest.approx(12.0)
-    assert config.to_erosion_params().thermal_kappa == pytest.approx(0.08)
+    assert config.erosion_thermal_kappa == pytest.approx(20.0)
+    assert config.erosion_stream_power_k == pytest.approx(500.0)
+    assert config.to_erosion_params().thermal_kappa == pytest.approx(20.0)
     assert config.to_erosion_params().fluvial_k == pytest.approx(8.0)
-    assert config.to_final_recalc_params().stream_power_k == pytest.approx(12.0)
+    assert config.to_final_recalc_params().stream_power_k == pytest.approx(500.0)
     assert config.sst_mix == 0.28
     assert config.inland_decay_cells == 60.0
     assert config.sst_inland_decay_km == 1200.0

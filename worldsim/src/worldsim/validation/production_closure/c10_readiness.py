@@ -17,16 +17,28 @@ def review_c10_readiness(
     gates: dict[str, bool],
     suite_ok: bool = True,
     performance_documented: bool = True,
+    all_seeds_acceptance_ok: bool | None = None,
 ) -> dict[str, Any]:
     """Explicit readiness verdict for user review — fail closed on any blocking gate."""
     failed = [name for name in C10_BLOCKING_GATES if not bool(gates.get(name, False))]
-    ready = suite_ok and performance_documented and not failed
+    acceptance_ok = (
+        True if all_seeds_acceptance_ok is None else bool(all_seeds_acceptance_ok)
+    )
+    ready = (
+        suite_ok
+        and performance_documented
+        and acceptance_ok
+        and not failed
+    )
     status = "READY_FOR_CALIBRATION" if ready else "NOT_READY_FOR_CALIBRATION"
     return {
         "version": C10_READINESS_VERSION,
         "status": status,
         "ready_for_calibration": bool(ready),
         "suite_ok": bool(suite_ok),
+        "all_seeds_acceptance_ok": (
+            None if all_seeds_acceptance_ok is None else bool(all_seeds_acceptance_ok)
+        ),
         "performance_documented": bool(performance_documented),
         "blocking_gates": list(C10_BLOCKING_GATES),
         "failed_gates": failed,
@@ -34,6 +46,7 @@ def review_c10_readiness(
         "user_review_required": True,
         "note": (
             "C10 may start only after PC7 reports READY_FOR_CALIBRATION and the user "
-            "explicitly accepts the gate review."
+            "explicitly accepts the gate review. suite_ok means the seed matrix ran; "
+            "it is not a substitute for green physics gates."
         ),
     }

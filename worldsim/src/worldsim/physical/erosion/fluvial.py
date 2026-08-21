@@ -70,7 +70,7 @@ def apply_fluvial_erosion(
     step_length_km: NDArray[np.floating] | None = None,
     corridor_influence_km: float = 5.0,
     iterations: int = 4,
-    stream_power_k: float = 12.0,
+    stream_power_k: float = 500.0,
     max_step_m: float = 30.0,
     macro_blend: float = 0.40,
     deposit_frac: float = 0.25,
@@ -106,7 +106,6 @@ def apply_fluvial_erosion(
     q_norm = np.clip(q_norm, 0.0, 3.0)
     erodibility = 1.0 / np.maximum(np.asarray(resistance, dtype=np.float64), 0.15)
     kappa_m2 = 0.04 * (THERMAL_KAPPA_REF_M ** 2)
-    stream_acc = np.zeros_like(elev)
 
     for _ in range(max(1, int(iterations))):
         slope = slope_magnitude(elev, metrics=gm)
@@ -123,7 +122,6 @@ def apply_fluvial_erosion(
         thermal = np.clip(kappa_m2 * lap, -0.5 * max_step_m, 0.5 * max_step_m)
         thermal = np.where(land, thermal, 0.0)
         step_delta = incision + thermal
-        stream_acc += step_delta
         elev = elev + step_delta
 
         removed = np.where(incision < 0.0, -incision, 0.0)
@@ -134,7 +132,6 @@ def apply_fluvial_erosion(
                 deposit = np.zeros_like(elev)
                 deposit[low] = deposit_frac * mass / float(np.count_nonzero(low))
                 deposit = np.clip(deposit, 0.0, max_step_m)
-                stream_acc += deposit
                 elev = elev + deposit
 
         elev = np.where(land, np.maximum(elev, 0.0), elev0)
@@ -142,14 +139,16 @@ def apply_fluvial_erosion(
 
     elev = np.where(ocean, elev0, elev)
     elev = np.where(land, np.maximum(elev, 0.0), elev)
+    # True DEM change from the iterative steps (includes blend/clip — not step sum).
+    fluvial_delta = np.where(land, elev - elev0, 0.0)
     before_cond = elev.copy()
     elev = condition_micro_depressions(
         elev, ocean, max_depth_m=float(micro_fill_max_depth_m)
     )
     elev = np.where(ocean, elev0, elev)
-    conditioning = elev - before_cond
+    conditioning = np.where(land, elev - before_cond, 0.0)
     deltas = ProcessDeltas.zeros(elev.shape)
-    deltas.merge_final_fluvial(stream_power=stream_acc, conditioning=conditioning)
+    deltas.merge_final_fluvial(stream_power=fluvial_delta, conditioning=conditioning)
     return elev, deltas
 
 

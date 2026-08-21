@@ -394,7 +394,9 @@ def build_landform_analysis(
         ridge_in_mask = ridge_in_mask and chk["in_mask"]
         ridge_no_dup = ridge_no_dup and chk["no_consecutive_duplicates"]
     esc_alarm_ok = bool(esc_frac < MAX_LAND_ESCARPMENT_FRAC)
-    plat_ctx_esc_ok = bool(plat_esc_frac < MAX_PLATEAU_CONTEXT_ESCARPMENT_FRAC)
+    # C9.1.5: hard gate uses plateau *interior* only. Full-context ∩ escarpment
+    # stays a published diagnostic (thin all-rim plateaus are often ~100% rim).
+    plat_ctx_esc_ok = bool(plat_interior_esc_frac < MAX_PLATEAU_CONTEXT_ESCARPMENT_FRAC)
     cell_area = float(metrics_grid.cell_area_km2)
     min_range_cells_eff, range_floor = effective_min_cells_honest(
         min_km2=params.min_range_km2,
@@ -437,12 +439,20 @@ def build_landform_analysis(
     unresolved_cells = int(np.count_nonzero(unresolved_mask))
     object_catastrophe = object_explosion_catastrophe(
         mountain_range_count=len(ranges),
-        plateau_context_escarpment_fraction=float(plat_esc_frac),
+        plateau_context_escarpment_fraction=float(plat_interior_esc_frac),
     )
     zero_semantic_ok = bool(
         len(ranges) + len(plateaus) > 0
         or unresolved_cells > 0
         or not calibrated
+    )
+    # Plateau fraction band is a soft alarm on coarse grids where configured
+    # min_plateau_km2 is not representable (cell larger than floor).
+    plateau_frac_out_of_band = bool(plateau_frac < 0.01 or plateau_frac > 0.08)
+    plateau_fraction_alarm_hard = bool(
+        plateau_frac_out_of_band
+        and bool(plat_floor["representable_ok"])
+        or (plateau_frac > 0.08)
     )
     gate_report = landform_acceptance_gates(
         structural_ok=structural_ok,
@@ -460,7 +470,7 @@ def build_landform_analysis(
         mountain_fraction_alarm=bool(
             mountain_frac < 0.10 or mountain_frac > 0.30
         ),
-        plateau_fraction_alarm=bool(plateau_frac < 0.01 or plateau_frac > 0.08),
+        plateau_fraction_alarm=plateau_fraction_alarm_hard,
         plateau_context_escarpment_ok=plat_ctx_esc_ok,
         representability_ok=representability_ok,
         ridge_coverage_ok=ridge_coverage_ok,
@@ -511,7 +521,9 @@ def build_landform_analysis(
         "plateau_context_escarpment_alarm_max": MAX_PLATEAU_CONTEXT_ESCARPMENT_FRAC,
         "mountain_range_catastrophe_max": 200,
         "mountain_fraction_alarm": bool(mountain_frac < 0.10 or mountain_frac > 0.30),
-        "plateau_fraction_alarm": bool(plateau_frac < 0.01 or plateau_frac > 0.08),
+        "plateau_fraction_out_of_band": bool(plateau_frac_out_of_band),
+        "plateau_fraction_alarm": bool(plateau_fraction_alarm_hard),
+        "plateau_fraction_alarm_soft": bool(plateau_frac_out_of_band),
         "escarpment_dominance_ok": esc_alarm_ok,
         "object_explosion_catastrophe": object_catastrophe,
         "ridge_coverage_fraction": float(ridge_coverage),

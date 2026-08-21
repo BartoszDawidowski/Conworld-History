@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from worldsim.physical.hydrology.basins_storage import (
+    MATERIAL_WITHHELD_WET_SHARE,
     STORAGE_CURVE_DISCRETE,
     STORAGE_CURVE_LINEAR,
     DiscreteAVH,
@@ -16,6 +17,7 @@ from worldsim.physical.hydrology.basins_storage import (
     build_linear_avh_fallback,
     lake_month_storage_step,
     liquid_id_from_fraction,
+    storage_series_converged,
     _reclass_storage_axes,
     _sink_cell,
     _WET_FRAC_EPS,
@@ -26,14 +28,18 @@ from worldsim.physical.hydrology.condensed_graph import (
 )
 from worldsim.physical.hydrology.cylindrical_graph import (
     CylindricalFlowGraph,
-    _upstream_adjacency,
+    _touches_ocean,
     effective_discharge_and_sink,
     flat_index,
     unravel,
 )
 from worldsim.physical.hydrology.discharge import SECONDS_PER_DAY, month_days
 from worldsim.physical.hydrology.lakes_meta import apply_lake_identity
-from worldsim.physical.hydrology.mass_ledger import GlobalMonthLedger, LakeMonthLedger
+from worldsim.physical.hydrology.mass_ledger import (
+    LAKE_INFLOW_CAPTURE_RATIO_MIN,
+    GlobalMonthLedger,
+    land_terminal_exports_m3s,
+)
 
 
 @dataclass
@@ -43,6 +49,85 @@ class _LakeRuntime:
     sink_row: int
     sink_col: int
     volume_m3: float = 0.0
+
+
+def _solve_annual_storage_fixed_point(
+    *,
+    rt: _LakeRuntime,
+    inflow_m3: list[float],
+    temp_m: NDArray[np.floating],
+    precip_mm_monthly: list[float] | None,
+    frozen_temp_c: float,
+    months: int,
+    rel_tol: float,
+    max_iters: int = 24,
+) -> tuple[float, bool, str, list[float]]:
+    """Annual mean fixed-point on ``[0, V_spill]`` with frozen land inflows.
+
+    Returns ``(V_star, accepted, limiting_process, storage_series)``.
+
+    Runaway fill-to-spill from a still-empty basin is attempted but not accepted:
+    publishing those inland seas inflated Atlas wet area ~10×. Natural spill-rim
+    states (already near full after spin-up) remain acceptable.
+    """
+    v_spill = float(rt.avh.v_spill)
+    if v_spill <= 1.0:
+        return 0.0, True, "empty_domain", [0.0] * max(months, 1)
+
+    def _one_year(v0: float) -> list[float]:
+        volume = float(v0)
+        series: list[float] = []
+        for m in range(months):
+            precip = (
+                float(precip_mm_monthly[m])
+                if precip_mm_monthly is not None and m < len(precip_mm_monthly)
+                else 0.0
+            )
+            inflow = float(inflow_m3[m]) if m < len(inflow_m3) else 0.0
+            volume, _spill, _loss, _area, _led = lake_month_storage_step(
+                avh=rt.avh,
+                volume_m3=volume,
+                land_inflow_m3=inflow,
+                upstream_lake_spill_m3=0.0,
+                body=rt.body,
+                temp_c=temp_m[m],
+                precip_mm_on_water=precip,
+                frozen_temp_c=float(frozen_temp_c),
+                month_index=m,
+                lake_id=0,
+            )
+            series.append(float(volume))
+        return series
+
+    v_start = float(np.clip(rt.volume_m3, 0.0, v_spill))
+    volume = v_start
+    series = _one_year(volume)
+    for it in range(max_iters):
+        series = _one_year(volume)
+        mean_s = float(np.mean(series))
+        v_next = float(np.clip(mean_s, 0.0, v_spill))
+        # Scale by the cycle volume itself — scaling by V_spill accepts any
+        # tiny step as "converged" and publishes half-filled seas.
+        step_tol = float(rel_tol) * max(abs(volume), abs(v_next), 1.0)
+        within_rise = float(series[-1] - series[0]) if series else 0.0
+        rise_tol = float(rel_tol) * max(abs(mean_s), 1.0)
+        if abs(v_next - volume) <= step_tol and within_rise <= rise_tol:
+            if v_next >= 0.98 * v_spill and v_start < 0.50 * v_spill:
+                return v_next, False, "fill_to_spill_unbounded", series
+            limit = "spill_rim" if v_next >= 0.98 * v_spill else "mean_cycle"
+            return v_next, True, limit, series
+        # Persistent within-year fill toward capacity → unbounded spill attractor.
+        if within_rise > rise_tol and v_next >= volume and v_start < 0.50 * v_spill:
+            if v_next >= 0.98 * v_spill or (it + 1) >= max_iters:
+                return min(v_next, v_spill), False, "fill_to_spill_unbounded", series
+        volume = v_next
+    if volume >= 0.98 * v_spill and v_start < 0.50 * v_spill:
+        return volume, False, "fill_to_spill_unbounded", series
+    if series and float(series[-1] - series[0]) > float(rel_tol) * max(
+        abs(float(np.mean(series))), 1.0
+    ):
+        return volume, False, "fill_to_spill_unbounded", series
+    return volume, False, "nonconverged", series
 
 
 def _lake_land_inflow_m3s(
@@ -57,52 +142,137 @@ def _lake_land_inflow_m3s(
 
     Addendum §5.1/§5.2: accumulate every incoming graph edge at the supernode —
     never a single sink cell.
+
+    Vectorized (no per-call Python adjacency rebuild): Atlas grids are ~5e5 cells
+    and the monthly spin-up used to OOM/SIGKILL when building upstream lists of
+    lists every month.
     """
-    env = np.asarray(basin_envelope_id, dtype=np.int32)
-    q = np.asarray(land_q_m3s, dtype=np.float64)
-    local = np.asarray(local_runoff_m3s, dtype=np.float64)
-    ups = _upstream_adjacency(graph)
-    w = graph.width
+    env = np.asarray(basin_envelope_id, dtype=np.int32).ravel()
+    q = np.maximum(np.asarray(land_q_m3s, dtype=np.float64).ravel(), 0.0)
+    local = np.asarray(local_runoff_m3s, dtype=np.float64).ravel()
     out = {int(lid): 0.0 for lid in lake_ids}
-    for lid in lake_ids:
-        body = env == int(lid)
-        if not np.any(body):
-            continue
-        # Local runoff generated on envelope cells (land-fraction proxy).
-        out[int(lid)] += float(np.sum(local[body]))
-        rows, cols = np.where(body)
-        for r, c in zip(rows.tolist(), cols.tolist(), strict=True):
-            i = flat_index(r, c, w)
-            for u in ups[i]:
-                ur, uc = unravel(u, w)
-                if int(env[ur, uc]) != int(lid):
-                    out[int(lid)] += max(float(q[ur, uc]), 0.0)
+    if not lake_ids:
+        return out
+
+    max_id = int(max(int(lid) for lid in lake_ids))
+    # Local runoff generated on envelope cells (land-fraction proxy).
+    if max_id > 0:
+        local_sum = np.bincount(
+            np.clip(env, 0, max_id),
+            weights=local,
+            minlength=max_id + 1,
+        )
+        for lid in lake_ids:
+            out[int(lid)] += float(local_sum[int(lid)])
+
+    # Edge inflow: land cell i → lake cell j. Do not credit lake→lake edges from
+    # the discharge ghost field — inter-lake mass moves via spill supernodes.
+    ds = np.asarray(graph.downstream_flat, dtype=np.int64).ravel()
+    ocean = np.asarray(graph.ocean_mask, dtype=bool).ravel()
+    n = int(ds.size)
+    i = np.arange(n, dtype=np.int64)
+    valid = (~ocean) & (ds >= 0)
+    if not np.any(valid):
+        return out
+    ii = i[valid]
+    jj = ds[valid]
+    lid_j = env[jj]
+    lid_i = env[ii]
+    edge = (lid_j > 0) & (lid_i == 0) & (lid_j <= max_id)
+    if np.any(edge):
+        edge_sum = np.bincount(
+            lid_j[edge],
+            weights=q[ii[edge]],
+            minlength=max_id + 1,
+        )
+        for lid in lake_ids:
+            out[int(lid)] += float(edge_sum[int(lid)])
     return out
 
 
-def _route_spill_pulse(
+def _route_spill_along_path(
     *,
     graph: CylindricalFlowGraph,
-    pulse_m3s: NDArray[np.floating],
+    land_q_m3s: NDArray[np.floating],
+    land_loss_m3s: NDArray[np.floating],
     remaining_bed_m3s: NDArray[np.floating],
     basin_envelope_id: NDArray[np.integer],
-    lake_ids: list[int],
-) -> tuple[NDArray[np.float64], NDArray[np.float64], dict[int, float]]:
-    """Route a spill pulse with remaining bed capacity; credit lakes hit same month."""
-    spill_q, spill_loss = effective_discharge_and_sink(
-        graph,
-        pulse_m3s,
-        remaining_bed_m3s,
-        lake_id=basin_envelope_id,
-    )
-    delivered = _lake_land_inflow_m3s(
-        graph=graph,
-        land_q_m3s=spill_q,
-        local_runoff_m3s=np.zeros_like(spill_q),
-        basin_envelope_id=basin_envelope_id,
-        lake_ids=lake_ids,
-    )
-    return spill_q, spill_loss, delivered
+    start_row: int,
+    start_col: int,
+    pulse_m3s: float,
+    source_lake_id: int,
+) -> tuple[float, dict[int, float], float, str | None]:
+    """Walk a spill pulse along D8 — O(path), not a full-grid re-route.
+
+    Mutates ``land_q_m3s``, ``land_loss_m3s``, and ``remaining_bed_m3s`` in place.
+    Returns ``(loss_m3s, delivered_to_lakes_m3s, terminal_export_m3s, terminal_kind)``.
+    ``terminal_kind`` is ``\"ocean\"`` / ``\"boundary\"`` / ``\"closed\"`` when the
+    residual must be ledger-declared (not sitting on a land ``q`` SINK cell);
+    ``None`` means any residual is already in ``land_q`` for terminal probes.
+    """
+    rate = max(float(pulse_m3s), 0.0)
+    if rate <= 0.0:
+        return 0.0, {}, 0.0, None
+    env = np.asarray(basin_envelope_id, dtype=np.int32)
+    ocean = graph.ocean_mask
+    ds = graph.downstream_flat
+    w = graph.width
+    h = graph.height
+    q = np.asarray(land_q_m3s, dtype=np.float64)
+    loss = np.asarray(land_loss_m3s, dtype=np.float64)
+    bed = np.asarray(remaining_bed_m3s, dtype=np.float64)
+    r, c = int(start_row), int(start_col)
+    seen: set[int] = set()
+    delivered: dict[int, float] = {}
+    loss_total = 0.0
+    src = int(source_lake_id)
+    for _ in range(h * w + 1):
+        if r < 0 or r >= h:
+            return loss_total, delivered, rate, "boundary"
+        c = c % w
+        if ocean[r, c]:
+            return loss_total, delivered, rate, "ocean"
+        i = flat_index(r, c, w)
+        if i in seen:
+            break
+        seen.add(i)
+        lid = int(env[r, c])
+        if lid > 0 and lid != src:
+            delivered[lid] = delivered.get(lid, 0.0) + rate
+            return loss_total, delivered, 0.0, None
+        demand = max(float(bed[r, c]), 0.0)
+        lost = demand if demand < rate else rate
+        if lost > 0.0:
+            loss[r, c] = float(loss[r, c]) + lost
+            bed[r, c] = float(bed[r, c]) - lost
+            rate -= lost
+            loss_total += lost
+        if rate <= 1e-18:
+            return loss_total, delivered, 0.0, None
+        if lid <= 0:
+            q[r, c] = float(q[r, c]) + rate
+        j = int(ds[i])
+        if j < 0:
+            if lid > 0:
+                return loss_total, delivered, rate, _terminal_kind_at(graph, r, c)
+            return loss_total, delivered, 0.0, None
+        r, c = unravel(j, w)
+    return loss_total, delivered, rate, _terminal_kind_at(graph, start_row, start_col)
+
+
+def _terminal_kind_at(
+    graph: CylindricalFlowGraph, row: int, col: int
+) -> str:
+    """Classify a cell as ocean / boundary / closed terminal."""
+    h, w = graph.height, graph.width
+    r, c = int(row), int(col) % w
+    if r < 0 or r >= h:
+        return "boundary"
+    if graph.ocean_mask[r, c] or _touches_ocean(r, c, graph.ocean_mask):
+        return "ocean"
+    if r == 0 or r == h - 1:
+        return "boundary"
+    return "closed"
 
 
 def spinup_condensed_lake_routing(
@@ -119,7 +289,7 @@ def spinup_condensed_lake_routing(
     precip_scale_mm: float = 200.0,
     lake_min_depth_m: float = 2.0,
     frozen_temp_c: float = 1.0,
-    spinup_years: int = 8,
+    spinup_years: int = 24,
     spinup_rel_tol: float = 0.01,
     storage_curve: str = STORAGE_CURVE_DISCRETE,
     seepage_m_per_month: float = 0.0,
@@ -191,6 +361,10 @@ def spinup_condensed_lake_routing(
     lake_rec_by_id = {int(rec.get("lake_id") or 0): rec for rec in lake_records}
 
     years = max(int(spinup_years), 1)
+    # Extra years for between-year fixed-point projection (§5.5). Short synthetic
+    # fixtures (spinup_years < 8) must still demonstrate hard non-convergence (§5.6.10).
+    fp_extra_years = 16 if years >= 8 else 0
+    max_years = years + fp_extra_years
     used_years = years
     prev_lake_storage: dict[int, list[float] | None] = {lid: None for lid in runtimes}
     lake_periodic: dict[int, bool] = {lid: False for lid in runtimes}
@@ -199,15 +373,18 @@ def spinup_condensed_lake_routing(
     global_signature_periodic = False
     last_monthly_q = np.zeros((months, h, w), dtype=np.float64)
     last_monthly_loss = np.zeros((months, h, w), dtype=np.float64)
-    last_month_liquid_by_lake: dict[int, list[NDArray[np.float64]]] = {}
-    last_month_ice_by_lake: dict[int, list[NDArray[np.float64]]] = {}
     last_ledgers: list[GlobalMonthLedger] = []
     max_lake_residual = 0.0
+    max_global_residual = 0.0
+    max_global_residual_rel = 0.0
+    min_capture_ratio = 1.0
     last_capture_terminal_m3s = 0.0
     last_capture_full_m3s = 0.0
     last_unassigned_spill_m3 = 0.0
+    fixed_point_boost_count = 0
+    allow_fill_boost = years >= 8
 
-    for year in range(years):
+    for year in range(max_years):
         for rec in lake_records:
             lid = int(rec.get("lake_id") or 0)
             if lid not in runtimes:
@@ -219,23 +396,21 @@ def spinup_condensed_lake_routing(
             rec["inflow_m3"] = []
             rec["evap_loss_m3"] = []
 
-        year_storage_sig: list[float] = []
-        month_liquid_by_lake: dict[int, list[NDArray[np.float64]]] = {
-            lid: [] for lid in runtimes
-        }
-        month_ice_by_lake: dict[int, list[NDArray[np.float64]]] = {
-            lid: [] for lid in runtimes
-        }
+        month_open_mean_by_lake: dict[int, list[float]] = {lid: [] for lid in runtimes}
+        month_ice_mean_by_lake: dict[int, list[float]] = {lid: [] for lid in runtimes}
         year_ledgers: list[GlobalMonthLedger] = []
         year_q = np.zeros((months, h, w), dtype=np.float64)
         year_loss = np.zeros((months, h, w), dtype=np.float64)
 
         for m in range(months):
             seconds = float(month_days(m)) * SECONDS_PER_DAY
+            # Channel bed loss applies on land reaches only — not lake envelopes.
+            bed_pot = np.asarray(bed_loss_potential_m3s, dtype=np.float64).copy()
+            bed_pot[env > 0] = 0.0
             land_q, land_loss = effective_discharge_and_sink(
                 graph,
                 q_in[m],
-                bed_loss_potential_m3s,
+                bed_pot,
                 lake_id=env,
             )
             lake_id_list = list(runtimes.keys())
@@ -260,13 +435,13 @@ def spinup_condensed_lake_routing(
             captured_inflow_m3s = float(sum(land_inflow_m3s.values()))
 
             pending_lake_spill: dict[int, float] = {lid: 0.0 for lid in runtimes}
-            remaining_bed = np.maximum(
-                0.0,
-                np.asarray(bed_loss_potential_m3s, dtype=np.float64) - land_loss,
-            )
+            remaining_bed = np.maximum(0.0, bed_pot - land_loss)
+            remaining_bed[env > 0] = 0.0
             global_led = GlobalMonthLedger(month=m)
             global_led.land_local_runoff_m3 = float(np.sum(q_in[m] * seconds))
             global_led.land_bed_loss_m3 = float(np.sum(land_loss) * seconds)
+            global_led.lake_inflow_available_m3 = float(captured_inflow_m3s * seconds)
+            global_led.lake_inflow_accounted_m3 = float(sum(land_inflow_m3.values()))
 
             storage_snap: dict[int, float] = {}
             spill_snap: dict[int, float] = {}
@@ -274,7 +449,111 @@ def spinup_condensed_lake_routing(
             evap_snap: dict[int, float] = {}
             wet_snap: dict[int, float] = {}
             unassigned_spill_m3 = 0.0
+            declared_ocean_spill_m3 = 0.0
+            declared_closed_spill_m3 = 0.0
+            declared_boundary_spill_m3 = 0.0
             processed: set[int] = set()
+
+            def _declare_terminal_kind(amount_m3: float, kind: str) -> None:
+                nonlocal declared_ocean_spill_m3, declared_closed_spill_m3
+                nonlocal declared_boundary_spill_m3
+                if amount_m3 <= 0.0:
+                    return
+                if kind == "ocean":
+                    declared_ocean_spill_m3 += amount_m3
+                elif kind == "boundary":
+                    declared_boundary_spill_m3 += amount_m3
+                else:
+                    declared_closed_spill_m3 += amount_m3
+
+            def _declare_terminal(amount_m3: float, row: int, col: int) -> None:
+                _declare_terminal_kind(amount_m3, _terminal_kind_at(graph, row, col))
+
+            def _absorb_into_processed(down: int, amount_m3: float) -> float:
+                """Credit spill into an already-stepped lake; return overflow spill."""
+                if amount_m3 <= 0.0 or down not in runtimes:
+                    return max(amount_m3, 0.0)
+                rt_d = runtimes[down]
+                room = max(float(rt_d.avh.v_spill) - float(rt_d.volume_m3), 0.0)
+                take = min(float(amount_m3), room)
+                rt_d.volume_m3 = float(rt_d.volume_m3) + take
+                storage_snap[down] = rt_d.volume_m3
+                # Late inflow is a source for diagnostics on the receiving lake.
+                inflow_snap[down] = float(inflow_snap.get(down, 0.0)) + take
+                return max(float(amount_m3) - take, 0.0)
+
+            def _emit_spill(from_lid: int, spill_m3: float, depth: int = 0) -> None:
+                nonlocal unassigned_spill_m3
+                if spill_m3 <= 1e-12:
+                    return
+                if depth > len(runtimes) + 2:
+                    # Pathological cascade — last resort terminal at outlet.
+                    sn_x = condensed.supernodes[from_lid]
+                    _declare_terminal(
+                        spill_m3, int(sn_x.outlet_row), int(sn_x.outlet_col)
+                    )
+                    return
+                sn_e = condensed.supernodes[from_lid]
+                down = int(sn_e.downstream_lake_id)
+                # Immediate lake→lake (no land reach).
+                if down > 0 and (
+                    sn_e.spill_target_row is None
+                    or int(env[int(sn_e.spill_target_row), int(sn_e.spill_target_col)])
+                    == down
+                ):
+                    if down not in processed:
+                        pending_lake_spill[down] = (
+                            pending_lake_spill.get(down, 0.0) + spill_m3
+                        )
+                    else:
+                        overflow = _absorb_into_processed(down, spill_m3)
+                        if overflow > 0.0:
+                            _emit_spill(down, overflow, depth + 1)
+                    return
+
+                # Land-mediated (or ocean-mouth with no land cell).
+                start_r = sn_e.spill_target_row
+                start_c = sn_e.spill_target_col
+                if start_r is None or start_c is None:
+                    # Outlet itself is a graph SINK (ocean mouth / closed pit).
+                    _declare_terminal(
+                        spill_m3, int(sn_e.outlet_row), int(sn_e.outlet_col)
+                    )
+                    return
+
+                pulse_rate = spill_m3 / max(seconds, 1.0)
+                spill_loss_rate, delivered, terminal_rate, term_kind = (
+                    _route_spill_along_path(
+                        graph=graph,
+                        land_q_m3s=land_q,
+                        land_loss_m3s=land_loss,
+                        remaining_bed_m3s=remaining_bed,
+                        basin_envelope_id=env,
+                        start_row=int(start_r),
+                        start_col=int(start_c),
+                        pulse_m3s=pulse_rate,
+                        source_lake_id=int(from_lid),
+                    )
+                )
+                global_led.land_bed_loss_m3 += float(spill_loss_rate) * seconds
+                for down_i, rate in delivered.items():
+                    if int(down_i) == int(from_lid) or rate <= 0.0:
+                        continue
+                    got = float(rate) * seconds
+                    if int(down_i) not in processed:
+                        pending_lake_spill[int(down_i)] = (
+                            pending_lake_spill.get(int(down_i), 0.0) + got
+                        )
+                    else:
+                        overflow = _absorb_into_processed(int(down_i), got)
+                        if overflow > 0.0:
+                            _emit_spill(int(down_i), overflow, depth + 1)
+                if terminal_rate > 0.0 and term_kind is not None:
+                    _declare_terminal_kind(
+                        float(terminal_rate) * seconds, term_kind
+                    )
+                # Residual pulse mass sits on land_q SINK cells (picked up by
+                # land_terminal_exports) or was declared above — never unassigned.
 
             for lid in condensed.topo_order:
                 if lid not in runtimes:
@@ -310,78 +589,54 @@ def spinup_condensed_lake_routing(
                 evap_snap[lid] = led.open_water_evaporation_m3 + led.seepage_m3
                 wet_snap[lid] = wet_area / 1e6
 
-                sn = condensed.supernodes[lid]
-                if spill <= 0.0:
-                    pass
-                elif sn.downstream_lake_id > 0 and (
-                    sn.spill_target_row is None
-                    or int(env[int(sn.spill_target_row), int(sn.spill_target_col)])
-                    == int(sn.downstream_lake_id)
-                ):
-                    # Immediate neighbour is the downstream lake — no land reach.
-                    down = int(sn.downstream_lake_id)
-                    if down not in processed:
-                        pending_lake_spill[down] = (
-                            pending_lake_spill.get(down, 0.0) + spill
-                        )
-                    else:
-                        unassigned_spill_m3 += spill
-                elif sn.spill_target_row is not None:
-                    pulse = np.zeros((h, w), dtype=np.float64)
-                    tr, tc = int(sn.spill_target_row), int(sn.spill_target_col)
-                    pulse[tr, tc] = spill / max(seconds, 1.0)
-                    spill_q, spill_loss, delivered = _route_spill_pulse(
-                        graph=graph,
-                        pulse_m3s=pulse,
-                        remaining_bed_m3s=remaining_bed,
-                        basin_envelope_id=env,
-                        lake_ids=lake_id_list,
-                    )
-                    land_q = land_q + spill_q
-                    land_loss = land_loss + spill_loss
-                    remaining_bed = np.maximum(0.0, remaining_bed - spill_loss)
-                    global_led.land_bed_loss_m3 += float(np.sum(spill_loss) * seconds)
-                    credited = 0.0
-                    for down, rate in delivered.items():
-                        if int(down) == int(lid) or rate <= 0.0:
-                            continue
-                        got = float(rate) * seconds
-                        credited += got
-                        if int(down) not in processed:
-                            pending_lake_spill[int(down)] = (
-                                pending_lake_spill.get(int(down), 0.0) + got
-                            )
-                        else:
-                            unassigned_spill_m3 += got
-                    # Prefer declared downstream when land walk found one but
-                    # pulse routing under-delivered (numerical / blocking).
-                    down_decl = int(sn.downstream_lake_id)
-                    if (
-                        down_decl > 0
-                        and down_decl not in processed
-                        and credited + 1e-9 < spill
-                    ):
-                        missing = spill - credited
-                        pending_lake_spill[down_decl] = (
-                            pending_lake_spill.get(down_decl, 0.0) + missing
-                        )
-                        credited = spill
-                    # Remainder to ocean / N–S / closed sink is a declared export,
-                    # not an unassigned loss.
-                else:
-                    unassigned_spill_m3 += spill
+                if spill > 0.0:
+                    _emit_spill(int(lid), float(spill))
 
                 frozen = float(np.mean(temp_m[m][body])) < float(frozen_temp_c)
-                frac = rt.avh.raster_wet_fraction(volume, (h, w))
-                ice_frac = frac if frozen else np.zeros_like(frac)
-                liquid_frac = np.zeros_like(frac) if frozen else frac
-                month_liquid_by_lake[lid].append(liquid_frac)
-                month_ice_by_lake[lid].append(ice_frac)
+                # Scalar means only during spin-up (full HxW per lake/month OOMs Atlas).
+                n_body = int(np.count_nonzero(body))
+                envelope_m2 = float(n_body) * area_m2_cell
+                mean_frac = (
+                    float(wet_area / envelope_m2) if envelope_m2 > 0.0 else 0.0
+                )
+                if frozen:
+                    month_ice_mean_by_lake[lid].append(mean_frac)
+                    month_open_mean_by_lake[lid].append(0.0)
+                else:
+                    month_open_mean_by_lake[lid].append(mean_frac)
+                    month_ice_mean_by_lake[lid].append(0.0)
 
             year_q[m] = land_q
             year_loss[m] = land_loss
-            global_led.land_downstream_release_m3 = float(np.sum(land_q) * seconds)
+            ocean_x, closed_x, boundary_x = land_terminal_exports_m3s(
+                graph, land_q, env
+            )
+            global_led.ocean_export_m3 = (
+                float(ocean_x) * seconds + declared_ocean_spill_m3
+            )
+            global_led.closed_retention_m3 = (
+                float(closed_x) * seconds + declared_closed_spill_m3
+            )
+            global_led.boundary_export_m3 = (
+                float(boundary_x) * seconds + declared_boundary_spill_m3
+            )
+            global_led.land_downstream_release_m3 = (
+                global_led.ocean_export_m3
+                + global_led.closed_retention_m3
+                + global_led.boundary_export_m3
+            )
+            global_led.unassigned_spill_m3 = float(unassigned_spill_m3)
+            global_led.lake_inflow_accounted_m3 = float(sum(land_inflow_m3.values()))
             year_ledgers.append(global_led)
+            max_global_residual = max(
+                max_global_residual, abs(global_led.residual_m3())
+            )
+            max_global_residual_rel = max(
+                max_global_residual_rel, global_led.residual_rel()
+            )
+            min_capture_ratio = min(
+                min_capture_ratio, global_led.lake_inflow_capture_ratio()
+            )
 
             for lid, rt in runtimes.items():
                 rec = lake_rec_by_id[lid]
@@ -400,8 +655,8 @@ def spinup_condensed_lake_routing(
 
         for lid in runtimes:
             rec = lake_rec_by_id[lid]
-            liq_list = month_liquid_by_lake.get(lid) or []
-            ice_list = month_ice_by_lake.get(lid) or []
+            open_means = month_open_mean_by_lake.get(lid) or []
+            ice_means = month_ice_mean_by_lake.get(lid) or []
             body = runtimes[lid].body
             n_cells = int(np.count_nonzero(body))
             tail_wet = rec.get("wet_area_km2") or []
@@ -415,12 +670,8 @@ def spinup_condensed_lake_routing(
                     if float(np.mean(temp_m[mm][body])) < float(frozen_temp_c)
                 )
             )
-            rec["open_water_fraction_monthly"] = [
-                float(np.mean(f[body])) if n_cells else 0.0 for f in liq_list
-            ]
-            rec["lake_ice_fraction_monthly"] = [
-                float(np.mean(f[body])) if n_cells else 0.0 for f in ice_list
-            ]
+            rec["open_water_fraction_monthly"] = [float(v) for v in open_means]
+            rec["lake_ice_fraction_monthly"] = [float(v) for v in ice_means]
             # Deprecated alias — readers should migrate to lake_ice_fraction_monthly.
             rec["liquid_fraction_monthly"] = list(rec["open_water_fraction_monthly"])
             rec["ice_fraction_monthly"] = list(rec["lake_ice_fraction_monthly"])
@@ -435,39 +686,107 @@ def spinup_condensed_lake_routing(
             storage_series = list(rec.get("storage_m3") or [])
             prev = prev_lake_storage.get(lid)
             if prev is not None and prev and storage_series:
-                denom = max(float(np.mean(prev)), 1.0)
-                rel = float(
-                    np.max(np.abs(np.array(storage_series) - np.array(prev)))
-                ) / denom
-                if rel <= float(spinup_rel_tol):
+                if storage_series_converged(
+                    prev,
+                    storage_series,
+                    rel_tol=float(spinup_rel_tol),
+                    v_spill_m3=float(runtimes[lid].avh.v_spill),
+                ):
                     lake_periodic[lid] = True
                     lake_used_years[lid] = year + 1
                 else:
                     lake_periodic[lid] = False
-                    lake_used_years[lid] = years
+                    lake_used_years[lid] = year + 1
+                    # §5.5: phase-invariant mean reseed only — never jump toward
+                    # V_spill (that published ~188 inland seas on Atlas 183716).
+                    if allow_fill_boost:
+                        mean_c = float(np.mean(storage_series))
+                        v_spill = float(runtimes[lid].avh.v_spill)
+                        seeded = float(np.clip(mean_c, 0.0, v_spill))
+                        if abs(seeded - float(runtimes[lid].volume_m3)) > 1.0:
+                            runtimes[lid].volume_m3 = seeded
+                            rec["storage_fixed_point_attempted"] = True
+                            rec["storage_limiting_process"] = "mean_cycle"
+                            fixed_point_boost_count += 1
             prev_lake_storage[lid] = list(storage_series)
 
         sig = [float(runtimes[lid].volume_m3) for lid in sorted(runtimes)]
         if prev_storage_signature is not None and prev_storage_signature:
-            denom = max(float(np.mean(prev_storage_signature)), 1.0)
-            rel = float(
-                np.max(np.abs(np.array(sig) - np.array(prev_storage_signature)))
-            ) / denom
-            if rel <= float(spinup_rel_tol):
+            # Global signature uses mean spill capacity as the absolute scale.
+            mean_v_spill = float(
+                np.mean([float(runtimes[lid].avh.v_spill) for lid in runtimes])
+            ) if runtimes else 1.0
+            if storage_series_converged(
+                prev_storage_signature,
+                sig,
+                rel_tol=float(spinup_rel_tol),
+                v_spill_m3=mean_v_spill,
+            ):
                 global_signature_periodic = True
         prev_storage_signature = sig
         last_monthly_q = year_q
         last_monthly_loss = year_loss
-        last_month_liquid_by_lake = {
-            lid: list(month_liquid_by_lake.get(lid) or []) for lid in runtimes
-        }
-        last_month_ice_by_lake = {
-            lid: list(month_ice_by_lake.get(lid) or []) for lid in runtimes
-        }
         last_ledgers = year_ledgers
         if runtimes and all(lake_periodic[lid] for lid in runtimes):
             used_years = year + 1
             break
+    else:
+        used_years = max_years
+
+    # §5.5 post-spinup annual fixed-point on frozen last-year inflows.
+    # Accept only bounded mean-cycle / natural spill-rim solutions — never
+    # promote empty→spill runaway fills into the published liquid product.
+    fixed_point_solved = 0
+    if allow_fill_boost and runtimes:
+        for lid in condensed.topo_order:
+            if lid not in runtimes or lake_periodic.get(lid):
+                continue
+            rec = lake_rec_by_id[lid]
+            rt = runtimes[lid]
+            inflow = list(rec.get("inflow_m3") or [])
+            if len(inflow) < months:
+                continue
+            precip_mm: list[float] | None = None
+            if precip_m is not None:
+                body = rt.body
+                precip_mm = [
+                    float(np.mean(precip_m[m][body])) * float(precip_scale_mm)
+                    if np.any(body)
+                    else 0.0
+                    for m in range(months)
+                ]
+            v_star, accepted, limit, series = _solve_annual_storage_fixed_point(
+                rt=rt,
+                inflow_m3=inflow,
+                temp_m=temp_m,
+                precip_mm_monthly=precip_mm,
+                frozen_temp_c=float(frozen_temp_c),
+                months=months,
+                rel_tol=float(spinup_rel_tol),
+            )
+            rec["storage_fixed_point_attempted"] = True
+            rec["storage_limiting_process"] = limit
+            fixed_point_boost_count += 1
+            if not accepted:
+                continue
+            rt.volume_m3 = float(v_star)
+            # Refresh published monthly series from the accepted cycle.
+            rec["storage_m3"] = [float(v) for v in series]
+            levels: list[float] = []
+            wet: list[float] = []
+            for v in series:
+                z, area_m2 = rt.avh.lookup(float(v))
+                levels.append(float(z - rt.avh.z_floor))
+                wet.append(float(area_m2) / 1e6)
+            rec["level_m"] = levels
+            rec["wet_area_km2"] = wet
+            rec["mean_wet_area_km2"] = float(np.mean(wet)) if wet else 0.0
+            rec["months_wet"] = int(sum(1 for v in wet if v > _WET_FRAC_EPS))
+            lake_periodic[lid] = True
+            rec["storage_periodic"] = True
+            rec["convergence_state"] = "periodic"
+            fixed_point_solved += 1
+            lake_used_years[lid] = int(used_years)
 
     # Reclass and periodic liquid policy (same as apply_basin_storage).
     stepped = 0
@@ -475,6 +794,8 @@ def spinup_condensed_lake_routing(
     liquid_count = 0
     liquid_periodic_count = 0
     withheld_count = 0
+    withheld_wet_km2 = 0.0
+    liquid_wet_km2 = 0.0
     reclass_playa = 0
     reclass_endorheic = 0
     for rec in lake_records:
@@ -502,12 +823,15 @@ def spinup_condensed_lake_routing(
             periodic_count += 1
         if new_state in ("open", "endorheic"):
             liquid_count += 1
+            wet_km2 = float(rec.get("mean_wet_area_km2") or 0.0)
+            liquid_wet_km2 += wet_km2
             if lake_is_periodic:
                 liquid_periodic_count += 1
             else:
                 rec["storage_unstable"] = True
                 rec["water_body_id"] = 0
                 withheld_count += 1
+                withheld_wet_km2 += wet_km2
                 apply_lake_identity(rec)
 
     water_present_monthly = np.zeros((months, h, w), dtype=np.float64)
@@ -517,23 +841,45 @@ def spinup_condensed_lake_routing(
         rec = lake_rec_by_id[lid]
         if bool(rec.get("storage_unstable")):
             continue
-        liq_list = last_month_liquid_by_lake.get(lid) or []
-        ice_list = last_month_ice_by_lake.get(lid) or []
-        if not liq_list:
+        rt = runtimes[lid]
+        body = rt.body
+        storage_series = list(rec.get("storage_m3") or [])
+        if len(storage_series) < months:
             continue
-        for mm, (liq, ice) in enumerate(zip(liq_list, ice_list, strict=True)):
-            open_water_monthly[mm] += liq
-            lake_ice_monthly[mm] += ice
-            water_present_monthly[mm] += liq + ice
+        for mm in range(months):
+            frac = rt.avh.raster_wet_fraction(float(storage_series[mm]), (h, w))
+            frozen = float(np.mean(temp_m[mm][body])) < float(frozen_temp_c)
+            if frozen:
+                lake_ice_monthly[mm] += frac
+            else:
+                open_water_monthly[mm] += frac
+            water_present_monthly[mm] += frac
 
     water_present_monthly = np.clip(water_present_monthly, 0.0, 1.0)
     open_water_monthly = np.clip(open_water_monthly, 0.0, 1.0)
     lake_ice_monthly = np.clip(lake_ice_monthly, 0.0, 1.0)
     water_mean = water_present_monthly.mean(axis=0) if months else np.zeros((h, w), dtype=np.float64)
 
+    withheld_share = (
+        float(withheld_wet_km2) / float(liquid_wet_km2) if liquid_wet_km2 > 1e-12 else 0.0
+    )
+    all_liquid_failed = bool(liquid_count > 0 and liquid_periodic_count == 0)
+    material_withheld = bool(
+        withheld_count > 0
+        and (all_liquid_failed or withheld_share > float(MATERIAL_WITHHELD_WET_SHARE))
+    )
+
     ledger_diag = {
         "hydrology_mass_balance_max_lake_residual_m3": float(max_lake_residual),
-        "hydrology_mass_balance_ok": bool(max_lake_residual <= 1e-3),
+        "hydrology_mass_balance_max_global_residual_m3": float(max_global_residual),
+        "hydrology_mass_balance_max_global_residual_rel": float(max_global_residual_rel),
+        "hydrology_mass_balance_ok": bool(
+            max_lake_residual <= 1.0
+            and (
+                max_global_residual <= 1.0
+                or max_global_residual_rel <= 1e-6
+            )
+        ),
         "global_ledger_months": [g.summary() for g in last_ledgers],
         "lake_inflow_single_sink_m3s": float(last_capture_terminal_m3s),
         "lake_inflow_all_edges_m3s": float(last_capture_full_m3s),
@@ -541,6 +887,10 @@ def spinup_condensed_lake_routing(
             float(last_capture_full_m3s) / float(last_capture_terminal_m3s)
             if last_capture_terminal_m3s > 1e-12
             else (1.0 if last_capture_full_m3s <= 1e-12 else float("inf"))
+        ),
+        "lake_inflow_capture_ratio": float(min_capture_ratio),
+        "lake_inflow_capture_ok": bool(
+            min_capture_ratio >= float(LAKE_INFLOW_CAPTURE_RATIO_MIN)
         ),
         "unassigned_spill_m3": float(last_unassigned_spill_m3),
         "unassigned_spill_ok": bool(last_unassigned_spill_m3 <= 1e-3),
@@ -559,12 +909,19 @@ def spinup_condensed_lake_routing(
         "basin_storage_reclass_endorheic": reclass_endorheic,
         "basin_storage_spinup_years": int(spinup_years),
         "basin_storage_spinup_years_used": int(used_years),
+        "basin_storage_spinup_years_cap": int(max_years),
+        "basin_storage_fixed_point_boost_events": int(fixed_point_boost_count),
+        "basin_storage_fixed_point_solved_count": int(fixed_point_solved),
         "basin_storage_global_signature_periodic": bool(global_signature_periodic),
         "basin_storage_periodic_count": periodic_count,
         "basin_storage_liquid_count": liquid_count,
         "basin_storage_liquid_periodic_count": liquid_periodic_count,
         "basin_storage_nonperiodic_liquid_withheld_count": withheld_count,
         "basin_storage_nonperiodic_liquid_published_count": 0,
+        "basin_storage_withheld_wet_area_km2": float(withheld_wet_km2),
+        "basin_storage_liquid_wet_area_km2": float(liquid_wet_km2),
+        "basin_storage_withheld_wet_area_share": float(withheld_share),
+        "basin_storage_material_withheld": bool(material_withheld),
         "basin_storage_curve": str(storage_curve),
         "lake_fractions_are_monthly": True,
         "lake_routing_algorithm": "pc1_condensed_supernode_v1",

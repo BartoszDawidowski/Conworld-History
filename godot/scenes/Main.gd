@@ -364,9 +364,9 @@ func _ensure_pc6_advanced_groups() -> void:
 		"lake_storage_spinup_years",
 		"lake spinup ",
 		1.0,
-		48.0,
+		64.0,
 		1.0,
-		8.0,
+		24.0,
 		" y",
 		"Maximum lake-storage spin-up years.",
 	)
@@ -438,7 +438,7 @@ func _ensure_pc6_advanced_groups() -> void:
 		0.0,
 		100.0,
 		0.01,
-		0.08,
+		20.0,
 		"",
 		"First-pass thermal diffusion coefficient (1 km cells). C10 grid: 20/50/80.",
 	)
@@ -448,7 +448,7 @@ func _ensure_pc6_advanced_groups() -> void:
 		0.0,
 		1500.0,
 		1.0,
-		12.0,
+		500.0,
 		"",
 		"Final stream-power incision coefficient (not pass-1 fluvial k). C10 grid: 500/1000/1500.",
 	)
@@ -520,9 +520,9 @@ func _ensure_pc6_advanced_groups() -> void:
 		0.001,
 		0.5,
 		0.001,
-		0.035,
+		0.10,
 		" frac",
-		"Top accumulation fraction rendered as display rivers.",
+		"Top accumulation fraction rendered as display rivers (was 0.035 — too sparse).",
 	)
 	_add_adv_section("Solver / expert (PC6)")
 	_add_adv_spin(
@@ -549,11 +549,11 @@ func _ensure_pc6_advanced_groups() -> void:
 		"runoff_spinup_years",
 		"runoff spinup ",
 		1.0,
-		48.0,
+		128.0,
 		1.0,
-		8.0,
+		64.0,
 		" y",
-		"Snow/soil runoff spin-up maximum.",
+		"Snow/soil/firn spin-up maximum (Atlas perennial snow needs ~60y).",
 	)
 	_add_adv_spin(
 		"runoff_spinup_tol",
@@ -588,9 +588,17 @@ func _sync_advanced_from_effective_config() -> void:
 		_set_pc6_spin_value("fill_max_depth_m", hydro.get("fill_max_depth_m"))
 	var lake = groups.get("lake_storage", {})
 	if typeof(lake) == TYPE_DICTIONARY:
-		_set_pc6_spin_value("lake_storage_spinup_years", lake.get("lake_storage_spinup_years"))
+		# Legacy PC6 default was 8y — too short for Atlas (perennial snow ~57y;
+		# lake material withheld stays red under 8y). Migrate exact legacy 8 → new floors.
+		var lake_years = lake.get("lake_storage_spinup_years")
+		if lake_years != null and int(lake_years) == 8:
+			lake_years = 24
+		var runoff_years = lake.get("runoff_spinup_years")
+		if runoff_years != null and int(runoff_years) == 8:
+			runoff_years = 64
+		_set_pc6_spin_value("lake_storage_spinup_years", lake_years)
 		_set_pc6_spin_value("lake_storage_spinup_tol", lake.get("lake_storage_spinup_tol"))
-		_set_pc6_spin_value("runoff_spinup_years", lake.get("runoff_spinup_years"))
+		_set_pc6_spin_value("runoff_spinup_years", runoff_years)
 		_set_pc6_spin_value("runoff_spinup_tol", lake.get("runoff_spinup_tol"))
 	var snow = groups.get("snow_firn_foundation", {})
 	if typeof(snow) == TYPE_DICTIONARY:
@@ -601,10 +609,17 @@ func _sync_advanced_from_effective_config() -> void:
 		_set_pc6_spin_value("soil_capacity", snow.get("soil_capacity"))
 	var erosion = groups.get("erosion_physics", {})
 	if typeof(erosion) == TYPE_DICTIONARY:
-		_set_pc6_spin_value("thermal_kappa", erosion.get("thermal_kappa"))
+		var tk = erosion.get("thermal_kappa")
+		if tk != null and is_equal_approx(float(tk), 0.08):
+			tk = 20.0
+		_set_pc6_spin_value("thermal_kappa", tk)
 	var final_e = groups.get("final_erosion_physics", {})
 	if typeof(final_e) == TYPE_DICTIONARY:
-		_set_pc6_spin_value("stream_power_k", final_e.get("stream_power_k"))
+		# Legacy default 12 is far below the C10 corridor magnitude; migrate to grid start.
+		var spk = final_e.get("stream_power_k")
+		if spk != null and is_equal_approx(float(spk), 12.0):
+			spk = 500.0
+		_set_pc6_spin_value("stream_power_k", spk)
 		_set_pc6_spin_value("stream_power_iterations", final_e.get("stream_power_iterations"))
 		_set_pc6_spin_value("micro_fill_max_depth_m", final_e.get("micro_fill_max_depth_m"))
 	var landforms = groups.get("landform_classification", {})
@@ -622,7 +637,10 @@ func _sync_advanced_from_effective_config() -> void:
 		)
 	var lod = _effective_config.get("display_only_lod", {})
 	if typeof(lod) == TYPE_DICTIONARY:
-		_set_pc6_spin_value("river_acc_fraction", lod.get("river_acc_fraction"))
+		var raf = lod.get("river_acc_fraction")
+		if raf != null and is_equal_approx(float(raf), 0.035):
+			raf = 0.10
+		_set_pc6_spin_value("river_acc_fraction", raf)
 		if lod.has("precip_scale_mm"):
 			precip_scale_spin.value = float(lod.get("precip_scale_mm"))
 		_set_pc6_spin_value(
@@ -668,7 +686,7 @@ func _generation_knobs() -> Dictionary:
 		"moisture_monsoon_strength": float(moist_monsoon_spin.value),
 		"moisture_monsoon_lat_band_max_abs_deg": float(moist_monsoon_band_max_spin.value),
 		"precip_scale_mm": float(precip_scale_spin.value),
-		"river_acc_fraction": _pc6_spin_value("river_acc_fraction", 0.035),
+		"river_acc_fraction": _pc6_spin_value("river_acc_fraction", 0.10),
 		"river_min_catchment_km2": _pc6_spin_value("river_min_catchment_km2", 500.0),
 		"river_discharge_candidate_quantile": _pc6_spin_value(
 			"river_discharge_candidate_quantile", 0.50
@@ -676,17 +694,17 @@ func _generation_knobs() -> Dictionary:
 		"channel_q_min_m3s": _pc6_spin_value("channel_q_min_m3s", 0.05),
 		"bed_loss_m3_per_km_month": _pc6_spin_value("bed_loss_m3_per_km_month", 2.0) * 1.0e5,
 		"fill_max_depth_m": _pc6_spin_value("fill_max_depth_m", 25.0),
-		"lake_storage_spinup_years": int(_pc6_spin_value("lake_storage_spinup_years", 8.0)),
+		"lake_storage_spinup_years": int(_pc6_spin_value("lake_storage_spinup_years", 24.0)),
 		"lake_storage_spinup_tol": _pc6_spin_value("lake_storage_spinup_tol", 0.01),
-		"runoff_spinup_years": int(_pc6_spin_value("runoff_spinup_years", 8.0)),
+		"runoff_spinup_years": int(_pc6_spin_value("runoff_spinup_years", 64.0)),
 		"runoff_spinup_tol": _pc6_spin_value("runoff_spinup_tol", 0.01),
 		"snow_threshold_c": _pc6_spin_value("snow_threshold_c", 0.0),
 		"snow_band_c": _pc6_spin_value("snow_band_c", 2.0),
 		"melt_factor_per_c": _pc6_spin_value("melt_factor_per_c", 0.08),
 		"max_snow_store": _pc6_spin_value("max_snow_store", 40.0),
 		"soil_capacity": _pc6_spin_value("soil_capacity", 1.0),
-		"thermal_kappa": _pc6_spin_value("thermal_kappa", 0.08),
-		"stream_power_k": _pc6_spin_value("stream_power_k", 12.0),
+		"thermal_kappa": _pc6_spin_value("thermal_kappa", 20.0),
+		"stream_power_k": _pc6_spin_value("stream_power_k", 500.0),
 		"stream_power_iterations": int(_pc6_spin_value("stream_power_iterations", 4.0)),
 		"micro_fill_max_depth_m": _pc6_spin_value("micro_fill_max_depth_m", 25.0),
 		"mountain_score_threshold": _pc6_spin_value("mountain_score_threshold", 0.60),

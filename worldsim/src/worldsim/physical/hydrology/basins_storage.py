@@ -21,6 +21,36 @@ _VOLUME_EPS_M3 = 1.0
 _WET_FRAC_EPS = 1e-6
 STORAGE_CURVE_DISCRETE = "discrete_avh_v1"
 STORAGE_CURVE_LINEAR = "linear_a_of_h"
+# §5.5: withheld lakes fail acceptance only when they are material to the
+# published liquid product (wet-area share of liquid candidates).
+MATERIAL_WITHHELD_WET_SHARE = 0.10
+
+
+def storage_series_converged(
+    prev: list[float] | NDArray[np.floating],
+    curr: list[float] | NDArray[np.floating],
+    *,
+    rel_tol: float,
+    v_spill_m3: float,
+) -> bool:
+    """Year-over-year storage climatology (addendum §5.5).
+
+    Accept max-month relative delta or mean-storage relative delta. ``v_spill_m3``
+    is reserved for callers / future capacity-bounded fallbacks.
+    """
+    del v_spill_m3  # API stability with router / basins_storage call sites
+    prev_a = np.asarray(prev, dtype=np.float64).ravel()
+    curr_a = np.asarray(curr, dtype=np.float64).ravel()
+    if prev_a.size == 0 or curr_a.size != prev_a.size:
+        return False
+    delta = np.abs(curr_a - prev_a)
+    max_abs = float(np.max(delta))
+    mean_prev = float(np.mean(np.abs(prev_a)))
+    mean_curr = float(np.mean(np.abs(curr_a)))
+    denom = max(mean_prev, 1.0)
+    rel_max = max_abs / denom
+    mean_rel = abs(mean_curr - mean_prev) / denom
+    return bool(rel_max <= float(rel_tol) or mean_rel <= float(rel_tol))
 
 
 def _sink_cell(
@@ -294,7 +324,7 @@ def apply_basin_storage(
     precip_scale_mm: float = 200.0,
     lake_min_depth_m: float = 2.0,
     frozen_temp_c: float = 1.0,
-    spinup_years: int = 8,
+    spinup_years: int = 24,
     spinup_rel_tol: float = 0.01,
     seepage_m_per_month: float = 0.0,
     storage_curve: str = STORAGE_CURVE_DISCRETE,
@@ -331,6 +361,8 @@ def apply_basin_storage(
     liquid_count = 0
     liquid_periodic_count = 0
     withheld_count = 0
+    withheld_wet_km2 = 0.0
+    liquid_wet_km2 = 0.0
     years = max(int(spinup_years), 1)
     builder = (
         build_linear_avh_fallback
@@ -436,9 +468,12 @@ def apply_basin_storage(
                 month_liquid.append(liquid_frac)
                 month_ice.append(ice_frac)
             if prev_storage is not None and prev_storage:
-                denom = max(float(np.mean(prev_storage)), 1.0)
-                rel = float(np.max(np.abs(np.array(storage) - np.array(prev_storage)))) / denom
-                if rel <= float(spinup_rel_tol):
+                if storage_series_converged(
+                    prev_storage,
+                    storage,
+                    rel_tol=float(spinup_rel_tol),
+                    v_spill_m3=float(avh.v_spill),
+                ):
                     periodic = True
                     used_years = year + 1
                     break
@@ -488,12 +523,15 @@ def apply_basin_storage(
             reclass_endorheic += 1
         if new_state in ("open", "endorheic"):
             liquid_count += 1
+            wet_km2 = float(rec.get("mean_wet_area_km2") or 0.0)
+            liquid_wet_km2 += wet_km2
             if periodic:
                 liquid_periodic_count += 1
             else:
                 rec["storage_unstable"] = True
                 rec["water_body_id"] = 0
                 withheld_count += 1
+                withheld_wet_km2 += wet_km2
                 apply_lake_identity(rec)
         publish = not bool(rec.get("storage_unstable"))
         if publish and month_liquid:
@@ -506,6 +544,15 @@ def apply_basin_storage(
     open_water_monthly = np.clip(open_water_monthly, 0.0, 1.0)
     lake_ice_monthly = np.clip(lake_ice_monthly, 0.0, 1.0)
     water_sum = water_present_monthly.mean(axis=0) if months else np.zeros((h, w), dtype=np.float64)
+    withheld_share = (
+        float(withheld_wet_km2) / float(liquid_wet_km2) if liquid_wet_km2 > 1e-12 else 0.0
+    )
+    # §5.5: withholding is allowed; fail when material to the published world.
+    all_liquid_failed = bool(liquid_count > 0 and liquid_periodic_count == 0)
+    material_withheld = bool(
+        withheld_count > 0
+        and (all_liquid_failed or withheld_share > float(MATERIAL_WITHHELD_WET_SHARE))
+    )
 
     return {
         "basin_storage_stepped_count": stepped,
@@ -517,6 +564,10 @@ def apply_basin_storage(
         "basin_storage_liquid_periodic_count": liquid_periodic_count,
         "basin_storage_nonperiodic_liquid_withheld_count": withheld_count,
         "basin_storage_nonperiodic_liquid_published_count": 0,
+        "basin_storage_withheld_wet_area_km2": float(withheld_wet_km2),
+        "basin_storage_liquid_wet_area_km2": float(liquid_wet_km2),
+        "basin_storage_withheld_wet_area_share": float(withheld_share),
+        "basin_storage_material_withheld": bool(material_withheld),
         "basin_storage_curve": str(storage_curve),
         "water_fraction_mean": water_sum,
         "water_fraction_monthly": water_present_monthly,

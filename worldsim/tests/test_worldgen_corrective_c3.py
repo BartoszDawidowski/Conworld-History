@@ -50,13 +50,13 @@ def _macro_corr(before: np.ndarray, after: np.ndarray, ocean: np.ndarray) -> flo
 
 
 def test_defaults_are_not_the_calibration_centre() -> None:
-    assert ErosionParams().thermal_kappa == pytest.approx(0.08)
+    assert ErosionParams().thermal_kappa == pytest.approx(20.0)
     assert ErosionParams().fluvial_k == pytest.approx(8.0)
-    assert FinalRecalcParams().stream_power_k == pytest.approx(12.0)
+    assert FinalRecalcParams().stream_power_k == pytest.approx(500.0)
     cfg = load_planet_config(default_config_path())
-    assert cfg.erosion_thermal_kappa == pytest.approx(0.08)
+    assert cfg.erosion_thermal_kappa == pytest.approx(20.0)
     assert cfg.erosion_fluvial_k == pytest.approx(8.0)
-    assert cfg.erosion_stream_power_k == pytest.approx(12.0)
+    assert cfg.erosion_stream_power_k == pytest.approx(500.0)
     assert cfg.to_erosion_params().fluvial_k != pytest.approx(
         cfg.to_final_recalc_params().stream_power_k
     )
@@ -283,8 +283,8 @@ def test_godot_does_not_present_fluvial_k_as_final_incision() -> None:
     gd = (ROOT / "godot" / "scenes" / "Main.gd").read_text(encoding="utf-8")
     assert "stream_power_k: %.4f" in gd
     assert "thermal_kappa: %.4f" in gd
-    assert '_pc6_spin_value("stream_power_k", 12.0)' in gd
-    assert '_pc6_spin_value("thermal_kappa", 0.08)' in gd
+    assert '_pc6_spin_value("stream_power_k", 500.0)' in gd
+    assert '_pc6_spin_value("thermal_kappa", 20.0)' in gd
     # Writer must emit thermal then fluvial (not swapped).
     assert 'float(knobs["thermal_kappa"])' in gd
     thermal_pos = gd.index('float(knobs["thermal_kappa"])')

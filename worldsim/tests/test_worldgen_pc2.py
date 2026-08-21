@@ -106,6 +106,37 @@ def test_three_water_fraction_products_separate() -> None:
     np.testing.assert_allclose(present[:, land], open_w[:, land] + ice[:, land], atol=1e-6)
 
 
+def test_display_trace_uses_physical_not_candidate_subset() -> None:
+    """Pkg4: downstream walk must leave the discharge-gated candidate set."""
+    h, w = 3, 8
+    ocean = np.zeros((h, w), dtype=bool)
+    ocean[:, -1] = True
+    physical = np.zeros((h, w), dtype=bool)
+    physical[1, :7] = True
+    acc = np.zeros((h, w), dtype=np.float64)
+    # Only upstream cells are high-accumulation candidates.
+    acc[1, :3] = 100.0
+    acc[1, 3:7] = 1.0
+    q = np.zeros((h, w), dtype=np.float64)
+    q[1, :3] = 10.0
+    q[1, 3:7] = 0.01
+    d8 = np.full((h, w), 1, dtype=np.uint8)
+    d8[ocean] = 0
+    display, diag = build_display_river_mask(
+        physical_mask=physical,
+        flow_accumulation=acc,
+        discharge_effective=q,
+        flow_direction=d8,
+        ocean_mask=ocean,
+        acc_fraction=0.5,
+        candidate_quantile=0.5,
+    )
+    assert diag["display_trace_limit"] == "physical_channel"
+    # Lower physical reach must be filled even when below Q gate.
+    assert bool(display[1, 5])
+    assert bool(diag["display_terminal_reach_ok"])
+
+
 def test_display_built_after_final_q_not_preliminary() -> None:
     violations = hydrology_network_order_violations()
     assert "display_channel_candidates used before final-Q tier builder" not in violations

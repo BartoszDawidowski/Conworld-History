@@ -108,14 +108,15 @@ def collect_gates(
         if er:
             erosion_ok = erosion_ok and _flag(er, "acceptance_ok")
         if fn:
-            # Do not read final.acceptance_ok — after a world stamp that field
-            # is the overall flag and would become circular.
+            # Do not read final.acceptance_ok / final_stage_acceptance_ok —
+            # those AND hydrology/landforms and would paint erosion red for
+            # unrelated hydro failures. Erosion gate = pass-1 + final fluvial.
             if "fluvial_erosion_nontrivial" in fn:
                 erosion_ok = erosion_ok and bool(fn["fluvial_erosion_nontrivial"])
-            if "final_stage_acceptance_ok" in fn:
-                erosion_ok = erosion_ok and bool(fn["final_stage_acceptance_ok"])
-            elif "stable_final_geography" in fn:
-                erosion_ok = erosion_ok and bool(fn["stable_final_geography"])
+            if "fluvial_corridor_erosion_ok" in fn:
+                erosion_ok = erosion_ok and bool(fn["fluvial_corridor_erosion_ok"])
+            if "erosion_delta_identity_ok" in fn:
+                erosion_ok = erosion_ok and bool(fn["erosion_delta_identity_ok"])
         if not er and not fn:
             erosion_ok = False
     else:

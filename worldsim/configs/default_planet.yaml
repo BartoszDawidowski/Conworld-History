@@ -66,12 +66,12 @@ erosion:
   # (kappa_m2 = thermal_kappa * 1000^2). fluvial_k is precip×slope on this
   # pass only — it does not control final stream-power incision.
   iterations: 5
-  thermal_kappa: 0.08
+  thermal_kappa: 20.0
   fluvial_k: 8.0
   max_step_m: 25.0
   macro_blend: 0.35
   # Final river incision (independent of fluvial_k). C3 does not retune these.
-  stream_power_k: 12.0
+  stream_power_k: 500.0
   stream_power_iterations: 4
   stream_power_max_step_m: 30.0
   stream_power_macro_blend: 0.40
@@ -133,7 +133,7 @@ moisture:
 # Plan B7 — precip-aware river/lake visibility (DEM topology unchanged)
 hydrology:
   # CR-6: top 3.5% accumulation (0.02 hid ~104k km² trunks on Atlas).
-  river_acc_fraction: 0.035
+  river_acc_fraction: 0.10
   lake_min_depth_m: 2.0
   # Quantile of discharge on accumulation candidates (0.5 ≈ drop driest half of network).
   river_discharge_candidate_quantile: 0.50

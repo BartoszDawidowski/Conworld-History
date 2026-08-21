@@ -15,6 +15,6 @@ class G0Params:
     precip_scale_mm: float = 200.0
     soil_capacity: float = 1.0
     soil_quickflow_frac: float = 0.20
-    spinup_years: int = 8
+    spinup_years: int = 64
     spinup_rel_tol: float = 0.01
     mass_balance_tol: float = 1e-4

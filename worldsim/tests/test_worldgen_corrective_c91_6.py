@@ -39,6 +39,8 @@ def _green_kwargs() -> dict:
         },
         "final": {
             "fluvial_erosion_nontrivial": True,
+            "fluvial_corridor_erosion_ok": True,
+            "erosion_delta_identity_ok": True,
             "final_stage_acceptance_ok": True,
         },
     }
@@ -125,6 +127,27 @@ def test_climate_summary_matches_aggregator_not_raster_presence() -> None:
     assert summary_ok["overall_acceptance_ok"] is True
     assert summary_ok["biome_v2_ok"] is True
     assert summary_ok["landforms_ok"] is True
+
+
+def test_erosion_gate_independent_of_hydrology_failure() -> None:
+    """erosion_or_fluvial_ok must not AND final_stage (hydro/landforms bundle)."""
+    kwargs = _green_kwargs()
+    kwargs["hydrology"] = {
+        "acceptance_ok": False,
+        "q_through_lake_once": True,
+        "runoff_periodic": True,
+    }
+    kwargs["final"] = {
+        "fluvial_erosion_nontrivial": True,
+        "fluvial_corridor_erosion_ok": True,
+        "erosion_delta_identity_ok": True,
+        "final_stage_acceptance_ok": False,
+    }
+    report = aggregate_canonical_acceptance(**kwargs)
+    assert report["gates"]["hydrology_ok"] is False
+    assert report["gates"]["erosion_or_fluvial_ok"] is True
+    assert "hydrology_ok" in report["failed_gates"]
+    assert "erosion_or_fluvial_ok" not in report["failed_gates"]
 
 
 def test_stamp_copies_overall_onto_final_diagnostics() -> None:

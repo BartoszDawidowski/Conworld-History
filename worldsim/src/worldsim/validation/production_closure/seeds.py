@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from worldsim.validation.physical_realism.seed_suites import PROFILE_GRIDS
 
-PC7_SCHEMA_VERSION = "pc7_production_suite_v1"
+PC7_SCHEMA_VERSION = "pc7_production_suite_v2"
 
 # Required suite membership — distinct from legacy PR-0 ATLAS_SEEDS (7, 1337).
 PC7_QUICK_SEEDS: tuple[int, ...] = (1, 42, 100)

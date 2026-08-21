@@ -12,6 +12,7 @@ from worldsim.physical.hydrology.channels import (
     CHANNEL_SEASONAL,
     display_channel_candidates,
 )
+from worldsim.physical.hydrology.cylindrical_graph import neighbor_from_d8
 from worldsim.physical.hydrology.rivers import (
     gate_river_mask_by_discharge,
     propagate_downstream_on_mask,
@@ -50,9 +51,17 @@ def build_display_river_mask(
     min_effective_discharge: float | None = None,
     trace_downstream: bool = True,
 ) -> tuple[NDArray[np.bool_], dict[str, Any]]:
-    """Display LOD after final effective Q; optional downstream trace to terminals."""
+    """Display LOD after final effective Q; trace seeds to terminals on physical network.
+
+    Seeds are selected by accumulation candidates ∩ discharge gate, but the
+    downstream walk uses the **physical** channel mask — not the candidate
+    subset — so arid lower reaches can still connect to an explicit ocean/sink
+    terminal (pkg4 / audit: no double-filter trap).
+    """
+    physical = np.asarray(physical_mask, dtype=np.bool_)
+    ocean = np.asarray(ocean_mask, dtype=np.bool_)
     candidates = display_channel_candidates(
-        physical_mask,
+        physical,
         flow_accumulation,
         fraction=acc_fraction,
     )
@@ -60,7 +69,7 @@ def build_display_river_mask(
         candidates,
         discharge_effective,
         flow_direction,
-        ocean_mask,
+        ocean,
         candidate_quantile=candidate_quantile,
         min_effective_discharge=min_effective_discharge,
         inherit_downstream=False,
@@ -69,20 +78,84 @@ def build_display_river_mask(
         display = propagate_downstream_on_mask(
             seeds,
             flow_direction,
-            ocean_mask,
-            limit_mask=candidates,
+            ocean,
+            limit_mask=physical,
         )
         display |= seeds
     else:
         display = seeds
+    terminal_reach_ok, terminal_diag = _display_terminal_reach_stats(
+        display_mask=display,
+        seed_mask=seeds,
+        flow_direction=flow_direction,
+        ocean_mask=ocean,
+        physical_mask=physical,
+    )
     diag = {
         **gate_diag,
+        **terminal_diag,
         "display_trace_downstream": bool(trace_downstream),
+        "display_trace_limit": "physical_channel",
         "display_candidate_cell_count": int(np.count_nonzero(candidates)),
         "display_after_discharge_gate": int(np.count_nonzero(seeds)),
         "display_after_trace": int(np.count_nonzero(display)),
+        "display_terminal_reach_ok": bool(terminal_reach_ok),
     }
     return display.astype(bool), diag
+
+
+def _display_terminal_reach_stats(
+    *,
+    display_mask: NDArray[np.bool_],
+    seed_mask: NDArray[np.bool_],
+    flow_direction: NDArray[np.uint8],
+    ocean_mask: NDArray[np.bool_],
+    physical_mask: NDArray[np.bool_],
+) -> tuple[bool, dict[str, Any]]:
+    """Every display seed must reach ocean via D8 along the physical network."""
+    del display_mask  # reachability is evaluated from seeds on physical D8
+    ocean = np.asarray(ocean_mask, dtype=np.bool_)
+    d8 = np.asarray(flow_direction, dtype=np.uint8)
+    physical = np.asarray(physical_mask, dtype=np.bool_)
+    seeds = np.asarray(seed_mask, dtype=np.bool_) & ~ocean
+    h, w = ocean.shape
+    n_seeds = int(np.count_nonzero(seeds))
+    if n_seeds == 0:
+        return True, {
+            "display_seed_count": 0,
+            "display_seeds_reaching_ocean": 0,
+            "display_seeds_orphaned": 0,
+        }
+    reached = 0
+    for r, c in map(tuple, np.argwhere(seeds)):
+        cr, cc = int(r), int(c)
+        seen: set[tuple[int, int]] = set()
+        hit = False
+        for _ in range(h * w + 1):
+            if (cr, cc) in seen:
+                break
+            seen.add((cr, cc))
+            nxt = neighbor_from_d8(cr, cc, int(d8[cr, cc]), height=h, width=w)
+            if nxt is None:
+                # N–S edge, pit, or D8=0 ocean-mouth — explicit terminal.
+                hit = True
+                break
+            nr, nc = int(nxt[0]), int(nxt[1])
+            if ocean[nr, nc]:
+                hit = True
+                break
+            if not physical[nr, nc]:
+                break
+            cr, cc = nr, nc
+        if hit:
+            reached += 1
+    orphaned = n_seeds - reached
+    return orphaned == 0, {
+        "display_seed_count": n_seeds,
+        "display_seeds_reaching_terminal": reached,
+        "display_seeds_reaching_ocean": reached,  # alias retained for older readers
+        "display_seeds_orphaned": orphaned,
+    }
 
 
 def channel_tier_diagnostics(

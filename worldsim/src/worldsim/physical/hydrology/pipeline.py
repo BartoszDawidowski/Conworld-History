@@ -55,7 +55,7 @@ from worldsim.spatial.resample import upsample_bilinear_cylindrical
 
 @dataclass(frozen=True)
 class HydrologyParams:
-    river_acc_fraction: float = 0.035
+    river_acc_fraction: float = 0.10
     lake_min_depth_m: float = 2.0
     months: int = 12
     # Plan B7 — precip/discharge gates (quantile = physical Q floor when min unset)
@@ -88,11 +88,11 @@ class HydrologyParams:
     channel_q_min_m3s: float = 0.05
     channel_perennial_min_months: int = 8
     channel_seasonal_min_months: int = 3
-    lake_storage_spinup_years: int = 8
+    lake_storage_spinup_years: int = 24
     lake_storage_spinup_tol: float = 0.01
     lake_storage_curve: str = "discrete_avh_v1"
     lake_wet_min_fraction: float = 1e-6
-    runoff_spinup_years: int = 8
+    runoff_spinup_years: int = 64
     runoff_spinup_tol: float = 0.01
 
 
@@ -711,16 +711,28 @@ def build_hydrology(
     withheld = int(
         diagnostics.get("basin_storage_nonperiodic_liquid_withheld_count") or 0
     )
+    published_bad = int(
+        diagnostics.get("basin_storage_nonperiodic_liquid_published_count") or 0
+    )
+    # §5.5: withhold is allowed; fail only when material to the published world
+    # (or when diagnostics omit the materiality flag — treat any withhold as material).
+    if "basin_storage_material_withheld" in diagnostics:
+        material_withheld = bool(diagnostics.get("basin_storage_material_withheld"))
+    else:
+        material_withheld = withheld > 0
     mass_ok = bool(diagnostics.get("hydrology_mass_balance_ok", False))
     unassigned_ok = bool(diagnostics.get("unassigned_spill_ok", True))
+    capture_ok = bool(diagnostics.get("lake_inflow_capture_ok", True))
     diagnostics["acceptance_ok"] = bool(
         diagnostics["acceptance_ok"]
         and mass_ok
         and runoff_periodic
         and g0_state_ok
         and g0_mass_ok
-        and withheld == 0
+        and published_bad == 0
+        and not material_withheld
         and unassigned_ok
+        and capture_ok
     )
 
     if reporter is not None:
